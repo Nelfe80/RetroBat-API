@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "omIKu5rEabU=",
+  "success": true,
+  "projectFilePath": "C:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.Providers.EmulationStation\\RetroBat.Providers.EmulationStation.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\vince\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\8.0.0\\microsoft.extensions.dependencyinjection.abstractions.8.0.0.nupkg.sha512",
+    "C:\\Users\\vince\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\8.0.0\\microsoft.extensions.logging.abstractions.8.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}

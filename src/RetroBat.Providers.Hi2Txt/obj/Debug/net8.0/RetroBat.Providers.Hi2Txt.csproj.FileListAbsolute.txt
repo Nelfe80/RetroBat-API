@@ -1,0 +1,15 @@
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\obj\Debug\net8.0\RetroBat.Providers.Hi2Txt.csproj.AssemblyReference.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\obj\Debug\net8.0\RetroBat.Providers.Hi2Txt.GeneratedMSBuildEditorConfig.editorconfig
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\obj\Debug\net8.0\RetroBat.Providers.Hi2Txt.AssemblyInfoInputs.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\obj\Debug\net8.0\RetroBat.Providers.Hi2Txt.AssemblyInfo.cs
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\obj\Debug\net8.0\RetroBat.Providers.Hi2Txt.csproj.CoreCompileInputs.cache
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\bin\Debug\net8.0\RetroBat.Providers.Hi2Txt.deps.json
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\bin\Debug\net8.0\RetroBat.Providers.Hi2Txt.dll
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\bin\Debug\net8.0\RetroBat.Providers.Hi2Txt.pdb
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\bin\Debug\net8.0\RetroBat.Domain.dll
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\bin\Debug\net8.0\RetroBat.Domain.pdb
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\obj\Debug\net8.0\RetroBat.3F4B8A58.Up2Date
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\obj\Debug\net8.0\RetroBat.Providers.Hi2Txt.dll
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\obj\Debug\net8.0\refint\RetroBat.Providers.Hi2Txt.dll
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\obj\Debug\net8.0\RetroBat.Providers.Hi2Txt.pdb
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.Hi2Txt\obj\Debug\net8.0\ref\RetroBat.Providers.Hi2Txt.dll

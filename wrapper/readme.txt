@@ -1,0 +1,2 @@
+Mise en place de wrapper, cores intermédiaire qui vont capter la mémoire ram de l'émulateur pour pouvoir l'exposer et activer les sorties (DMD, marque, led, panel...)
+Si il y a une mise à jour de core RetroArch, lancez le .exe qui fera une copie du core original dans le dossier core_real.

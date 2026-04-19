@@ -1,0 +1,11 @@
+{
+  "rom": "neopong",
+  "game_context": {
+    "class": "",
+    "machine": "",
+    "input": ""
+  },
+  "inputs": [],
+  "outputs": [],
+  "mappings": []
+}

@@ -1,0 +1,15 @@
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\bin\Debug\net8.0\RetroBat.Providers.EmulationStation.deps.json
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\bin\Debug\net8.0\RetroBat.Providers.EmulationStation.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\bin\Debug\net8.0\RetroBat.Providers.EmulationStation.pdb
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\bin\Debug\net8.0\RetroBat.Domain.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\bin\Debug\net8.0\RetroBat.Domain.pdb
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\obj\Debug\net8.0\RetroBat.Providers.EmulationStation.csproj.AssemblyReference.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\obj\Debug\net8.0\RetroBat.Providers.EmulationStation.GeneratedMSBuildEditorConfig.editorconfig
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\obj\Debug\net8.0\RetroBat.Providers.EmulationStation.AssemblyInfoInputs.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\obj\Debug\net8.0\RetroBat.Providers.EmulationStation.AssemblyInfo.cs
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\obj\Debug\net8.0\RetroBat.Providers.EmulationStation.csproj.CoreCompileInputs.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\obj\Debug\net8.0\RetroBat.FA602A41.Up2Date
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\obj\Debug\net8.0\RetroBat.Providers.EmulationStation.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\obj\Debug\net8.0\refint\RetroBat.Providers.EmulationStation.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\obj\Debug\net8.0\RetroBat.Providers.EmulationStation.pdb
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.EmulationStation\obj\Debug\net8.0\ref\RetroBat.Providers.EmulationStation.dll

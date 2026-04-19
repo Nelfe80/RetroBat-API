@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "BL2WCl4mB6Q=",
+  "success": true,
+  "projectFilePath": "c:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.Providers.Hi2Txt\\RetroBat.Providers.Hi2Txt.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\vince\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\8.0.0\\microsoft.extensions.dependencyinjection.abstractions.8.0.0.nupkg.sha512",
+    "C:\\Users\\vince\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\8.0.0\\microsoft.extensions.logging.abstractions.8.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}

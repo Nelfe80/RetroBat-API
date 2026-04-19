@@ -1,0 +1,128 @@
+{
+  "format": 1,
+  "restore": {
+    "c:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.MediaStore\\RetroBat.MediaStore.csproj": {}
+  },
+  "projects": {
+    "C:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.Domain\\RetroBat.Domain.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.Domain\\RetroBat.Domain.csproj",
+        "projectName": "RetroBat.Domain",
+        "projectPath": "C:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.Domain\\RetroBat.Domain.csproj",
+        "packagesPath": "C:\\Users\\vince\\.nuget\\packages\\",
+        "outputPath": "C:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.Domain\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\vince\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.418/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "c:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.MediaStore\\RetroBat.MediaStore.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "c:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.MediaStore\\RetroBat.MediaStore.csproj",
+        "projectName": "RetroBat.MediaStore",
+        "projectPath": "c:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.MediaStore\\RetroBat.MediaStore.csproj",
+        "packagesPath": "C:\\Users\\vince\\.nuget\\packages\\",
+        "outputPath": "c:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.MediaStore\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\vince\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.Domain\\RetroBat.Domain.csproj": {
+                "projectPath": "C:\\RetroBat\\plugins\\APIExpose\\src\\RetroBat.Domain\\RetroBat.Domain.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.418/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

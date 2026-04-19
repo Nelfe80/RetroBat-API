@@ -1,0 +1,11 @@
+{
+  "rom": "mx5000",
+  "game_context": {
+    "class": "",
+    "machine": "",
+    "input": ""
+  },
+  "inputs": [],
+  "outputs": [],
+  "mappings": []
+}

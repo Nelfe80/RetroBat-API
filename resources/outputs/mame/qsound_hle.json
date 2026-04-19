@@ -1,0 +1,11 @@
+{
+  "rom": "qsound_hle",
+  "game_context": {
+    "class": "",
+    "machine": "",
+    "input": ""
+  },
+  "inputs": [],
+  "outputs": [],
+  "mappings": []
+}

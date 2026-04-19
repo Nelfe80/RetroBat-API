@@ -1,0 +1,15 @@
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\bin\Debug\net8.0\RetroBat.MediaStore.deps.json
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\bin\Debug\net8.0\RetroBat.MediaStore.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\bin\Debug\net8.0\RetroBat.MediaStore.pdb
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\bin\Debug\net8.0\RetroBat.Domain.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\bin\Debug\net8.0\RetroBat.Domain.pdb
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\obj\Debug\net8.0\RetroBat.MediaStore.csproj.AssemblyReference.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\obj\Debug\net8.0\RetroBat.MediaStore.GeneratedMSBuildEditorConfig.editorconfig
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\obj\Debug\net8.0\RetroBat.MediaStore.AssemblyInfoInputs.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\obj\Debug\net8.0\RetroBat.MediaStore.AssemblyInfo.cs
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\obj\Debug\net8.0\RetroBat.MediaStore.csproj.CoreCompileInputs.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\obj\Debug\net8.0\RetroBat.E3EC762B.Up2Date
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\obj\Debug\net8.0\RetroBat.MediaStore.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\obj\Debug\net8.0\refint\RetroBat.MediaStore.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\obj\Debug\net8.0\RetroBat.MediaStore.pdb
+C:\RetroBat\plugins\APIExpose\src\RetroBat.MediaStore\obj\Debug\net8.0\ref\RetroBat.MediaStore.dll

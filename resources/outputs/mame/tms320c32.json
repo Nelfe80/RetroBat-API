@@ -1,0 +1,11 @@
+{
+  "rom": "tms320c32",
+  "game_context": {
+    "class": "",
+    "machine": "",
+    "input": ""
+  },
+  "inputs": [],
+  "outputs": [],
+  "mappings": []
+}

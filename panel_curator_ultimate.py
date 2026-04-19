@@ -1,0 +1,5540 @@
+import os
+import re
+import json
+import copy
+import configparser
+import subprocess
+import xml.etree.ElementTree as ET
+import tkinter as tk
+from tkinter import ttk, messagebox
+from PIL import Image, ImageTk
+
+
+# ============================================================
+# PATHS
+# ============================================================
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RESOURCES_DIR = os.path.join(BASE_DIR, "resources")
+
+ROMS_DIR = r"E:\RetroBat\roms\mame"
+MAME_EXE = r"E:\RetroBat\emulators\mame\mame.exe"
+PANEL_DIR = r"E:\myrient\mame-cpanel"
+RESOURCE_CPANEL_DIR = os.path.join(RESOURCES_DIR, "artwork", "cpanel")
+MYRIENT_CABINETS_DIR = r"E:\myrient\mame-cabinets"
+CONTROLS_INI = os.path.join(RESOURCES_DIR, "controls", "controls.ini")
+COLORS_INI = os.path.join(RESOURCES_DIR, "colors", "colors.ini")
+MAME_CFG_DIR = r"E:\RetroBat\bios\mame\cfg"
+RETROARCH_REMAPS_DIR = r"E:\RetroBat\emulators\retroarch\config\remaps"
+RETROARCH_RMP_CORE_DIR = "MAME"
+MAME_OUTPUTS_DIR = os.path.join(RESOURCES_DIR, "outputs", "mame")
+SYSTEMS_PANEL_DIR = os.path.join(RESOURCES_DIR, "panels", "systems")
+ARCADE_LIP_DIR = os.path.join(RESOURCES_DIR, "panels", "mame")
+OUTPUT_DIR = os.path.join(BASE_DIR, "kpanels", "mame")
+SYSTEM_OUTPUT_DIR = os.path.join(BASE_DIR, "kpanels", "systems")
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(SYSTEM_OUTPUT_DIR, exist_ok=True)
+
+ROM_EXTS = {".zip", ".7z", ".chd", ".cue", ".bin", ".iso", ".rom"}
+
+
+# ============================================================
+# CONVENTIONS
+# ============================================================
+
+PANEL_CONVENTION = "retrobat_standard"
+
+SLOT_MAP = {
+    "1": {"retrobat_button": "A", "retropad_id": 8, "libretro_button": "a", "fbneo_button": "a"},
+    "2": {"retrobat_button": "B", "retropad_id": 0, "libretro_button": "b", "fbneo_button": "b"},
+    "3": {"retrobat_button": "X", "retropad_id": 9, "libretro_button": "x", "fbneo_button": "x"},
+    "4": {"retrobat_button": "Y", "retropad_id": 1, "libretro_button": "y", "fbneo_button": "y"},
+    "5": {"retrobat_button": "L1", "retropad_id": 10, "libretro_button": "leftshoulder", "fbneo_button": "leftshoulder"},
+    "6": {"retrobat_button": "R1", "retropad_id": 11, "libretro_button": "rightshoulder", "fbneo_button": "rightshoulder"},
+    "7": {"retrobat_button": "L2", "retropad_id": 12, "libretro_button": "lefttrigger", "fbneo_button": "lefttrigger"},
+    "8": {"retrobat_button": "R2", "retropad_id": 13, "libretro_button": "righttrigger", "fbneo_button": "righttrigger"},
+}
+
+SYSTEM_SLOT_MAP = {
+    "start": {"retrobat_button": "START", "retropad_id": 3, "libretro_button": "start", "fbneo_button": "start"},
+    "coin": {"retrobat_button": "SELECT", "retropad_id": 2, "libretro_button": "select", "fbneo_button": "back"},
+}
+
+JOYSTICK_DIRECTION_MAP = {
+    "up": {"retrobat_button": "UP", "retropad_id": 4, "libretro_button": "up", "fbneo_button": "up"},
+    "down": {"retrobat_button": "DOWN", "retropad_id": 5, "libretro_button": "down", "fbneo_button": "down"},
+    "left": {"retrobat_button": "LEFT", "retropad_id": 6, "libretro_button": "left", "fbneo_button": "left"},
+    "right": {"retrobat_button": "RIGHT", "retropad_id": 7, "libretro_button": "right", "fbneo_button": "right"},
+}
+
+MAME_SLOT_KEYCODES = {
+    "1": "KEYCODE_LCONTROL",
+    "2": "KEYCODE_LALT",
+    "3": "KEYCODE_SPACE",
+    "4": "KEYCODE_LSHIFT",
+    "5": "KEYCODE_Z",
+    "6": "KEYCODE_X",
+    "7": "KEYCODE_C",
+    "8": "KEYCODE_V",
+}
+
+MAME_SLOT_JOYCODES = {
+    "1": "JOYCODE_{player}_BUTTON1",
+    "2": "JOYCODE_{player}_BUTTON2",
+    "3": "JOYCODE_{player}_BUTTON3",
+    "4": "JOYCODE_{player}_BUTTON4",
+    "5": "JOYCODE_{player}_BUTTON5",
+    "6": "JOYCODE_{player}_BUTTON6",
+    "7": "JOYCODE_{player}_BUTTON7",
+    "8": "JOYCODE_{player}_BUTTON8",
+}
+
+MAME_SYSTEM_KEYCODES = {
+    "start": "KEYCODE_1",
+    "select": "KEYCODE_2",
+    "coin": "KEYCODE_5",
+}
+
+MAME_SYSTEM_JOYCODES = {
+    "start": "JOYCODE_{player}_BUTTON12",
+    "select": "JOYCODE_{player}_BUTTON12",
+    "coin": "JOYCODE_{player}_BUTTON11",
+}
+
+MAME_JOYSTICK_KEYCODES = {
+    "up": "KEYCODE_UP",
+    "down": "KEYCODE_DOWN",
+    "left": "KEYCODE_LEFT",
+    "right": "KEYCODE_RIGHT",
+    "up_left": "KEYCODE_UP KEYCODE_LEFT",
+    "up_right": "KEYCODE_UP KEYCODE_RIGHT",
+    "down_left": "KEYCODE_DOWN KEYCODE_LEFT",
+    "down_right": "KEYCODE_DOWN KEYCODE_RIGHT",
+}
+
+MAME_JOYSTICK_JOYCODES = {
+    "up": "JOYCODE_{player}_HAT1UP OR JOYCODE_{player}_YAXIS_UP_SWITCH",
+    "down": "JOYCODE_{player}_HAT1DOWN OR JOYCODE_{player}_YAXIS_DOWN_SWITCH",
+    "left": "JOYCODE_{player}_HAT1LEFT OR JOYCODE_{player}_XAXIS_LEFT_SWITCH",
+    "right": "JOYCODE_{player}_HAT1RIGHT OR JOYCODE_{player}_XAXIS_RIGHT_SWITCH",
+    "up_left": (
+        "JOYCODE_{player}_HAT1UP JOYCODE_{player}_HAT1LEFT OR "
+        "JOYCODE_{player}_YAXIS_UP_SWITCH JOYCODE_{player}_XAXIS_LEFT_SWITCH"
+    ),
+    "up_right": (
+        "JOYCODE_{player}_HAT1UP JOYCODE_{player}_HAT1RIGHT OR "
+        "JOYCODE_{player}_YAXIS_UP_SWITCH JOYCODE_{player}_XAXIS_RIGHT_SWITCH"
+    ),
+    "down_left": (
+        "JOYCODE_{player}_HAT1DOWN JOYCODE_{player}_HAT1LEFT OR "
+        "JOYCODE_{player}_YAXIS_DOWN_SWITCH JOYCODE_{player}_XAXIS_LEFT_SWITCH"
+    ),
+    "down_right": (
+        "JOYCODE_{player}_HAT1DOWN JOYCODE_{player}_HAT1RIGHT OR "
+        "JOYCODE_{player}_YAXIS_DOWN_SWITCH JOYCODE_{player}_XAXIS_RIGHT_SWITCH"
+    ),
+}
+
+LIBRETRO_ARCADE_BUTTON_KEYS = {
+    1: "a",
+    2: "b",
+    3: "x",
+    4: "y",
+    5: "l",
+    6: "r",
+    7: "l2",
+    8: "r2",
+}
+
+LIBRETRO_SYSTEM_BUTTON_KEYS = {
+    "start": "start",
+    "select": "select",
+    "coin": "select",
+}
+
+LIBRETRO_DIRECTION_BUTTON_KEYS = {
+    "up": "up",
+    "down": "down",
+    "left": "left",
+    "right": "right",
+}
+
+LIBRETRO_RMP_BUTTON_KEY_ORDER = ["a", "b", "l", "l2", "r", "r2", "x", "y"]
+
+RMP_STATIC_LINES = [
+    'input_turbo_allow_dpad = "false"',
+    'input_turbo_bind = "-1"',
+    'input_turbo_button = "0"',
+    'input_turbo_duty_cycle = "0"',
+    'input_turbo_enable = "false"',
+    'input_turbo_mode = "0"',
+    'input_turbo_period = "6"',
+]
+
+GENERIC_JOYSTICK_PORT_BLOCKS = {"model2"}
+
+ANALOG_INPUT_TYPES = {
+    "PADDLE",
+    "PADDLE_V",
+    "PEDAL",
+    "PEDAL2",
+    "PEDAL3",
+    "DIAL",
+    "DIAL_V",
+    "TRACKBALL_X",
+    "TRACKBALL_Y",
+    "AD_STICK_X",
+    "AD_STICK_Y",
+    "AD_STICK_Z",
+    "LIGHTGUN_X",
+    "LIGHTGUN_Y",
+}
+
+LAYOUTS = ("2-Button", "4-Button", "6-Button", "8-Button")
+
+JOYSTICK_PANEL_DIRECTIONS = (
+    ("up_left", "UL"),
+    ("up", "UP"),
+    ("up_right", "UR"),
+    ("left", "LEFT"),
+    ("right", "RIGHT"),
+    ("down_left", "DL"),
+    ("down", "DOWN"),
+    ("down_right", "DR"),
+)
+
+JOYSTICK_PANEL_COORDS = {
+    "up_left": (95, 36),
+    "up": (170, 30),
+    "up_right": (245, 36),
+    "left": (75, 96),
+    "right": (265, 96),
+    "down_left": (95, 156),
+    "down": (170, 162),
+    "down_right": (245, 156),
+}
+
+LAYOUT_SLOTS = {
+    "2-Button": [1, 2],
+    "4-Button": [4, 3, 1, 2],
+    "6-Button": [4, 3, 5, 1, 2, 6],
+    "8-Button": [4, 3, 5, 7, 1, 2, 6, 8],
+}
+
+GRID_COORDS = {
+    "2-Button": {
+        1: (120, 125),
+        2: (300, 125),
+    },
+    "4-Button": {
+        4: (100, 68),
+        3: (300, 68),
+        1: (100, 162),
+        2: (300, 162),
+    },
+    "6-Button": {
+        4: (82, 68),
+        3: (210, 68),
+        5: (338, 68),
+        1: (82, 162),
+        2: (210, 162),
+        6: (338, 162),
+    },
+    "8-Button": {
+        4: (65, 68),
+        3: (170, 68),
+        5: (275, 68),
+        7: (380, 68),
+        1: (65, 162),
+        2: (170, 162),
+        6: (275, 162),
+        8: (380, 162),
+    },
+}
+
+COLOR_MAP = {
+    "Red": "#d23c3c",
+    "Blue": "#3b82f6",
+    "Cyan": "#06b6d4",
+    "Lime": "#84cc16",
+    "Green": "#22c55e",
+    "Yellow": "#eab308",
+    "Orange": "#f97316",
+    "White": "#f3f4f6",
+    "Black": "#111827",
+    "Pink": "#ec4899",
+    "Violet": "#8b5cf6",
+    "Purple": "#8b5cf6",
+    "Gray": "#9ca3af",
+    "Grey": "#9ca3af",
+}
+
+COLOR_CHOICES = list(COLOR_MAP.keys())
+COLOR_NAME_INDEX = {name.lower(): name for name in COLOR_MAP}
+
+DEVICE_TYPE_CHOICES = [
+    "unknown",
+    "joy2wayhorizontal",
+    "joy2wayvertical",
+    "joy4way",
+    "joy8way",
+    "double_joystick",
+    "double_joystick_4way",
+    "double_joystick_8way",
+    "double_joystick_2way_vertical",
+    "triggerstick",
+    "top_fire_joystick",
+    "rotary_joystick",
+    "mechanical_rotary_joystick",
+    "optical_rotary_joystick",
+    "trackball",
+    "spinner",
+    "dial",
+    "vertical_dial",
+    "paddle",
+    "vertical_paddle",
+    "wheel",
+    "pedal",
+    "pedal2",
+    "pedal3",
+    "analog_stick",
+    "yoke",
+    "throttle",
+    "shifter",
+    "turntable",
+    "roller",
+    "handlebar",
+    "gun",
+    "lightgun",
+    "mahjong_panel",
+    "hanafuda_panel",
+    "keypad",
+    "gambling_panel",
+    "poker_panel",
+    "slot_panel",
+    "misc",
+    "only_buttons",
+]
+
+PATTERN_LIBRARY = {
+    "line_1": {
+        "1": {"2-Button": 1, "4-Button": 1, "6-Button": 1, "8-Button": 1},
+    },
+    "line_2": {
+        "1": {"2-Button": 1, "4-Button": 1, "6-Button": 1, "8-Button": 1},
+        "2": {"2-Button": 2, "4-Button": 2, "6-Button": 2, "8-Button": 2},
+    },
+    "line_3_bottom": {
+        "1": {"6-Button": 1, "8-Button": 1},
+        "2": {"6-Button": 2, "8-Button": 2},
+        "3": {"6-Button": 6, "8-Button": 6},
+    },
+    "full_8": {
+        "1": {"2-Button": 1, "4-Button": 1, "6-Button": 1, "8-Button": 1},
+        "2": {"2-Button": 2, "4-Button": 2, "6-Button": 2, "8-Button": 2},
+        "3": {"4-Button": 3, "6-Button": 3, "8-Button": 3},
+        "4": {"4-Button": 4, "6-Button": 4, "8-Button": 4},
+        "5": {"6-Button": 5, "8-Button": 5},
+        "6": {"6-Button": 6, "8-Button": 6},
+        "7": {"8-Button": 7},
+        "8": {"8-Button": 8},
+    },
+    "triangle_top1": {
+        "1": {"6-Button": 3, "8-Button": 3},
+        "2": {"6-Button": 1, "8-Button": 1},
+        "3": {"6-Button": 6, "8-Button": 6},
+    },
+    "square_4": {
+        "1": {"4-Button": 4, "6-Button": 4, "8-Button": 4},
+        "2": {"4-Button": 3, "6-Button": 3, "8-Button": 3},
+        "3": {"4-Button": 1, "6-Button": 1, "8-Button": 1},
+        "4": {"4-Button": 2, "6-Button": 2, "8-Button": 2},
+    },
+    "neo_4": {
+        "1": {"4-Button": 4, "6-Button": 1, "8-Button": 1},
+        "2": {"4-Button": 1, "6-Button": 4, "8-Button": 3},
+        "3": {"4-Button": 3, "6-Button": 3, "8-Button": 5},
+        "4": {"4-Button": 2, "6-Button": 5, "8-Button": 7},
+        "A": {"4-Button": 4, "6-Button": 1, "8-Button": 1},
+        "B": {"4-Button": 1, "6-Button": 4, "8-Button": 3},
+        "C": {"4-Button": 3, "6-Button": 3, "8-Button": 5},
+        "D": {"4-Button": 2, "6-Button": 5, "8-Button": 7},
+    },
+    "neo_3": {
+        "1": {"6-Button": 1, "8-Button": 1},
+        "2": {"6-Button": 2, "8-Button": 2},
+        "3": {"6-Button": 6, "8-Button": 6},
+        "A": {"6-Button": 1, "8-Button": 1},
+        "B": {"6-Button": 2, "8-Button": 2},
+        "C": {"6-Button": 6, "8-Button": 6},
+    },
+    "capcom_6_straight": {
+        "1": {"6-Button": 4, "8-Button": 4},
+        "2": {"6-Button": 3, "8-Button": 3},
+        "3": {"6-Button": 5, "8-Button": 5},
+        "4": {"6-Button": 1, "8-Button": 1},
+        "5": {"6-Button": 2, "8-Button": 2},
+        "6": {"6-Button": 6, "8-Button": 6},
+    },
+    "mk5_block": {
+        "HP": {"6-Button": 4, "8-Button": 4},
+        "BL": {"6-Button": 3, "8-Button": 5},
+        "HK": {"6-Button": 5, "8-Button": 7},
+        "LP": {"6-Button": 1, "8-Button": 2},
+        "LK": {"6-Button": 6, "8-Button": 8},
+    },
+    "mk6": {
+        "HP": {"6-Button": 4, "8-Button": 4},
+        "BL": {"6-Button": 3, "8-Button": 5},
+        "HK": {"6-Button": 5, "8-Button": 7},
+        "LP": {"6-Button": 1, "8-Button": 2},
+        "RN": {"6-Button": 2, "8-Button": 1},
+        "LK": {"6-Button": 6, "8-Button": 8},
+    },
+}
+
+PATTERN_CHOICES = list(PATTERN_LIBRARY.keys())
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def load_ini(path: str) -> configparser.ConfigParser:
+    if not os.path.exists(path):
+        raise RuntimeError(f"INI file not found: {path}")
+
+    last_error = None
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            cp = configparser.ConfigParser(
+                interpolation=None,
+                strict=False,
+                delimiters=("=",),
+                comment_prefixes=("#", ";"),
+                inline_comment_prefixes=None,
+                allow_no_value=True,
+            )
+            cp.optionxform = str
+
+            with open(path, "r", encoding=enc, errors="ignore") as f:
+                content = f.read()
+
+            content = content.replace("\x00", "").replace("\ufeff", "")
+
+            cleaned_lines = []
+            for line in content.splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    cleaned_lines.append("")
+                elif stripped.startswith("[") and stripped.endswith("]"):
+                    cleaned_lines.append(line)
+                elif stripped.startswith(";") or stripped.startswith("#"):
+                    cleaned_lines.append(line)
+                elif "=" in line:
+                    cleaned_lines.append(line)
+                else:
+                    cleaned_lines.append(";" + line)
+
+            cp.read_string("\n".join(cleaned_lines))
+            return cp
+        except Exception as e:
+            last_error = e
+
+        raise RuntimeError(f"Unable to read INI file: {path}\nLast error: {repr(last_error)}")
+
+
+def safe_get(section, key, default=""):
+    if section is None:
+        return default
+    try:
+        return section.get(key, fallback=default)
+    except Exception:
+        return default
+
+
+def list_roms():
+    roms = set()
+    if not os.path.isdir(ROMS_DIR):
+        return []
+
+    for name in os.listdir(ROMS_DIR):
+        full = os.path.join(ROMS_DIR, name)
+        if os.path.isdir(full):
+            continue
+        base, ext = os.path.splitext(name)
+        if ext.lower() in ROM_EXTS:
+            roms.add(base.lower())
+
+    roms = sorted(roms)
+    return roms
+
+
+def find_exact_image_in_dir(directory, rom, extensions=(".png",)):
+    if not os.path.isdir(directory):
+        return ""
+    for ext in extensions:
+        exact = os.path.join(directory, rom + ext)
+        if os.path.exists(exact):
+            return exact
+    return ""
+
+
+def find_fuzzy_image_in_dir(directory, rom, extensions=(".png",)):
+    if not os.path.isdir(directory):
+        return ""
+    candidates = []
+    prefix = rom.lower()
+    for name in os.listdir(directory):
+        base, ext = os.path.splitext(name)
+        if ext.lower() not in extensions:
+            continue
+        lower_base = base.lower()
+        if lower_base.startswith(prefix) or prefix.startswith(lower_base):
+            candidates.append(os.path.join(directory, name))
+
+    if not candidates:
+        return ""
+
+    return sorted(candidates, key=lambda p: (len(os.path.splitext(os.path.basename(p))[0]), p.lower()))[0]
+
+
+def find_panel_image(rom):
+    for directory in (PANEL_DIR, RESOURCE_CPANEL_DIR, MYRIENT_CABINETS_DIR):
+        path = find_exact_image_in_dir(directory, rom, extensions=(".png",))
+        if path:
+            return path
+    for directory in (PANEL_DIR, RESOURCE_CPANEL_DIR, MYRIENT_CABINETS_DIR):
+        path = find_fuzzy_image_in_dir(directory, rom, extensions=(".png",))
+        if path:
+            return path
+    return ""
+
+
+def color_to_hex(name):
+    raw = (name or "").strip()
+    return COLOR_MAP.get(raw) or COLOR_MAP.get(COLOR_NAME_INDEX.get(raw.lower(), ""), "#d1d5db")
+
+
+def canonical_color_name(name, default=""):
+    raw = (name or "").strip()
+    if not raw:
+        return default
+    return COLOR_NAME_INDEX.get(raw.lower(), raw)
+
+
+def mame_xml_indent(elem, level=0):
+    ET.indent(elem, space="    ", level=level)
+
+
+def mame_port_identity(mame):
+    if not isinstance(mame, dict):
+        return None
+    tag = canonical_mame_tag(mame.get("tag_raw") or mame.get("mame_tag") or mame.get("cfg_tag") or mame.get("tag"))
+    mtype = (mame.get("input_id") or mame.get("type") or mame.get("input") or "").strip()
+    mask_dec = mame.get("mask_dec")
+    defvalue_dec = mame.get("defvalue_dec")
+    if mask_dec is None:
+        mask_dec = parse_int_value(mame.get("mask"))
+    if defvalue_dec is None:
+        defvalue_dec = parse_int_value(mame.get("defvalue"))
+    if not tag or not mtype or mask_dec is None or defvalue_dec is None:
+        return None
+    return tag, mtype, int(mask_dec), int(defvalue_dec)
+
+
+def mame_axis_sequence_type_for_direction(direction):
+    if direction in {"left", "up", "up_left", "down_left"}:
+        return "decrement"
+    if direction in {"right", "down", "up_right", "down_right"}:
+        return "increment"
+    return "standard"
+
+
+def natural_sort_key(value):
+    return [
+        int(part) if part.isdigit() else part.lower()
+        for part in re.split(r"(\d+)", str(value or ""))
+    ]
+
+
+def output_sort_key(output):
+    if not isinstance(output, dict):
+        return natural_sort_key(output)
+    return natural_sort_key(output.get("name") or output.get("label") or output.get("function") or "")
+
+
+def normalize_control_type(raw):
+    t = (raw or "").lower()
+    if "doublejoy2wayv" in t or "double joystick 2-way vertical" in t:
+        return "double_joystick_2way_vertical"
+    if "doublejoy4way" in t or "double joystick 4-way" in t:
+        return "double_joystick_4way"
+    if "doublejoy8way" in t or "double joystick 8-way" in t:
+        return "double_joystick_8way"
+    if "doublejoy" in t:
+        return "double_joystick"
+    if "mechanical rotary" in t:
+        return "mechanical_rotary_joystick"
+    if "optical rotary" in t:
+        return "optical_rotary_joystick"
+    if "rotary" in t:
+        return "rotary_joystick"
+    if "trigger" in t:
+        return "triggerstick"
+    if "top fire" in t or "top-fire" in t:
+        return "top_fire_joystick"
+    if "4-way joystick" in t or "joy4way" in t:
+        return "joy4way"
+    if "8-way joystick" in t or "joy8way" in t:
+        return "joy8way"
+    if "2-way joystick (horizontal)" in t or ("joy2way" in t and ("left/right" in t or "horizontal" in t)):
+        return "joy2wayhorizontal"
+    if "2-way joystick (vertical)" in t or ("joy2way" in t and ("up/down" in t or "vertical" in t)):
+        return "joy2wayvertical"
+    if "trackball" in t:
+        return "trackball"
+    if "spinner" in t:
+        return "spinner"
+    if "vertical dial" in t or "dialv" in t or "dial v" in t:
+        return "vertical_dial"
+    if "dial" in t:
+        return "dial"
+    if "vertical paddle" in t or "paddlev" in t or "paddle v" in t:
+        return "vertical_paddle"
+    if "paddle" in t:
+        return "paddle"
+    if "wheel" in t:
+        return "wheel"
+    if "pedal3" in t or "pedal 3" in t:
+        return "pedal3"
+    if "pedal2" in t or "pedal 2" in t:
+        return "pedal2"
+    if "pedal" in t:
+        return "pedal"
+    if "yoke" in t:
+        return "yoke"
+    if "throttle" in t:
+        return "throttle"
+    if "shifter" in t or "gear" in t:
+        return "shifter"
+    if "turntable" in t:
+        return "turntable"
+    if "roller" in t:
+        return "roller"
+    if "handlebar" in t:
+        return "handlebar"
+    if "lightgun" in t or "light gun" in t:
+        return "lightgun"
+    if "gun" in t:
+        return "gun"
+    if "mahjong" in t:
+        return "mahjong_panel"
+    if "hanafuda" in t:
+        return "hanafuda_panel"
+    if "keypad" in t:
+        return "keypad"
+    if "gambling" in t:
+        return "gambling_panel"
+    if "poker" in t:
+        return "poker_panel"
+    if "slot" in t:
+        return "slot_panel"
+    if "flightstick" in t or "stick" in t:
+        return "analog_stick"
+    if "just buttons" in t or "trivia buttons" in t:
+        return "only_buttons"
+    return "unknown"
+
+
+def normalize_mk_role(function_name):
+    f = (function_name or "").strip().lower()
+    mapping = {
+        "high punch": "HP",
+        "low punch": "LP",
+        "high kick": "HK",
+        "low kick": "LK",
+        "block": "BL",
+        "run": "RN",
+        "hp": "HP",
+        "lp": "LP",
+        "hk": "HK",
+        "lk": "LK",
+        "bl": "BL",
+        "rn": "RN",
+    }
+    return mapping.get(f)
+
+
+def dec_to_hex4(v):
+    try:
+        return f"0x{int(v):04X}"
+    except Exception:
+        return ""
+
+
+def parse_int_value(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return int(text, 0)
+    except Exception:
+        return None
+
+
+def hex_value(value, width=4):
+    parsed = parse_int_value(value)
+    if parsed is None:
+        return ""
+    return f"0x{parsed:0{width}X}"
+
+
+def canonical_mame_tag(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text if text.startswith(":") else f":{text}"
+
+
+def layout_panel_slot_value(payload):
+    if not isinstance(payload, dict):
+        return None
+    if "panel_slots" in payload:
+        slots = payload.get("panel_slots")
+        if isinstance(slots, list):
+            clean = [slot for slot in slots if slot is not None]
+            if len(clean) > 1:
+                return clean
+            if len(clean) == 1:
+                return clean[0]
+        return None
+    return payload.get("panel_slot")
+
+
+def logical_name_for_button(function_name, index):
+    fn = (function_name or "").strip().upper()
+    if fn in {"A", "B", "C", "D"}:
+        return fn
+    return str(index)
+
+
+def infer_button_function_from_mame(mame_data, player):
+    label = (mame_data or {}).get("input_label", "") or ""
+    if label and "PORT_BIT" not in label.upper():
+        label = re.sub(rf"^P{player}\s+", "", label, flags=re.IGNORECASE).strip()
+        if label:
+            return label
+
+    input_function = (mame_data or {}).get("input_function", "") or ""
+    prefix = f"p{player}_"
+    if input_function.lower().startswith(prefix):
+        return input_function[len(prefix):].replace("_", " ").title()
+
+    return ""
+
+
+def canonical_direction_mame(player, direction):
+    return f"P{player}_{direction.upper()}"
+
+
+def direction_candidates(player, direction, function_name):
+    direction = (direction or "").upper()
+    candidates = [
+        f"P{player}_{direction}",
+        f"P{player}_JOYSTICK_{direction}",
+        f"JOYSTICK_{direction}",
+    ]
+    fn = normalize_function_to_action_token(function_name)
+    if fn:
+        candidates.extend([fn, f"P{player}_{fn}", f"P{player}_BUTTON_{fn}"])
+    return candidates
+
+
+def is_specific_joystick_input(entry):
+    entry = entry or {}
+    mame = entry.get("mame", {})
+    if entry.get("function"):
+        return True
+    if mame.get("type") or mame.get("tag") or mame.get("mask_dec") is not None:
+        return True
+    port_block = (mame.get("port_block") or "").strip().lower()
+    if port_block and port_block not in GENERIC_JOYSTICK_PORT_BLOCKS:
+        return True
+    return False
+
+
+def is_analog_input_entry(entry):
+    input_name = normalize_mame_token(entry.get("input", ""))
+    input_id = normalize_mame_token(entry.get("input_id", ""))
+    if input_name in ANALOG_INPUT_TYPES:
+        return True
+    return any(input_id.endswith("_" + token) for token in ANALOG_INPUT_TYPES)
+
+
+def analog_short_label(label, input_name):
+    text = (label or input_name or "").strip().upper()
+    mapping = {
+        "PADDLE": "PDL",
+        "PEDAL": "ACC",
+        "PEDAL2": "BRK",
+        "PEDAL3": "PD3",
+        "DIAL": "DIAL",
+        "TRACKBALL_X": "TBX",
+        "TRACKBALL_Y": "TBY",
+        "AD_STICK_X": "ASX",
+        "AD_STICK_Y": "ASY",
+        "LIGHTGUN_X": "LGX",
+        "LIGHTGUN_Y": "LGY",
+    }
+    token = normalize_mame_token(text)
+    return mapping.get(token, text[:3] or "AX")
+
+
+def analog_mame_candidates(player, entry):
+    input_id = entry.get("input_id", "")
+    input_name = entry.get("input", "")
+    candidates = [
+        input_id,
+        f"{input_id}_1" if input_id else "",
+        input_name,
+        f"P{player}_{input_name}_1" if input_name else "",
+        entry.get("input_function", ""),
+        entry.get("input_label", ""),
+    ]
+
+    match = re.match(r"^(.*?)(\d+)$", input_name or "")
+    if match:
+        base, suffix = match.groups()
+        candidates.extend([
+            f"P{player}_{base}_{suffix}",
+            f"{base}_{suffix}",
+        ])
+
+    match = re.match(r"^(P\d+_.*?)(\d+)$", input_id or "")
+    if match:
+        base, suffix = match.groups()
+        candidates.append(f"{base}_{suffix}")
+
+    return candidates
+
+
+def collect_analog_inputs(mame_output_data, mame_inputs, player):
+    axes = []
+    seen = set()
+    for entry in mame_output_data.get("inputs", []):
+        if entry.get("player") not in (None, player):
+            continue
+        if not is_analog_input_entry(entry):
+            continue
+
+        input_id = entry.get("input_id", "")
+        input_name = entry.get("input", "")
+        axis_id = input_id or f"P{player}_{input_name}"
+        if axis_id in seen:
+            continue
+        seen.add(axis_id)
+
+        mame = first_mame_match(
+            mame_inputs,
+            analog_mame_candidates(player, entry)
+        )
+        if not mame:
+            mame = dict(entry)
+
+        label = entry.get("input_label") or input_name or axis_id
+        function_name = entry.get("input_function") or normalize_function_to_action_token(label).lower()
+        axes.append({
+            "id": axis_id,
+            "input": input_name,
+            "label": label,
+            "function": function_name,
+            "short": analog_short_label(label, input_name),
+            "color": "Gray",
+            "output": output_for_mame_input(mame, mame_output_data.get("mappings", [])),
+            "mame": mame,
+            "physical_joystick": "",
+            "joystick": {"negative": "", "positive": ""},
+            "physical_axis": "",
+            "panel_joystick": None,
+            "slots_by_layout": {layout: None for layout in LAYOUTS},
+            "slots_by_polarity": {
+                "negative": {layout: None for layout in LAYOUTS},
+                "positive": {layout: None for layout in LAYOUTS},
+            },
+        })
+    return axes
+
+
+def analog_axis_device_color(axis, devices, fallback="Gray"):
+    input_name = normalize_mame_token(axis.get("input", ""))
+    function_name = normalize_function_to_action_token(axis.get("function", ""))
+
+    for dev in devices or []:
+        dev_type = normalize_mame_token(dev.get("type", ""))
+        raw = normalize_mame_token(dev.get("raw", ""))
+        codes = {normalize_mame_token(code) for code in dev.get("codes", [])}
+
+        is_paddle_device = dev_type in {"PADDLE", "VERTICAL_PADDLE"} or "VPADDLE" in codes or "PADDLE" in raw
+        is_pedal_device = dev_type.startswith("PEDAL") or "PEDAL" in raw
+        is_dial_device = "DIAL" in dev_type or "DIAL" in raw
+
+        if input_name in {"PEDAL", "PADDLE", "PADDLE_V"} and is_paddle_device:
+            return dev.get("color", fallback)
+        if input_name.startswith("PEDAL") and is_pedal_device:
+            return dev.get("color", fallback)
+        if input_name.startswith("DIAL") and is_dial_device:
+            return dev.get("color", fallback)
+        if function_name in {"THRUST", "INCREASE_THRUST", "DECREASE_THRUST"} and is_paddle_device:
+            return dev.get("color", fallback)
+
+    return fallback
+
+
+def canonical_start_candidates(player):
+    return [f"{player}_PLAYER_START", f"{player}_PLAYERS_START"]
+
+
+def canonical_coin_candidates(player):
+    return [f"COIN_{player}"]
+
+
+
+SPECIAL_FUNCTION_ALIASES = {
+    "JAB PUNCH": "JAB_PUNCH",
+    "PUNCH - JAB": "JAB_PUNCH",
+    "LIGHT PUNCH": "JAB_PUNCH",
+    "PUNCH - LIGHT": "JAB_PUNCH",
+    "PUNCH": "PUNCH",
+    "STRONG PUNCH": "STRONG_PUNCH",
+    "MIDDLE PUNCH": "STRONG_PUNCH",
+    "MEDIUM PUNCH": "STRONG_PUNCH",
+    "PUNCH - STRONG": "STRONG_PUNCH",
+    "PUNCH - MEDIUM": "STRONG_PUNCH",
+    "FIERCE PUNCH": "FIERCE_PUNCH",
+    "HEAVY PUNCH": "FIERCE_PUNCH",
+    "POWER PUNCH": "FIERCE_PUNCH",
+    "PUNCH - FIERCE": "FIERCE_PUNCH",
+    "PUNCH - HEAVY": "FIERCE_PUNCH",
+    "SHORT KICK": "SHORT_KICK",
+    "KICK - SHORT": "SHORT_KICK",
+    "LIGHT KICK": "SHORT_KICK",
+    "KICK - LIGHT": "SHORT_KICK",
+    "KICK": "KICK",
+    "FORWARD KICK": "FORWARD_KICK",
+    "STRONG KICK": "FORWARD_KICK",
+    "MIDDLE KICK": "FORWARD_KICK",
+    "MEDIUM KICK": "FORWARD_KICK",
+    "KICK - FORWARD": "FORWARD_KICK",
+    "KICK - STRONG": "FORWARD_KICK",
+    "KICK - MEDIUM": "FORWARD_KICK",
+    "ROUNDHOUSE KICK": "ROUNDHOUSE_KICK",
+    "FIERCE KICK": "ROUNDHOUSE_KICK",
+    "HEAVY KICK": "ROUNDHOUSE_KICK",
+    "POWER KICK": "ROUNDHOUSE_KICK",
+    "KICK - ROUNDHOUSE": "ROUNDHOUSE_KICK",
+    "KICK - HEAVY": "ROUNDHOUSE_KICK",
+    "HIGH PUNCH": "HIGH_PUNCH",
+    "LOW PUNCH": "LOW_PUNCH",
+    "HIGH KICK": "HIGH_KICK",
+    "LOW KICK": "LOW_KICK",
+    "BLOCK": "BLOCK",
+    "DEFENSE": "BLOCK",
+    "RUN": "RUN",
+    "A": "A",
+    "B": "B",
+    "C": "C",
+    "D": "D",
+}
+
+SPECIAL_BUTTON_ROOTS = {
+    "ACTION",
+    "AIM",
+    "ATTACK",
+    "BET",
+    "BLOCK",
+    "BOMB",
+    "BRAKE",
+    "COLLECT",
+    "DEFENSE",
+    "FIRE",
+    "FLAP",
+    "HORN",
+    "HYPERSPACE",
+    "INVISO",
+    "JUMP",
+    "KICK",
+    "MAGIC",
+    "MISSILE",
+    "MOVE",
+    "POWER",
+    "PUNCH",
+    "REVERSE",
+    "RUN",
+    "SELECT",
+    "SHOT",
+    "SMART_BOMB",
+    "SPELL",
+    "SWORD",
+    "THRUST",
+    "TRIGGER",
+    "VIEW",
+    "WEAPON",
+    "WHIP",
+}
+
+DIRECTION_SUFFIXES = {"UP", "DOWN", "LEFT", "RIGHT"}
+
+SPECIAL_PREFIXES = {
+    "DEFENDER",
+    "STARGATE",
+}
+
+CONFIG_PREFIX_BLACKLIST = (
+    "ATTRACT",
+    "BONUS",
+    "BOOKKEEPING",
+    "CABINET",
+    "CALIBRATE",
+    "CALIBRATION",
+    "COINAGE",
+    "CREDITS_",
+    "CREDIT_",
+    "DEBUG",
+    "DEMO",
+    "DIAG",
+    "DIAGNOSTIC",
+    "DIFFICULT",
+    "DIFFICULTY",
+    "DIP",
+    "DIPSW",
+    "DSW",
+    "EXTEND",
+    "EXTRA_",
+    "FREE_PLAY",
+    "GAME_",
+    "INITIAL_",
+    "INPUT_TEST",
+    "LANGUAGE",
+    "LEVEL_",
+    "LIVES",
+    "MAX_",
+    "MINIMUM_",
+    "MODE",
+    "MONITOR",
+    "NUMBER_OF_",
+    "OPTION",
+    "OUTPUT_TEST",
+    "PLAYER_",
+    "PLAY_TIME",
+    "PRICE_",
+    "SERVICE_MODE",
+    "SOUND_",
+    "SPECIAL_",
+    "SPRITE_",
+    "STAGE_",
+    "STARTING_",
+    "TEST",
+)
+
+CONFIG_EXACT_BLACKLIST = {
+    "BUTTONS",
+    "BUTTONS_LAYOUT",
+    "CONTROL",
+    "CONTROLS",
+    "CONTROLLER",
+    "CONTROLLER_TYPE",
+    "CONTROL_PANEL",
+    "CONTROL_TYPE",
+    "DISPLAY",
+    "GAME",
+    "GAMEPLAY",
+    "JOYSTICK",
+    "JOYSTICKS",
+    "LANGUAGE",
+    "MONITOR",
+    "NETWORK",
+    "OPTION",
+}
+
+MAIN_CONTROL_EXACT = {
+    "DIAL", "DIAL_V",
+    "POSITIONAL", "POSITIONAL_V",
+    "ACCELERATOR", "BRAKE",
+    "GAS_PEDAL", "STEERING_WHEEL",
+    "LIGHTGUN_X", "LIGHTGUN_Y",
+    "AD_STICK_X", "AD_STICK_Y", "AD_STICK_Z",
+    "TRACKBALL_X", "TRACKBALL_Y",
+    "MOUSE_X", "MOUSE_Y",
+    "PADDLE", "PADDLE_V",
+    "WHEEL",
+    "PEDAL", "PEDAL2",
+}
+
+SYSTEM_EXACT = {
+    "START", "START_1P", "START_2P", "START_ALL",
+    "COIN_1", "COIN_2", "COIN_3", "COIN_4",
+    "SERVICE", "TEST", "TILT", "CREDIT_SERVICE",
+}
+
+SYSTEM_PATTERNS = [
+    re.compile(r"^\d+_PLAYER_START$"),
+    re.compile(r"^\d+_PLAYERS_START$"),
+    re.compile(r"^(LEFT|RIGHT|TOP|BOTTOM)_\d+_PLAYER_START$"),
+    re.compile(r"^(LEFT|RIGHT|TOP|BOTTOM)_\d+_PLAYERS_START$"),
+    re.compile(r"^COIN_\d+$"),
+]
+
+LETTER_BUTTONS = ("A", "B", "C", "D")
+NEOGEO_BY_INDEX = {1: "A", 2: "B", 3: "C", 4: "D"}
+
+def inherited_button_function(controls_sec, player, index, default_value):
+    value = safe_get(controls_sec, f"P{player}_BUTTON{index}", "")
+    if value.strip():
+        return value
+
+    p1_value = safe_get(controls_sec, f"P1_BUTTON{index}", "")
+    if p1_value.strip():
+        return p1_value
+
+    return default_value
+
+
+def inherited_joystick_function(controls_sec, player, direction):
+    value = safe_get(controls_sec, f"P{player}_JOYSTICK_{direction}", "")
+    if value.strip():
+        return value
+
+    p1_value = safe_get(controls_sec, f"P1_JOYSTICK_{direction}", "")
+    if p1_value.strip():
+        return p1_value
+
+    return ""
+
+
+def inherited_controls_string(controls_sec, colors_sec, player):
+    value = safe_get(controls_sec, f"P{player}Controls", "")
+    if value.strip():
+        return value
+
+    p1_value = safe_get(controls_sec, "P1Controls", "")
+    if p1_value.strip():
+        return p1_value
+
+    return safe_get(colors_sec, "controls", "")
+
+
+def logical_name_for_button(function_name, index):
+    fn = (function_name or "").strip().upper()
+    canon = SPECIAL_FUNCTION_ALIASES.get(fn, fn)
+    if canon in {"A", "B", "C", "D"}:
+        return canon
+    return str(index)
+
+
+def canonical_direction_mame(player, direction):
+    return f"P{player}_{direction.upper()}"
+
+
+def canonical_start_candidates(player):
+    candidates = [
+        f"{player}_PLAYER_START",
+        f"{player}_PLAYERS_START",
+        f"START_{player}P",
+        f"START{player}",
+        f"LEFT_{player}_PLAYER_START",
+        f"RIGHT_{player}_PLAYER_START",
+        f"TOP_{player}_PLAYER_START",
+        f"BOTTOM_{player}_PLAYER_START",
+        f"LEFT_{player}_PLAYERS_START",
+        f"RIGHT_{player}_PLAYERS_START",
+        f"TOP_{player}_PLAYERS_START",
+        f"BOTTOM_{player}_PLAYERS_START",
+    ]
+    if player == 1:
+        candidates.append("START")
+    return candidates
+
+
+def canonical_select_candidates(player):
+    return [
+        f"SELECT{player}",
+        f"SELECT_{player}",
+        f"START{player + 1}",
+        f"{player}_PLAYER_SELECT",
+        "SELECT",
+        "SELECT_GAME",
+    ]
+
+
+def canonical_coin_candidates(player):
+    return [f"COIN_{player}", f"COIN{player}"]
+
+
+def normalize_mame_token(token):
+    token = (token or "").strip().upper()
+    token = token.replace("&AMP;", "&")
+    token = token.replace("-", "_")
+    token = token.replace(" ", "_")
+    token = token.replace("__", "_")
+    token = re.sub(r"_*\(.*?\)$", "", token)
+    token = token.strip("_/")
+
+    if "/" in token:
+        parts = [p.strip("_") for p in token.split("/") if p.strip("_")]
+        token = "/".join(parts)
+
+    return token
+
+
+def split_root_and_direction(token):
+    token = normalize_mame_token(token)
+    for direction in DIRECTION_SUFFIXES:
+        suffix = "_" + direction
+        if token.endswith(suffix):
+            base = token[:-len(suffix)]
+            if base:
+                return base, direction
+    return token, None
+
+
+def is_config_input(token):
+    t = normalize_mame_token(token)
+    if t in CONFIG_EXACT_BLACKLIST:
+        return True
+    return any(t.startswith(prefix) for prefix in CONFIG_PREFIX_BLACKLIST)
+
+
+def is_system_input(token):
+    t = normalize_mame_token(token)
+    if t in SYSTEM_EXACT:
+        return True
+    return any(rx.match(t) for rx in SYSTEM_PATTERNS)
+
+
+def is_main_control(token):
+    t = normalize_mame_token(token)
+    if t in MAIN_CONTROL_EXACT:
+        return True
+    if re.fullmatch(r"P\d+_(UP|DOWN|LEFT|RIGHT)", t):
+        return True
+    return False
+
+
+def normalize_function_to_action_token(function_name):
+    raw = (function_name or "").strip().upper()
+    canon = SPECIAL_FUNCTION_ALIASES.get(raw, raw)
+    canon = canon.replace(" / ", "_").replace("/", "_")
+    canon = canon.replace(" - ", "_").replace("-", "_")
+    canon = canon.replace("&", "_AND_")
+    canon = canon.replace("'", "")
+    canon = canon.replace(".", "")
+    canon = re.sub(r"\s+", "_", canon)
+    canon = re.sub(r"_+", "_", canon).strip("_")
+    return canon
+
+
+def function_candidate_tokens(function_name, logical_name, index):
+    tokens = []
+    fn = normalize_function_to_action_token(function_name)
+    ln = normalize_function_to_action_token(logical_name)
+
+    def add(value):
+        value = normalize_mame_token(value)
+        if value and value not in tokens:
+            tokens.append(value)
+
+    for value in (fn, ln):
+        if value:
+            add(value)
+
+    if fn in {"JAB_PUNCH", "STRONG_PUNCH", "FIERCE_PUNCH", "SHORT_KICK", "FORWARD_KICK", "ROUNDHOUSE_KICK",
+              "HIGH_PUNCH", "LOW_PUNCH", "HIGH_KICK", "LOW_KICK", "BLOCK", "RUN",
+              "PUNCH", "KICK", "FIRE", "JUMP", "BOMB", "THRUST", "SMART_BOMB",
+              "HYPERSPACE", "INVISO", "REVERSE", "MAGIC", "SPELL", "SWORD", "ATTACK",
+              "ACTION", "WEAPON", "SHOT", "TRIGGER", "MOVE", "AIM", "FLAP", "MISSILE"}:
+        add(fn)
+
+    if index in NEOGEO_BY_INDEX:
+        add(NEOGEO_BY_INDEX[index])
+
+    if fn in {"A", "B", "C", "D"}:
+        add(fn)
+
+    return tokens
+
+
+def canonical_button_candidates(player, index, logical_name, function_name):
+    out = []
+
+    def add(candidate):
+        if candidate:
+            out.append(candidate)
+
+    ln = normalize_function_to_action_token(logical_name)
+    fn = normalize_function_to_action_token(function_name)
+
+    prefer_function_match = bool(fn) and fn != f"BUTTON_{index}"
+
+    if not prefer_function_match:
+        add(f"P{player}_BUTTON_{index}")
+
+        if index <= 9:
+            add(f"P{player}_BUTTON{index}")
+
+    for token in function_candidate_tokens(function_name, logical_name, index):
+        add(f"P{player}_{token}")
+        add(f"P{player}_BUTTON_{token}")
+        add(f"P{player}_{token}_BUTTON")
+        add(token)
+
+        root, direction = split_root_and_direction(token)
+        if root in SPECIAL_BUTTON_ROOTS:
+            add(root)
+            if direction:
+                add(f"{root}_{direction}")
+            for prefix in SPECIAL_PREFIXES:
+                add(f"{prefix}/{token}")
+                add(f"{prefix}/{root}")
+            add(f"JOUST/P{player}/{token}")
+            add(f"JOUST/P{player}/{root}")
+            for side in ("LEFT", "RIGHT"):
+                add(f"SPLAT/P{player}/{side}/{token}")
+                add(f"SPLAT/P{player}/{side}/{root}")
+                if direction:
+                    add(f"SPLAT/P{player}/{side}/{root}_{direction}")
+
+    if prefer_function_match:
+        add(f"P{player}_BUTTON_{index}")
+
+        if index <= 9:
+            add(f"P{player}_BUTTON{index}")
+
+    if ln in LETTER_BUTTONS:
+        add(f"P{player}_{ln}")
+        add(f"P{player}_{ln}_BUTTON")
+        add(f"P{player}_BUTTON_{ln}")
+    if fn in LETTER_BUTTONS:
+        add(f"P{player}_{fn}")
+        add(f"P{player}_{fn}_BUTTON")
+        add(f"P{player}_BUTTON_{fn}")
+
+    if index in NEOGEO_BY_INDEX:
+        token = NEOGEO_BY_INDEX[index]
+        add(f"P{player}_{token}")
+        add(f"P{player}_{token}_BUTTON")
+        add(f"P{player}_BUTTON_{token}")
+
+    uniq = []
+    seen = set()
+    for x in out:
+        norm = normalize_mame_token(x)
+        if norm and norm not in seen:
+            uniq.append(x)
+            seen.add(norm)
+    return uniq
+
+
+def first_mame_match(mame_inputs, candidates):
+    fallback = None
+    def merged_with_fallback(match):
+        if fallback and match is not fallback:
+            return {**fallback, **match}
+        return match
+
+    for c in candidates:
+        if c in mame_inputs:
+            match = mame_inputs[c]
+            if match.get("type") or match.get("mask_dec") is not None:
+                return merged_with_fallback(match)
+            if fallback is None:
+                fallback = match
+
+    normalized_index = {}
+    for raw_key, value in mame_inputs.items():
+        normalized_index.setdefault(normalize_mame_token(raw_key), value)
+
+    for candidate in candidates:
+        match = normalized_index.get(normalize_mame_token(candidate))
+        if match:
+            if match.get("type") or match.get("mask_dec") is not None:
+                return merged_with_fallback(match)
+            if fallback is None:
+                fallback = match
+    return fallback or {}
+
+
+def parse_controls_segments(raw_controls):
+    segments = []
+    raw_controls = raw_controls or ""
+    if not raw_controls.strip():
+        return segments
+
+    parts = [p.strip() for p in raw_controls.split("|") if p.strip()]
+    for idx, part in enumerate(parts, start=1):
+        tokens = [t.strip() for t in part.split("+") if t.strip()]
+        label = tokens[0] if tokens else f"Device {idx}"
+        codes = tokens[1:] if len(tokens) > 1 else []
+        segments.append({
+            "id": f"D{idx}",
+            "label": label,
+            "type": normalize_control_type(part),
+            "raw": part,
+            "codes": codes,
+        })
+    return segments
+
+
+
+def parse_mame_inputs(rom):
+    result = {}
+    extend_path = os.path.join(MAME_CFG_DIR, f"{rom}_inputs_extend.cfg")
+    path = extend_path if os.path.exists(extend_path) else os.path.join(MAME_CFG_DIR, f"{rom}_inputs.cfg")
+    if not os.path.exists(path):
+        return result
+
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+    except Exception:
+        return result
+
+    for port in root.findall(".//port"):
+        mtype = (port.attrib.get("type", "") or "").strip()
+        if not mtype:
+            continue
+
+        tag_raw = canonical_mame_tag(port.attrib.get("tag", ""))
+        mask = port.attrib.get("mask", "")
+        defvalue = port.attrib.get("defvalue", "")
+        mask_dec = parse_int_value(mask)
+        defvalue_dec = parse_int_value(defvalue)
+
+        extend = {}
+        for key, value in port.attrib.items():
+            if not key.startswith("ext_"):
+                continue
+            clean_key = key[4:]
+            if clean_key in {"mask_int", "defvalue_int", "min", "max", "sensitivity", "keydelta", "runtime_type"}:
+                parsed = parse_int_value(value)
+                extend[clean_key] = parsed if parsed is not None else value
+            else:
+                extend[clean_key] = value
+
+        item = {
+            "type": mtype,
+            "normalized_type": normalize_mame_token(mtype),
+            "tag_raw": tag_raw,
+            "tag": tag_raw.lstrip(":"),
+            "mask_dec": mask_dec,
+            "mask_hex": hex_value(mask),
+            "defvalue_dec": defvalue_dec,
+            "defvalue_hex": hex_value(defvalue),
+        }
+        if extend:
+            item["extend"] = extend
+            item["input_id"] = extend.get("input_id", item.get("input_id", ""))
+            item["input_label"] = extend.get("label", item.get("input_label", ""))
+            item["input_function"] = extend.get("function", item.get("input_function", ""))
+            item["input"] = extend.get("input_id", item.get("input", mtype))
+            item["port_block"] = extend.get("port_block", item.get("port_block", ""))
+            if "ipt" in extend:
+                item["ipt"] = extend["ipt"]
+            if "runtime_tag" in extend:
+                item["runtime_tag"] = extend["runtime_tag"]
+            if "control_type" in extend:
+                item["control_type"] = extend["control_type"]
+            if "source" in extend:
+                item["source"] = extend["source"]
+        result[mtype] = item
+        for alias in (
+            item.get("input_id", ""),
+            item.get("input", ""),
+            item.get("ipt", ""),
+            item.get("input_label", ""),
+            item.get("input_function", ""),
+        ):
+            alias_norm = normalize_mame_token(alias)
+            if alias_norm and alias_norm not in result:
+                result[alias] = item
+
+    return result
+
+
+def normalize_output_input(entry):
+    out = dict(entry)
+    out["input_label"] = entry.get("input_label", entry.get("label", ""))
+    out["input_function"] = entry.get("input_function", entry.get("function", ""))
+    input_name = out.get("input") or out.get("input_id") or ""
+    tag_raw = canonical_mame_tag(out.get("cfg_tag") or out.get("mame_tag") or out.get("tag") or "")
+    out.setdefault("type", input_name)
+    out.setdefault("normalized_type", normalize_mame_token(input_name))
+    out["tag_raw"] = tag_raw
+    out["tag"] = tag_raw.lstrip(":")
+    out["mask_dec"] = out.get("mask_int", parse_int_value(out.get("mask")))
+    out["mask_hex"] = hex_value(out.get("mask_dec"))
+    out["defvalue_dec"] = out.get("defvalue_int", parse_int_value(out.get("defvalue")))
+    out["defvalue_hex"] = hex_value(out.get("defvalue_dec"))
+    out.setdefault("runtime_tag", canonical_mame_tag(out.get("mame_tag") or out.get("cfg_tag") or tag_raw))
+    out.setdefault("source", "outputs_mame")
+    return out
+
+
+def normalize_output_mapping(entry):
+    out = dict(entry)
+    out["input_label"] = entry.get("input_label", entry.get("label", ""))
+    out["input_function"] = entry.get("input_function", entry.get("function", ""))
+    out["output_label"] = entry.get("output_label", "")
+    out["output_function"] = entry.get("output_function", "")
+    return out
+
+
+def load_mame_output_data(rom):
+    path = os.path.join(MAME_OUTPUTS_DIR, f"{rom}.json")
+    if not os.path.exists(path):
+        return {
+            "source_file": "",
+            "inputs": [],
+            "outputs": [],
+            "mappings": [],
+            "stats": {},
+            "game_context": [],
+        }
+
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            raw = json.load(f)
+    except Exception:
+        return {
+            "source_file": "",
+            "inputs": [],
+            "outputs": [],
+            "mappings": [],
+            "stats": {},
+            "game_context": [],
+        }
+
+    outputs = []
+    for entry in raw.get("outputs", []):
+        if not isinstance(entry, dict):
+            continue
+        item = dict(entry)
+        item["value_type"] = item.get("value_type") or "unknown"
+        outputs.append(item)
+
+    return {
+        "source_file": raw.get("source_file", ""),
+        "inputs": [normalize_output_input(x) for x in raw.get("inputs", []) if isinstance(x, dict)],
+        "outputs": outputs,
+        "mappings": [normalize_output_mapping(x) for x in raw.get("mappings", []) if isinstance(x, dict)],
+        "stats": raw.get("stats", {}),
+        "game_context": raw.get("game_context", []),
+    }
+
+
+def merge_mame_input_indexes(port_inputs, output_inputs):
+    merged = {}
+    normalized_index = {}
+
+    def alias_keys(entry):
+        input_id = entry.get("input_id", "")
+        player_specific = bool(re.match(r"^P\d+_", normalize_mame_token(input_id)))
+        keys = [input_id]
+        if not player_specific:
+            keys.extend([
+                entry.get("input", ""),
+                entry.get("type", ""),
+                entry.get("ipt", ""),
+                entry.get("input_label", ""),
+                entry.get("input_function", ""),
+            ])
+        else:
+            player = entry.get("player")
+            try:
+                player = int(player) if player not in (None, "") else None
+            except Exception:
+                player = None
+            for source_key in ("input_label", "input_function", "label", "function"):
+                value = entry.get(source_key, "")
+                token = normalize_mame_token(value)
+                if not token:
+                    continue
+                keys.append(value)
+                if player is not None:
+                    keys.append(f"P{player}_{token}")
+        if input_id:
+            keys.append(input_id.replace("BUTTON", "BUTTON_"))
+            keys.append(input_id.replace("JOYSTICK_", ""))
+        return [key for key in keys if key]
+
+    def add_entry(key, entry, overwrite=False):
+        if not key:
+            return
+        norm = normalize_mame_token(key)
+        if not norm:
+            return
+        if norm in normalized_index and not overwrite:
+            return
+        merged[key] = entry
+        normalized_index[norm] = key
+
+    def merge_missing(target, fallback):
+        out = dict(target)
+        for key, value in fallback.items():
+            if key == "extend":
+                out.setdefault("cfg_extend", value)
+                continue
+            if key not in out or out.get(key) in (None, ""):
+                out[key] = value
+        return out
+
+    for entry in output_inputs or []:
+        if not isinstance(entry, dict):
+            continue
+        primary = entry.get("input_id") or entry.get("input") or entry.get("type")
+        if not primary:
+            continue
+        if primary in merged:
+            continue
+        merged[primary] = entry
+        normalized_index[normalize_mame_token(primary)] = primary
+        for key in alias_keys(entry):
+            add_entry(key, entry)
+
+    for key, entry in (port_inputs or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        target_key = None
+        for candidate in alias_keys(entry) + [key]:
+            norm = normalize_mame_token(candidate)
+            if norm in normalized_index:
+                target_key = normalized_index[norm]
+                break
+        if target_key:
+            combined = merge_missing(merged[target_key], entry)
+            merged[target_key] = combined
+            for alias in [target_key] + alias_keys(combined):
+                add_entry(alias, combined, overwrite=True)
+        else:
+            primary = entry.get("input_id") or key
+            merged[primary] = entry
+            normalized_index[normalize_mame_token(primary)] = primary
+            for alias in alias_keys(entry):
+                add_entry(alias, entry)
+
+    return merged
+
+
+def output_for_mame_input(mame_data, mappings):
+    if not mame_data:
+        return ""
+    input_id = normalize_mame_token(mame_data.get("input_id", ""))
+    input_name = normalize_mame_token(mame_data.get("input", ""))
+    type_name = normalize_mame_token(mame_data.get("type", ""))
+    normalized_type = normalize_mame_token(mame_data.get("normalized_type", ""))
+    player = mame_data.get("player")
+    try:
+        player = int(player) if player not in (None, "") else None
+    except Exception:
+        player = None
+
+    def mapping_player(mapping):
+        try:
+            value = mapping.get("player")
+            return int(value) if value not in (None, "") else None
+        except Exception:
+            return None
+
+    exact_ids = {input_id}
+    exact_ids.discard("")
+    fallback_ids = {input_name, type_name, normalized_type}
+    fallback_ids.discard("")
+
+    for mapping in mappings or []:
+        mapping_ids = {
+            normalize_mame_token(mapping.get("input_id", "")),
+        }
+        mapping_ids.discard("")
+        if exact_ids.intersection(mapping_ids) and (mapping_player(mapping) in (None, player) or player is None):
+            return mapping.get("output", "")
+
+    for mapping in mappings or []:
+        mp = mapping_player(mapping)
+        if player is not None and mp not in (None, player):
+            continue
+        mapping_ids = {
+            normalize_mame_token(mapping.get("input_id", "")),
+            normalize_mame_token(mapping.get("input", "")),
+        }
+        mapping_ids.discard("")
+        if fallback_ids.intersection(mapping_ids):
+            return mapping.get("output", "")
+    return ""
+
+
+def output_for_system_input(system_key, mame_data, mame_output_data):
+    outputs = mame_output_data.get("outputs", [])
+    if system_key == "select":
+        for out in outputs:
+            haystack = " ".join([
+                str(out.get("name", "")),
+                str(out.get("function", "")),
+                str(out.get("comment", "")),
+            ]).lower()
+            if "start" in haystack and "select" in haystack:
+                return out.get("name", "")
+    return output_for_mame_input(mame_data, mame_output_data.get("mappings", []))
+
+
+def is_select_game_mame_input(mame_data):
+    if not mame_data:
+        return False
+    haystack = " ".join([
+        str(mame_data.get("input_label", "")),
+        str(mame_data.get("input_function", "")),
+        str(mame_data.get("comment", "")),
+        str(mame_data.get("extend", {}).get("label", "")),
+        str(mame_data.get("extend", {}).get("function", "")),
+        str(mame_data.get("extend", {}).get("runtime_label", "")),
+    ]).lower()
+    return "select" in haystack
+
+
+def empty_events():
+    return {
+        "lamps": [],
+        "groups": [],
+        "events": [],
+        "lifecycle": [],
+        "sequences": [],
+    }
+
+
+def parse_lip_file(path):
+    events = empty_events()
+    if not os.path.exists(path):
+        return events
+    try:
+        root = ET.parse(path).getroot()
+    except Exception:
+        return events
+
+    for lamp in root.findall(".//lamp"):
+        item = dict(lamp.attrib)
+        if "pressAction" in item:
+            item["press_action"] = item.pop("pressAction")
+        events["lamps"].append(item)
+
+    for group in root.findall(".//group"):
+        item = dict(group.attrib)
+        members = []
+        for child in list(group):
+            if child.tag.lower() in {"member", "button"}:
+                members.append(child.attrib.get("button") or child.attrib.get("id") or (child.text or "").strip())
+        if members:
+            item["members"] = [m for m in members if m]
+        events["groups"].append(item)
+
+    for event in root.findall(".//event"):
+        item = dict(event.attrib)
+        macros = []
+        for child in list(event):
+            macros.append({"type": child.tag, **dict(child.attrib)})
+        if macros:
+            item["macros"] = macros
+        events["events"].append(item)
+
+    for node in root.findall(".//lifecycle/*"):
+        item = {"event": node.tag}
+        if node.attrib:
+            item.update(node.attrib)
+        macros = [{"type": child.tag, **dict(child.attrib)} for child in list(node)]
+        if macros:
+            item["macros"] = macros
+        events["lifecycle"].append(item)
+
+    for seq in root.findall(".//sequence"):
+        item = dict(seq.attrib)
+        steps = []
+        macros = []
+        for child in list(seq):
+            if child.tag.lower() == "step":
+                steps.append(dict(child.attrib))
+            else:
+                macros.append({"type": child.tag, **dict(child.attrib)})
+        if steps:
+            item["steps"] = steps
+        if macros:
+            item["macros"] = macros
+        events["sequences"].append(item)
+
+    return events
+
+
+def load_arcade_events(rom):
+    return parse_lip_file(os.path.join(ARCADE_LIP_DIR, f"{rom}.lip"))
+
+
+def parse_optional_int(value):
+    try:
+        text = str(value).strip()
+        return int(text) if text else None
+    except Exception:
+        return None
+
+
+def layout_key(layout_type, layout_name):
+    if layout_name:
+        return f"{layout_type}:{layout_name}"
+    return layout_type
+
+
+def parse_system_template_xml(path):
+    try:
+        root = ET.parse(path).getroot()
+    except Exception:
+        return None
+
+    system = root.attrib.get("name") or os.path.splitext(os.path.basename(path))[0]
+    layouts = {}
+    for layout in root.findall(".//layout"):
+        layout_type = layout.attrib.get("type", "")
+        layout_name = layout.attrib.get("name", "")
+        key = layout_key(layout_type, layout_name)
+        joystick = layout.find("joystick")
+
+        buttons = {}
+        for button in layout.findall("button"):
+            button_id = button.attrib.get("id", "")
+            if not button_id:
+                continue
+            item = {
+                "physical": parse_optional_int(button.attrib.get("physical")),
+                "controller": button.attrib.get("controller", ""),
+                "retropad_id": parse_optional_int(button.attrib.get("retropad_id")),
+                "game_button": button.attrib.get("gameButton", ""),
+                "function": button.attrib.get("function", ""),
+                "color": button.attrib.get("color", ""),
+            }
+            if str(button_id).isdigit():
+                item["panel_slot"] = int(button_id)
+            buttons[button_id] = item
+
+        layouts[key] = {
+            "type": layout_type,
+            "name": layout_name or None,
+            "panel_buttons": parse_optional_int(layout.attrib.get("panelButtons")),
+            "retropad_device": layout.attrib.get("retropad_device") or None,
+            "retropad_analog_dpad_mode": layout.attrib.get("retropad_analog_dpad_mode") or None,
+            "joystick": dict(joystick.attrib) if joystick is not None else {},
+            "buttons": buttons,
+        }
+
+    return {
+        "schema": "api_expose.panel.v1",
+        "scope": "system",
+        "system": system,
+        "panel": {
+            "convention": PANEL_CONVENTION,
+            "slots": SLOT_MAP,
+            "system_slots": SYSTEM_SLOT_MAP,
+        },
+        "system_template": {
+            "layouts": layouts,
+        },
+        "events": parse_lip_file(os.path.join(SYSTEMS_PANEL_DIR, f"{system}.lip")),
+    }
+
+
+def export_system_templates():
+    if not os.path.isdir(SYSTEMS_PANEL_DIR):
+        return 0
+
+    count = 0
+    for name in sorted(os.listdir(SYSTEMS_PANEL_DIR)):
+        if not name.lower().endswith(".xml"):
+            continue
+        data = parse_system_template_xml(os.path.join(SYSTEMS_PANEL_DIR, name))
+        if not data:
+            continue
+        out_path = os.path.join(SYSTEM_OUTPUT_DIR, f"{data['system']}.json")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        count += 1
+    return count
+
+
+def guess_pattern(button_functions, num_buttons):
+    upper = [(x or "").strip().upper() for x in button_functions]
+    mk_roles = [normalize_mk_role(x) for x in button_functions if x]
+    mk_roles = [x for x in mk_roles if x]
+
+    if {"HP", "LP", "HK", "LK", "BL", "RN"}.issubset(set(mk_roles)):
+        return "mk6"
+    if {"HP", "LP", "HK", "LK", "BL"}.issubset(set(mk_roles)):
+        return "mk5_block"
+    if upper[:4] == ["A", "B", "C", "D"]:
+        return "neo_4"
+    if upper[:3] == ["A", "B", "C"]:
+        return "neo_3"
+
+    try:
+        n = int(num_buttons)
+    except Exception:
+        n = len(button_functions)
+
+    if n == 1:
+        return "line_1"
+    if n == 2:
+        return "line_2"
+    if n == 3:
+        return "line_3_bottom"
+    if n == 4:
+        return "neo_4"
+    if n == 6:
+        return "capcom_6_straight"
+    if n >= 7:
+        return "full_8"
+
+    return "line_3_bottom"
+
+
+def build_common_button_vars(players_data):
+    max_buttons = 0
+    for pdata in players_data:
+        max_buttons = max(max_buttons, len(pdata["buttons"]))
+
+    common = {}
+    for idx in range(1, max_buttons + 1):
+        logical_name = ""
+        function = ""
+        for pdata in players_data:
+            if idx <= len(pdata["buttons"]):
+                b = pdata["buttons"][idx - 1]
+                logical_name = b["logical_name"]
+                function = b["function"]
+                break
+
+        common[str(idx)] = {
+            "logical_name": logical_name,
+            "function": function,
+        }
+    return common
+
+
+# ============================================================
+# REPOSITORY
+# ============================================================
+
+class DataRepository:
+    def __init__(self):
+        self.controls = load_ini(CONTROLS_INI)
+        self.colors = load_ini(COLORS_INI)
+
+    def get_game_data(self, rom):
+        controls_sec = self.controls[rom] if rom in self.controls else None
+        colors_sec = self.colors[rom] if rom in self.colors else None
+        mame_output_data = load_mame_output_data(rom)
+        mame_inputs = merge_mame_input_indexes(parse_mame_inputs(rom), mame_output_data.get("inputs", []))
+
+        game_name = safe_get(controls_sec, "gamename", rom)
+
+        players = int(safe_get(controls_sec, "numPlayers", safe_get(colors_sec, "numPlayers", "1")) or "1")
+        alternating = int(safe_get(controls_sec, "alternating", "0") or "0")
+        mirrored = int(safe_get(controls_sec, "mirrored", "0") or "0")
+        tilt = int(safe_get(controls_sec, "tilt", "0") or "0")
+        cocktail = int(safe_get(controls_sec, "cocktail", "0") or "0")
+        uses_service = int(safe_get(controls_sec, "usesService", "0") or "0")
+        misc_details = safe_get(controls_sec, "miscDetails", "")
+
+        players_data = []
+
+        for player in range(1, players + 1):
+            raw_controls = inherited_controls_string(controls_sec, colors_sec, player)
+            joystick_color = safe_get(colors_sec, f"P{player}_JOYSTICK", "")
+            start_color = safe_get(colors_sec, f"P{player}_START", "")
+            coin_color = safe_get(colors_sec, f"P{player}_COIN", "")
+            num_buttons = safe_get(controls_sec, f"P{player}NumButtons", safe_get(colors_sec, "numButtons", "0"))
+
+            try:
+                nbtn = int(num_buttons)
+            except Exception:
+                nbtn = 0
+
+            devices = parse_controls_segments(raw_controls)
+            if not devices:
+                devices = [{
+                    "id": "D1",
+                    "label": "Device",
+                    "type": normalize_control_type(raw_controls),
+                    "raw": raw_controls,
+                    "codes": [],
+                }]
+
+            device_inputs = {}
+            for direction in ("up", "down", "left", "right"):
+                function_name = inherited_joystick_function(controls_sec, player, direction.upper())
+                mame_data = first_mame_match(
+                    mame_inputs,
+                    direction_candidates(player, direction, function_name)
+                )
+                device_inputs[direction] = {
+                    "function": function_name,
+                    "color": joystick_color,
+                    "output": output_for_mame_input(mame_data, mame_output_data.get("mappings", [])),
+                    "mame": mame_data,
+                    "panel_joystick": None,
+                    "slots_by_layout": {layout: None for layout in LAYOUTS},
+                }
+
+            devices_export = []
+            first_device = True
+            for dev in devices:
+                entry = {
+                    "id": dev["id"],
+                    "label": dev["label"],
+                    "type": dev["type"],
+                    "raw": dev.get("raw", ""),
+                    "codes": dev.get("codes", []),
+                    "color": joystick_color,
+                }
+                entry["inputs"] = device_inputs if first_device else {}
+                first_device = False
+                devices_export.append(entry)
+
+            button_functions = []
+            buttons = []
+
+            for i in range(1, nbtn + 1):
+                function_name = inherited_button_function(controls_sec, player, i, f"Button {i}")
+                color_name = safe_get(colors_sec, f"P{player}_BUTTON{i}", "")
+                logical_name = logical_name_for_button(function_name, i)
+
+                mame_data = first_mame_match(
+                    mame_inputs,
+                    canonical_button_candidates(player, i, logical_name, function_name)
+                )
+                if function_name == f"Button {i}":
+                    inferred_function = infer_button_function_from_mame(mame_data, player)
+                    if inferred_function:
+                        function_name = inferred_function
+                        logical_name = logical_name_for_button(function_name, i)
+
+                buttons.append({
+                    "game_button": i,
+                    "logical_name": logical_name,
+                    "function": function_name,
+                    "color": color_name,
+                    "output": output_for_mame_input(mame_data, mame_output_data.get("mappings", [])),
+                    "mame": mame_data,
+                    "panel_joystick": None,
+                    "slots_by_layout": {layout: None for layout in LAYOUTS},
+                })
+                button_functions.append(function_name)
+
+            axes = collect_analog_inputs(mame_output_data, mame_inputs, player)
+            for axis in axes:
+                axis["color"] = analog_axis_device_color(axis, devices_export, axis.get("color", "Gray"))
+
+            start_mame = first_mame_match(mame_inputs, canonical_start_candidates(player))
+            select_mame = first_mame_match(mame_inputs, canonical_select_candidates(player))
+            coin_mame = first_mame_match(mame_inputs, canonical_coin_candidates(player))
+            has_select_game = is_select_game_mame_input(select_mame)
+            system_inputs = {
+                "start": {
+                    "label": "Start",
+                    "color": start_color,
+                    "output": output_for_system_input("select" if has_select_game else "start", start_mame, mame_output_data),
+                    "mame": start_mame,
+                    "panel_joystick": None,
+                    "slots_by_layout": {layout: None for layout in LAYOUTS},
+                },
+                "coin": {
+                    "label": "Coin",
+                    "color": coin_color,
+                    "output": output_for_system_input("coin", coin_mame, mame_output_data),
+                    "mame": coin_mame,
+                    "panel_joystick": None,
+                    "slots_by_layout": {layout: None for layout in LAYOUTS},
+                }
+            }
+            if has_select_game:
+                system_inputs["select"] = {
+                    "label": "Select",
+                    "color": start_color,
+                    "output": output_for_system_input("select", select_mame, mame_output_data),
+                    "mame": select_mame,
+                    "panel_joystick": None,
+                    "slots_by_layout": {layout: None for layout in LAYOUTS},
+                }
+
+            system_outputs = []
+            for out_idx, out in enumerate(mame_output_data.get("outputs", [])):
+                output_player = out.get("player")
+                try:
+                    output_player = int(output_player) if output_player not in (None, "") else None
+                except Exception:
+                    output_player = None
+                if output_player not in (None, player):
+                    continue
+                output_entry = copy.deepcopy(out)
+                output_name = output_entry.get("name") or f"output_{out_idx + 1}"
+                output_entry.setdefault("id", f"{output_name}#{out_idx + 1}")
+                output_entry.setdefault("label", output_entry.get("function") or output_name)
+                output_entry.setdefault("color", "Gray")
+                output_entry.setdefault("input_ref", "")
+                output_entry.setdefault("panel_joystick", None)
+                output_entry.setdefault("slots_by_layout", {layout: None for layout in LAYOUTS})
+                system_outputs.append(output_entry)
+            system_outputs.sort(key=output_sort_key)
+
+            players_data.append({
+                "player": player,
+                "devices": devices_export,
+                "system_inputs": system_inputs,
+                "buttons": buttons,
+                "axes": axes,
+                "mame_inputs_extra": [],
+                "system_outputs": system_outputs,
+                "output_choices": [""] + sorted({
+                    out.get("name", "")
+                    for out in system_outputs
+                    if out.get("name")
+                }, key=natural_sort_key),
+                "pattern": guess_pattern(button_functions, nbtn),
+            })
+
+        data = {
+            "system": rom,
+            "game_name": game_name,
+            "meta": {
+                "players": players,
+                "alternating": alternating,
+                "mirrored": mirrored,
+                "tilt": tilt,
+                "cocktail": cocktail,
+                "uses_service": uses_service,
+                "misc_details": misc_details,
+            },
+            "players_data": players_data,
+            "common_button_vars": build_common_button_vars(players_data),
+            "mame": mame_output_data,
+            "events": load_arcade_events(rom),
+        }
+
+        existing_path = os.path.join(OUTPUT_DIR, rom + ".json")
+        if os.path.exists(existing_path):
+            try:
+                with open(existing_path, "r", encoding="utf-8") as f:
+                    old = json.load(f)
+                self.merge_existing(data, old)
+            except Exception:
+                pass
+
+        return data
+
+    def merge_existing(self, data, old):
+        old_players = old.get("players", {})
+        for p in data["players_data"]:
+            pkey = str(p["player"])
+            old_p = old_players.get(pkey)
+            if not old_p:
+                continue
+
+            old_buttons = old_p.get("buttons", {})
+            old_layouts = old_p.get("layouts", {})
+            old_devices = old_p.get("devices", [])
+            old_sys = old_p.get("system_inputs", {})
+            old_outputs_raw = old_p.get("system_outputs", [])
+            if isinstance(old_outputs_raw, dict):
+                old_outputs = old_outputs_raw
+            else:
+                old_outputs = {
+                    (out.get("id") or out.get("name")): out
+                    for out in old_outputs_raw
+                    if isinstance(out, dict) and (out.get("id") or out.get("name"))
+                }
+            old_axes_raw = old_p.get("axes", [])
+            if isinstance(old_axes_raw, dict):
+                old_axes = old_axes_raw
+            else:
+                old_axes = {
+                    axis.get("id"): axis
+                    for axis in old_axes_raw
+                    if isinstance(axis, dict) and axis.get("id")
+                }
+
+            for i, dev in enumerate(p["devices"]):
+                if i < len(old_devices):
+                    dev["type"] = old_devices[i].get("type", dev["type"])
+                    dev["color"] = old_devices[i].get("color", dev["color"])
+                    old_inputs = old_devices[i].get("inputs", {})
+                    for direction, entry in dev.get("inputs", {}).items():
+                        old_entry = old_inputs.get(direction, {})
+                        entry["color"] = old_entry.get("color", entry.get("color", dev.get("color", "")))
+                        entry["output"] = old_entry.get("output", entry.get("output", ""))
+                        entry["panel_joystick"] = old_entry.get("panel_joystick", entry.get("panel_joystick"))
+                        old_entry_layouts = old_entry.get("layouts", {})
+                        for layout_name in LAYOUTS:
+                            old_layout = old_entry_layouts.get(layout_name, {})
+                            old_slot_value = layout_panel_slot_value(old_layout)
+                            if old_slot_value is not None:
+                                entry["slots_by_layout"][layout_name] = old_slot_value
+
+            if "start" in old_sys:
+                p["system_inputs"]["start"]["color"] = old_sys["start"].get("color", p["system_inputs"]["start"]["color"])
+                p["system_inputs"]["start"]["output"] = old_sys["start"].get("output", p["system_inputs"]["start"].get("output", ""))
+            if "coin" in old_sys:
+                p["system_inputs"]["coin"]["color"] = old_sys["coin"].get("color", p["system_inputs"]["coin"]["color"])
+                p["system_inputs"]["coin"]["output"] = old_sys["coin"].get("output", p["system_inputs"]["coin"].get("output", ""))
+            if "select" in old_sys and "select" in p["system_inputs"]:
+                p["system_inputs"]["select"]["color"] = old_sys["select"].get("color", p["system_inputs"]["select"]["color"])
+                p["system_inputs"]["select"]["output"] = old_sys["select"].get("output", p["system_inputs"]["select"].get("output", ""))
+            for key, entry in p["system_inputs"].items():
+                entry.setdefault("label", key.capitalize())
+                entry.setdefault("panel_joystick", None)
+                entry.setdefault("slots_by_layout", {layout: None for layout in LAYOUTS})
+                old_entry = old_sys.get(key, {})
+                if old_entry:
+                    entry["panel_joystick"] = old_entry.get("panel_joystick", entry.get("panel_joystick"))
+                    for layout_name in LAYOUTS:
+                        old_slot_value = layout_panel_slot_value(old_entry.get("layouts", {}).get(layout_name, {}))
+                        if old_slot_value is not None:
+                            entry["slots_by_layout"][layout_name] = old_slot_value
+                for layout_name in LAYOUTS:
+                    old_layout = old_layouts.get(layout_name, {})
+                    old_layout_system_inputs = old_layout.get("system_inputs", {})
+                    old_si = old_layout_system_inputs.get(key)
+                    old_slot_value = layout_panel_slot_value(old_si)
+                    if old_slot_value is not None:
+                        entry["slots_by_layout"][layout_name] = old_slot_value
+
+            for output in p.get("system_outputs", []):
+                output.setdefault("id", output.get("name") or "")
+                output.setdefault("label", output.get("function") or output.get("name") or output.get("id"))
+                output.setdefault("color", "Gray")
+                output.setdefault("input_ref", "")
+                output.setdefault("panel_joystick", None)
+                output.setdefault("slots_by_layout", {layout: None for layout in LAYOUTS})
+                old_output = old_outputs.get(output.get("id")) or old_outputs.get(output.get("name")) or {}
+                if old_output:
+                    output["label"] = old_output.get("label", output.get("label", ""))
+                    output["color"] = old_output.get("color", output.get("color", "Gray"))
+                    output["input_ref"] = old_output.get("input_ref", output.get("input_ref", ""))
+                    output["panel_joystick"] = old_output.get("panel_joystick", output.get("panel_joystick"))
+                    for layout_name in LAYOUTS:
+                        old_slot_value = layout_panel_slot_value(old_output.get("layouts", {}).get(layout_name, {}))
+                        if old_slot_value is not None:
+                            output["slots_by_layout"][layout_name] = old_slot_value
+                for layout_name in LAYOUTS:
+                    old_layout = old_layouts.get(layout_name, {})
+                    old_layout_outputs = old_layout.get("system_outputs", {})
+                    old_lo = old_layout_outputs.get(output.get("id")) or old_layout_outputs.get(output.get("name"))
+                    old_slot_value = layout_panel_slot_value(old_lo)
+                    if old_slot_value is not None:
+                        output["slots_by_layout"][layout_name] = old_slot_value
+
+            for layout_name in LAYOUTS:
+                if layout_name in old_layouts:
+                    p["pattern"] = old_layouts[layout_name].get("pattern", p["pattern"])
+                    break
+
+            for old_key, old_button in old_buttons.items():
+                if not isinstance(old_button, dict):
+                    continue
+                instance_id = old_button.get("instance_id") or (old_key if "#" in str(old_key) else "")
+                if not instance_id:
+                    continue
+                base_id = old_button.get("duplicate_of", old_button.get("game_button"))
+                try:
+                    base_id = int(base_id)
+                except Exception:
+                    continue
+                base_button = next((b for b in p["buttons"] if b["game_button"] == base_id), None)
+                if not base_button:
+                    continue
+                clone = copy.deepcopy(base_button)
+                clone["instance_id"] = str(instance_id)
+                clone["duplicate_of"] = old_button.get("duplicate_of", base_id)
+                clone["slots_by_layout"] = {layout: None for layout in LAYOUTS}
+                p["buttons"].append(clone)
+
+            for b in p["buttons"]:
+                ob = old_buttons.get(str(b.get("instance_id") or b["game_button"]))
+                if ob:
+                    b["logical_name"] = ob.get("logical_name", b["logical_name"])
+                    b["function"] = ob.get("function", b["function"])
+                    b["color"] = ob.get("color", b["color"])
+                    b["output"] = ob.get("output", b.get("output", ""))
+                    b["panel_joystick"] = ob.get("panel_joystick", b.get("panel_joystick"))
+
+                for layout_name in LAYOUTS:
+                    old_layout = old_layouts.get(layout_name, {})
+                    old_layout_buttons = old_layout.get("buttons", {})
+                    old_lb = old_layout_buttons.get(str(b.get("instance_id") or b["game_button"]))
+                    if old_lb:
+                        b["slots_by_layout"][layout_name] = layout_panel_slot_value(old_lb)
+
+            for axis in p.get("axes", []):
+                old_axis = old_axes.get(axis.get("id"), {})
+                if old_axis:
+                    axis["color"] = old_axis.get("color", axis.get("color", "Gray"))
+                    axis["output"] = old_axis.get("output", axis.get("output", ""))
+                    axis["panel_joystick"] = old_axis.get("panel_joystick", axis.get("panel_joystick"))
+                    axis["physical_joystick"] = old_axis.get("physical_joystick", axis.get("physical_joystick", ""))
+                    old_joystick = old_axis.get("joystick", {})
+                    if old_joystick:
+                        axis["joystick"] = {
+                            "negative": old_joystick.get("negative", axis.get("joystick", {}).get("negative", "")),
+                            "positive": old_joystick.get("positive", axis.get("joystick", {}).get("positive", "")),
+                        }
+                    elif axis["physical_joystick"]:
+                        axis["joystick"] = {
+                            "negative": axis.get("joystick", {}).get("negative", ""),
+                            "positive": axis["physical_joystick"],
+                        }
+                    axis["physical_axis"] = old_axis.get("physical_axis", axis.get("physical_axis", ""))
+                    old_axis_layouts = old_axis.get("layouts", {})
+                    for layout_name in LAYOUTS:
+                        old_layout = old_axis_layouts.get(layout_name, {})
+                        old_slot_value = layout_panel_slot_value(old_layout)
+                        if old_slot_value is not None:
+                            axis["slots_by_layout"][layout_name] = old_slot_value
+                            axis.setdefault("slots_by_polarity", {}).setdefault("positive", {})[layout_name] = old_slot_value
+
+                    for polarity, old_direction in old_axis.get("directions", {}).items():
+                        if polarity not in ("negative", "positive"):
+                            continue
+                        for layout_name, old_layout in old_direction.get("layouts", {}).items():
+                            old_slot_value = layout_panel_slot_value(old_layout)
+                            if layout_name in LAYOUTS and old_slot_value is not None:
+                                axis.setdefault("slots_by_polarity", {}).setdefault(polarity, {})[layout_name] = old_slot_value
+                                if axis["slots_by_layout"].get(layout_name) is None:
+                                    axis["slots_by_layout"][layout_name] = old_slot_value
+
+                for layout_name in LAYOUTS:
+                    old_layout = old_layouts.get(layout_name, {})
+                    old_layout_axes = old_layout.get("axes", {})
+                    old_la = old_layout_axes.get(axis.get("id"))
+                    old_slot_value = layout_panel_slot_value(old_la)
+                    if old_slot_value is not None:
+                        axis["slots_by_layout"][layout_name] = old_slot_value
+                        axis.setdefault("slots_by_polarity", {}).setdefault("positive", {})[layout_name] = old_slot_value
+                    elif isinstance(old_la, dict):
+                        for polarity in ("negative", "positive"):
+                            pol = old_la.get(polarity, {})
+                            pol_slot_value = layout_panel_slot_value(pol)
+                            if pol_slot_value is not None:
+                                axis.setdefault("slots_by_polarity", {}).setdefault(polarity, {})[layout_name] = pol_slot_value
+                                if axis["slots_by_layout"].get(layout_name) is None:
+                                    axis["slots_by_layout"][layout_name] = pol_slot_value
+
+        data["common_button_vars"] = build_common_button_vars(data["players_data"])
+
+
+# ============================================================
+# SCROLLABLE FRAME
+# ============================================================
+
+class ScrollableFrame(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.canvas = tk.Canvas(self, highlightthickness=0)
+        self.vscroll = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = ttk.Frame(self.canvas)
+
+        self.inner.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+
+        self.window_id = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.vscroll.set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.vscroll.pack(side="right", fill="y")
+
+        self.canvas.bind(
+            "<Configure>",
+            lambda e: self.canvas.itemconfig(self.window_id, width=e.width)
+        )
+
+
+# ============================================================
+# GRID VIEW
+# ============================================================
+
+class GridView(ttk.Frame):
+    def __init__(self, parent, layout_name, on_slot_click):
+        super().__init__(parent)
+        self.layout_name = layout_name
+        self.on_slot_click = on_slot_click
+        self.canvas = tk.Canvas(
+            self,
+            width=470,
+            height=205,
+            bg="#0f172a",
+            highlightthickness=1,
+            highlightbackground="#334155"
+        )
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Button-1>", self._click)
+        self.hitboxes = {}
+
+    def render(self, assigned_map):
+        self.canvas.delete("all")
+        self.hitboxes = {}
+
+        self.canvas.create_text(
+            235, 18,
+            text=self.layout_name,
+            fill="#e2e8f0",
+            font=("Segoe UI", 13, "bold")
+        )
+
+        coords = GRID_COORDS[self.layout_name]
+        slots = LAYOUT_SLOTS[self.layout_name]
+
+        for slot in slots:
+            x, y = coords[slot]
+            r = 36
+
+            self.canvas.create_oval(
+                x-r, y-r, x+r, y+r,
+                fill="#334155",
+                outline="#94a3b8",
+                width=3
+            )
+
+            self.canvas.create_text(
+                x, y - 28,
+                text=str(slot),
+                fill="#cbd5e1",
+                font=("Segoe UI", 11, "bold")
+            )
+            self.canvas.create_text(
+                x, y + 28,
+                text=SLOT_MAP[str(slot)]["retrobat_button"],
+                fill="#cbd5e1",
+                font=("Segoe UI", 11, "bold")
+            )
+
+            assigned = assigned_map.get(slot)
+            if assigned:
+                self.canvas.create_oval(
+                    x-22, y-22, x+22, y+22,
+                    fill=color_to_hex(assigned["color"]),
+                    outline="#111827",
+                    width=3
+                )
+                self.canvas.create_text(
+                    x, y,
+                    text=assigned["short"],
+                    fill="#111827",
+                    font=("Segoe UI", 12, "bold")
+                )
+
+            self.hitboxes[slot] = (x-r, y-r, x+r, y+r)
+
+    def _click(self, event):
+        for slot, (x1, y1, x2, y2) in self.hitboxes.items():
+            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                self.on_slot_click(self.layout_name, slot)
+                return
+
+
+class CompactLayoutCard(tk.Frame):
+    def __init__(self, parent, layout_name, on_slot_click, on_slot_right_click=None):
+        super().__init__(parent, bg="#f2f4f7", bd=1, relief="solid", highlightthickness=1, highlightbackground="#d0d5dd")
+        self.layout_name = layout_name
+        self.on_slot_click = on_slot_click
+        self.on_slot_right_click = on_slot_right_click
+        self.active = False
+        self.canvas = tk.Canvas(self, height=155, bg="#f2f4f7", highlightthickness=0)
+        self.canvas.pack(fill="x", expand=True, padx=8, pady=(8, 2))
+        self.label = tk.Label(self, text=layout_name.upper(), bg="#f2f4f7", fg="#1d2939", font=("Segoe UI", 8, "bold"))
+        self.label.pack(pady=(0, 10))
+        self.hitboxes = {}
+        self.assigned_map = {}
+        self.canvas.bind("<Button-1>", self._click)
+        self.canvas.bind("<Button-3>", self._right_click)
+        self.canvas.bind("<Configure>", lambda e: self.render(self.assigned_map))
+
+    def set_active(self, active):
+        self.active = active
+        bg = "#ffffff" if active else "#f2f4f7"
+        self.configure(bg=bg, highlightbackground="#2459d3" if active else "#d0d5dd", highlightthickness=2 if active else 1)
+        self.canvas.configure(bg=bg)
+        self.label.configure(bg=bg, fg="#2459d3" if active else "#1d2939")
+
+    def _scaled_coords(self, slot):
+        x, y = GRID_COORDS[self.layout_name][slot]
+        width = max(self.canvas.winfo_width(), 170)
+        return int(18 + (x / 470) * (width - 36)), int(16 + (y / 205) * 120)
+
+    def render(self, assigned_map):
+        self.assigned_map = assigned_map
+        bg = "#ffffff" if self.active else "#f2f4f7"
+        self.canvas.configure(bg=bg)
+        self.canvas.delete("all")
+        self.hitboxes = {}
+        for slot in LAYOUT_SLOTS[self.layout_name]:
+            x, y = self._scaled_coords(slot)
+            r = 13
+            self.canvas.create_text(x, y - 22, text=str(slot), fill="#475467", font=("Segoe UI", 7, "bold"))
+            self.canvas.create_oval(x-r, y-r, x+r, y+r, fill="#cbd5e1", outline="#98a2b3", width=2)
+            self.canvas.create_text(x, y + 22, text=SLOT_MAP[str(slot)]["retrobat_button"], fill="#667085", font=("Segoe UI", 7, "bold"))
+            assigned = assigned_map.get(slot)
+            if assigned:
+                self.canvas.create_oval(x-r+2, y-r+2, x+r-2, y+r-2, fill=color_to_hex(assigned["color"]), outline="white", width=1)
+                self.canvas.create_text(x, y, text=str(assigned["short"])[:3], fill="#111827", font=("Segoe UI", 7, "bold"))
+            self.hitboxes[slot] = (x-r, y-r, x+r, y+r)
+
+    def _click(self, event):
+        for slot, (x1, y1, x2, y2) in self.hitboxes.items():
+            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                self.on_slot_click(self.layout_name, slot)
+                return
+
+    def _right_click(self, event):
+        if not self.on_slot_right_click:
+            return
+        for slot, (x1, y1, x2, y2) in self.hitboxes.items():
+            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                self.on_slot_right_click(self.layout_name, slot)
+                return
+
+
+class Joystick8Card(tk.Frame):
+    def __init__(self, parent, on_direction_click, on_center_click=None, on_direction_right_click=None):
+        super().__init__(parent, bg="#f2f4f7", bd=1, relief="solid", highlightthickness=1, highlightbackground="#d0d5dd")
+        self.on_direction_click = on_direction_click
+        self.on_center_click = on_center_click
+        self.on_direction_right_click = on_direction_right_click
+        self.canvas = tk.Canvas(self, height=155, bg="#f2f4f7", highlightthickness=0)
+        self.canvas.pack(fill="x", expand=True, padx=8, pady=(8, 2))
+        self.label = tk.Label(self, text="JOYSTICK 8-WAY", bg="#f2f4f7", fg="#1d2939", font=("Segoe UI", 8, "bold"))
+        self.label.pack(pady=(0, 10))
+        self.hitboxes = {}
+        self.center_hitbox = None
+        self.assigned_map = {}
+        self.canvas.bind("<Button-1>", self._click)
+        self.canvas.bind("<Button-3>", self._right_click)
+        self.canvas.bind("<Configure>", lambda e: self.render(self.assigned_map))
+
+    def _scaled_coords(self, direction):
+        width = max(self.canvas.winfo_width(), 170)
+        cx = width // 2
+        cy = 74
+        x_outer = max(34, min(58, (width // 2) - 32))
+        y_outer = 46
+        x_diag = max(42, min(48, x_outer - 8))
+        y_diag = 36
+        offsets = {
+            "up_left": (-x_diag, -y_diag),
+            "up": (0, -y_outer),
+            "up_right": (x_diag, -y_diag),
+            "left": (-x_outer, 0),
+            "right": (x_outer, 0),
+            "down_left": (-x_diag, y_diag),
+            "down": (0, y_outer),
+            "down_right": (x_diag, y_diag),
+        }
+        dx, dy = offsets[direction]
+        return int(cx + dx), int(cy + dy)
+
+    def render(self, assigned_map):
+        self.assigned_map = assigned_map
+        self.canvas.delete("all")
+        self.hitboxes = {}
+        width = max(self.canvas.winfo_width(), 170)
+        cx = width // 2
+        cy = 74
+        self.canvas.create_oval(cx - 19, cy - 19, cx + 19, cy + 19, fill="#cbd5e1", outline="#98a2b3", width=2)
+        self.canvas.create_text(cx, cy, text="JOY", fill="#475467", font=("Segoe UI", 8, "bold"))
+        self.center_hitbox = (cx - 23, cy - 23, cx + 23, cy + 23)
+
+        for direction, label in JOYSTICK_PANEL_DIRECTIONS:
+            x, y = self._scaled_coords(direction)
+            r = 13
+            self.canvas.create_oval(x-r, y-r, x+r, y+r, fill="#e4e7ec", outline="#98a2b3", width=2)
+            self.canvas.create_text(x, y - 21, text=label, fill="#475467", font=("Segoe UI", 7, "bold"))
+            assigned = assigned_map.get(direction)
+            if assigned:
+                self.canvas.create_oval(x-r+2, y-r+2, x+r-2, y+r-2, fill=color_to_hex(assigned["color"]), outline="white", width=1)
+                self.canvas.create_text(x, y, text=str(assigned["short"])[:3], fill="#111827", font=("Segoe UI", 7, "bold"))
+            self.hitboxes[direction] = (x-r, y-r, x+r, y+r)
+
+    def _click(self, event):
+        if self.center_hitbox and self.on_center_click:
+            x1, y1, x2, y2 = self.center_hitbox
+            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                self.on_center_click()
+                return
+        for direction, (x1, y1, x2, y2) in self.hitboxes.items():
+            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                self.on_direction_click(direction)
+                return
+
+    def _right_click(self, event):
+        if not self.on_direction_right_click:
+            return
+        for direction, (x1, y1, x2, y2) in self.hitboxes.items():
+            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                self.on_direction_right_click(direction)
+                return
+
+
+# ============================================================
+# PLAYER EDITOR
+# ============================================================
+
+class PlayerEditor(ttk.Frame):
+    def __init__(self, parent, player_data, on_apply_p1=None, on_layout_select=None):
+        super().__init__(parent)
+        self.player_data = player_data
+        self.on_apply_p1 = on_apply_p1
+        self.on_layout_select = on_layout_select
+        self.selected_button = None
+        self.selected_system_input = None
+        self.selected_system_output = None
+        self.selected_joystick = None
+        self.selected_axis = None
+        self.active_layout = "4-Button"
+        self.pattern_var = tk.StringVar(value=player_data["pattern"])
+        self.autocopy_var = tk.BooleanVar(value=(player_data["player"] == 1))
+        self.single_slot_var = tk.BooleanVar(value=True)
+        self.selected_label_var = tk.StringVar(value="Selected: none")
+        self.button_widgets = {}
+        self.system_input_widgets = {}
+        self.system_output_widgets = {}
+        self.joystick_widgets = []
+        self.axis_widgets = []
+        self.grid_views = {}
+        self.layout_cards = {}
+        self.logic_scroll_canvases = []
+        self.joystick_card = None
+        self.delete_duplicate_button = None
+        self._build_ui()
+        self._apply_pattern_if_empty()
+        self.refresh()
+
+    def set_active_layout(self, layout_name, notify=False):
+        if layout_name not in LAYOUTS:
+            return
+        self.active_layout = layout_name
+        if notify and self.on_layout_select:
+            self.on_layout_select(layout_name)
+        if getattr(self, "layout_cards", None):
+            self.refresh()
+
+    def _build_ui(self):
+        action = tk.Frame(self, bg="#ffffff")
+        action.pack(fill="x", padx=6, pady=(6, 10))
+
+        ttk.Label(action, text="Pattern").pack(side="left", padx=4)
+        self.pattern_combo = ttk.Combobox(
+            action,
+            textvariable=self.pattern_var,
+            values=PATTERN_CHOICES,
+            width=18,
+            state="readonly"
+        )
+        self.pattern_combo.pack(side="left", padx=4)
+
+        ttk.Button(action, text="Auto pattern", command=self.apply_pattern).pack(side="left", padx=8)
+        ttk.Button(action, text="Clear all", command=self.clear_all).pack(side="left", padx=4)
+        ttk.Checkbutton(
+            action,
+            text="One slot per input",
+            variable=self.single_slot_var,
+        ).pack(side="left", padx=(14, 4))
+        self.delete_duplicate_button = ttk.Button(
+            action,
+            text="Delete duplicate",
+            command=self.delete_selected_duplicate_button,
+            state="disabled",
+        )
+        self.delete_duplicate_button.pack(side="left", padx=4)
+
+        if self.player_data["player"] == 1:
+            ttk.Checkbutton(
+                action,
+                text="Auto-config other players",
+                variable=self.autocopy_var
+            ).pack(side="left", padx=(20, 4))
+            ttk.Button(
+                action,
+                text="Apply P1 to others",
+                command=self.apply_to_others
+            ).pack(side="left", padx=4)
+
+        ttk.Label(
+            action,
+            textvariable=self.selected_label_var,
+            foreground="#1d4ed8"
+        ).pack(side="left", padx=20)
+
+        devices_box = ttk.LabelFrame(self, text="Devices / System Inputs")
+        devices_box.pack(fill="x", padx=6, pady=6)
+
+        dev_frame = ttk.Frame(devices_box)
+        dev_frame.pack(fill="x", padx=4, pady=4)
+        ttk.Label(dev_frame, text="Device", width=18).grid(row=0, column=0, padx=2, sticky="w")
+        ttk.Label(dev_frame, text="Type", width=18).grid(row=0, column=1, padx=2, sticky="w")
+        ttk.Label(dev_frame, text="Color", width=12).grid(row=0, column=2, padx=2, sticky="w")
+
+        for i, dev in enumerate(self.player_data["devices"], start=1):
+            dev["color"] = canonical_color_name(dev.get("color", ""))
+            ttk.Label(dev_frame, text=dev["label"], width=18).grid(row=i, column=0, padx=2, pady=2, sticky="w")
+
+            type_var = tk.StringVar(value=dev["type"])
+            type_cmb = ttk.Combobox(dev_frame, textvariable=type_var, values=DEVICE_TYPE_CHOICES, width=18)
+            type_cmb.grid(row=i, column=1, padx=2, pady=2, sticky="w")
+            type_cmb.bind("<<ComboboxSelected>>", lambda e, dd=dev, vv=type_var: self.on_device_type_change(dd, vv))
+            type_cmb.bind("<FocusOut>", lambda e, dd=dev, vv=type_var: self.on_device_type_change(dd, vv))
+
+            color_var = tk.StringVar(value=canonical_color_name(dev.get("color", "")))
+            color_cmb = ttk.Combobox(dev_frame, textvariable=color_var, values=COLOR_CHOICES, width=12)
+            color_cmb.grid(row=i, column=2, padx=2, pady=2, sticky="w")
+            color_cmb.bind("<<ComboboxSelected>>", lambda e, dd=dev, vv=color_var: self.on_device_color_change(dd, vv))
+            color_cmb.bind("<FocusOut>", lambda e, dd=dev, vv=color_var: self.on_device_color_change(dd, vv))
+
+        ttk.Separator(devices_box, orient="horizontal").pack(fill="x", padx=4, pady=6)
+
+        self.system_input_rows_frame = ttk.Frame(devices_box)
+        self.system_input_rows_frame.pack(fill="x", padx=4, pady=4)
+
+        ttk.Separator(devices_box, orient="horizontal").pack(fill="x", padx=4, pady=6)
+
+        outputs_scroll_host = ttk.Frame(devices_box)
+        outputs_scroll_host.pack(fill="x", padx=4, pady=4)
+
+        self.system_output_canvas = tk.Canvas(outputs_scroll_host, height=240, highlightthickness=0)
+        self.system_output_canvas.pack(side="left", fill="x", expand=True)
+        output_scroll_bar = ttk.Scrollbar(outputs_scroll_host, orient="vertical", command=self.system_output_canvas.yview)
+        output_scroll_bar.pack(side="right", fill="y")
+        self.system_output_canvas.configure(yscrollcommand=output_scroll_bar.set)
+
+        self.system_output_rows_frame = ttk.Frame(self.system_output_canvas)
+        self.system_output_window = self.system_output_canvas.create_window((0, 0), window=self.system_output_rows_frame, anchor="nw")
+        self.system_output_rows_frame.bind("<Configure>", self.on_system_output_content_configure)
+        self.system_output_canvas.bind("<Configure>", self.on_system_output_canvas_configure)
+        self.system_output_canvas.bind("<Enter>", self.bind_system_output_mousewheel)
+        self.system_output_canvas.bind("<Leave>", self.unbind_system_output_mousewheel)
+
+        logic_tabs = ttk.Notebook(self)
+        logic_tabs.pack(fill="x", padx=6, pady=6)
+
+        buttons_tab = ttk.Frame(logic_tabs)
+        logic_tabs.add(buttons_tab, text="Logical Buttons")
+
+        self.buttons_rows_frame = self.create_scrollable_rows(buttons_tab, height=190)
+
+        self.joystick_rows_frame = None
+        if self.has_joystick_inputs():
+            joystick_tab = ttk.Frame(logic_tabs)
+            logic_tabs.add(joystick_tab, text="Logical Joystick")
+            self.joystick_rows_frame = self.create_scrollable_rows(joystick_tab, height=190)
+
+        self.axes_rows_frame = None
+        if self.has_axes():
+            axes_tab = ttk.Frame(logic_tabs)
+            logic_tabs.add(axes_tab, text="Logical Axes")
+            self.axes_rows_frame = self.create_scrollable_rows(axes_tab, height=190)
+
+        panels_box = ttk.LabelFrame(self, text="Visual Panels")
+        panels_box.pack(fill="both", expand=True, padx=6, pady=6)
+
+        cards_row = tk.Frame(panels_box, bg="#ffffff")
+        cards_row.pack(fill="x", padx=4, pady=(4, 2))
+
+        cards_row.grid_columnconfigure(0, weight=1, uniform="panel_cards")
+        self.joystick_card = Joystick8Card(
+            cards_row,
+            self.on_panel_joystick_click,
+            self.on_panel_joystick_center_click,
+            self.on_panel_joystick_right_click,
+        )
+        self.joystick_card.grid(row=0, column=0, padx=6, sticky="nsew")
+
+        for i, layout_name in enumerate(LAYOUTS):
+            col = i + 1
+            cards_row.grid_columnconfigure(col, weight=1, uniform="panel_cards")
+            card = CompactLayoutCard(cards_row, layout_name, self.on_slot_click, self.on_slot_right_click)
+            card.grid(row=0, column=col, padx=6, sticky="nsew")
+            self.layout_cards[layout_name] = card
+
+        self._rebuild_button_rows()
+        self._rebuild_system_input_rows()
+        self._rebuild_system_output_rows()
+        if self.joystick_rows_frame is not None:
+            self._rebuild_joystick_rows()
+        if self.axes_rows_frame is not None:
+            self._rebuild_axis_rows()
+
+    def create_scrollable_rows(self, parent, height=190):
+        host = ttk.Frame(parent)
+        host.pack(fill="x", padx=4, pady=(2, 4))
+        canvas = tk.Canvas(host, height=height, highlightthickness=0)
+        canvas.pack(side="left", fill="x", expand=True)
+        scroll_bar = ttk.Scrollbar(host, orient="vertical", command=canvas.yview)
+        scroll_bar.pack(side="right", fill="y")
+        canvas.configure(yscrollcommand=scroll_bar.set)
+
+        rows_frame = ttk.Frame(canvas)
+        window = canvas.create_window((0, 0), window=rows_frame, anchor="nw")
+        rows_frame.bind("<Configure>", lambda event, cc=canvas: cc.configure(scrollregion=cc.bbox("all")))
+        canvas.bind("<Configure>", lambda event, cc=canvas, ww=window: cc.itemconfigure(ww, width=event.width))
+        canvas.bind("<Enter>", lambda event, cc=canvas: self.bind_canvas_mousewheel(cc))
+        canvas.bind("<Leave>", lambda event: self.unbind_canvas_mousewheel())
+        self.logic_scroll_canvases.append(canvas)
+        return rows_frame
+
+    def bind_canvas_mousewheel(self, canvas):
+        canvas.bind_all("<MouseWheel>", lambda event, cc=canvas: self.on_canvas_mousewheel(event, cc))
+
+    def unbind_canvas_mousewheel(self):
+        self.unbind_system_output_mousewheel()
+
+    def on_canvas_mousewheel(self, event, canvas):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def on_system_output_content_configure(self, event=None):
+        self.system_output_canvas.configure(scrollregion=self.system_output_canvas.bbox("all"))
+
+    def on_system_output_canvas_configure(self, event):
+        self.system_output_canvas.itemconfigure(self.system_output_window, width=event.width)
+
+    def bind_system_output_mousewheel(self, event=None):
+        self.system_output_canvas.bind_all("<MouseWheel>", self.on_system_output_mousewheel)
+
+    def unbind_system_output_mousewheel(self, event=None):
+        self.system_output_canvas.unbind_all("<MouseWheel>")
+
+    def on_system_output_mousewheel(self, event):
+        self.system_output_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def on_device_type_change(self, device, var):
+        device["type"] = var.get().strip()
+
+    def on_device_color_change(self, device, var):
+        device["color"] = canonical_color_name(var.get())
+        var.set(device["color"])
+        self.refresh()
+
+    def on_system_input_color_change(self, key, var):
+        self.player_data["system_inputs"][key]["color"] = canonical_color_name(var.get())
+        var.set(self.player_data["system_inputs"][key]["color"])
+        self.refresh()
+
+    def on_system_output_color_change(self, output, var):
+        output["color"] = canonical_color_name(var.get(), "Gray")
+        var.set(output["color"])
+        self.refresh()
+
+    def on_system_output_input_change(self, output, var):
+        output["input_ref"] = var.get().strip()
+        self.refresh()
+
+    def system_input_order(self):
+        preferred = [key for key in ("start", "select", "coin") if key in self.player_data["system_inputs"]]
+        extras = [key for key in self.player_data["system_inputs"] if key not in preferred]
+        return preferred + extras
+
+    def _rebuild_system_input_rows(self):
+        for w in self.system_input_rows_frame.winfo_children():
+            w.destroy()
+        self.system_input_widgets = {}
+
+        colspecs = [
+            ("COL", 4, "center"),
+            ("Input", 26, "w"),
+            ("Color", 10, "w"),
+            ("Output", 12, "w"),
+            ("2", 4, "center"),
+            ("4", 4, "center"),
+            ("6", 4, "center"),
+            ("8", 4, "center"),
+            ("RetroBat", 8, "w"),
+            ("RetroPad", 8, "w"),
+            ("Libretro / FBNeo", 16, "w"),
+            ("MAME", 16, "w"),
+            ("Tag", 14, "w"),
+            ("Mask", 8, "w"),
+        ]
+        for col, (txt, width, anchor) in enumerate(colspecs):
+            ttk.Label(self.system_input_rows_frame, text=txt, width=width, anchor=anchor).grid(row=0, column=col, padx=2, pady=(0, 4), sticky="w")
+
+        for row_idx, key in enumerate(self.system_input_order(), start=1):
+            entry = self.player_data["system_inputs"][key]
+            self.ensure_system_input_entry(key, entry)
+            row_bg = "#ffffff"
+            bubble = tk.Canvas(self.system_input_rows_frame, width=24, height=24, bg=row_bg, highlightthickness=0)
+            bubble.grid(row=row_idx, column=0, padx=2, pady=3, sticky="w")
+
+            label_widgets = []
+            label = entry.get("label") or key.capitalize()
+            lbl = tk.Label(
+                self.system_input_rows_frame,
+                text=f"{key.upper()} | {label}",
+                bg=row_bg,
+                fg="#101828",
+                font=("Segoe UI", 10, "bold"),
+                width=26,
+                anchor="w",
+            )
+            lbl.grid(row=row_idx, column=1, padx=2, pady=3, sticky="w")
+            label_widgets.append(lbl)
+
+            color_var = tk.StringVar(value=canonical_color_name(entry.get("color", "")))
+            color_cmb = ttk.Combobox(self.system_input_rows_frame, textvariable=color_var, values=COLOR_CHOICES, width=10)
+            color_cmb.grid(row=row_idx, column=2, padx=2, pady=2, sticky="w")
+            color_cmb.bind("<<ComboboxSelected>>", lambda e, kk=key, vv=color_var: self.on_system_input_color_change(kk, vv))
+            color_cmb.bind("<FocusOut>", lambda e, kk=key, vv=color_var: self.on_system_input_color_change(kk, vv))
+
+            output_var = tk.StringVar(value=entry.get("output", ""))
+            output_cmb = ttk.Combobox(
+                self.system_input_rows_frame,
+                textvariable=output_var,
+                values=self.player_data.get("output_choices", [""]),
+                width=18,
+            )
+            output_cmb.grid(row=row_idx, column=3, padx=2, pady=2, sticky="w")
+            output_cmb.bind("<<ComboboxSelected>>", lambda e, ee=entry, vv=output_var: self.on_output_change(ee, vv))
+            output_cmb.bind("<FocusOut>", lambda e, ee=entry, vv=output_var: self.on_output_change(ee, vv))
+
+            slot_labels = {}
+            for col_offset, layout_name in enumerate(LAYOUTS, start=4):
+                sl = tk.Label(
+                    self.system_input_rows_frame,
+                    text=self.slot_text(entry["slots_by_layout"].get(layout_name)),
+                    bg=row_bg,
+                    fg="#2459d3",
+                    width=4,
+                    font=("Segoe UI", 10, "bold"),
+                    anchor="center",
+                )
+                sl.grid(row=row_idx, column=col_offset, padx=2, pady=3)
+                slot_labels[layout_name] = sl
+                label_widgets.append(sl)
+
+            rb_var = tk.StringVar(value="")
+            rp_var = tk.StringVar(value="")
+            core_var = tk.StringVar(value="")
+            tk.Label(self.system_input_rows_frame, textvariable=rb_var, bg=row_bg, fg="#2459d3", width=8, font=("Segoe UI", 10, "bold"), anchor="w").grid(row=row_idx, column=8, padx=2, pady=3, sticky="w")
+            tk.Label(self.system_input_rows_frame, textvariable=rp_var, bg=row_bg, fg="#2459d3", width=8, font=("Segoe UI", 10, "bold"), anchor="w").grid(row=row_idx, column=9, padx=2, pady=3, sticky="w")
+            tk.Label(self.system_input_rows_frame, textvariable=core_var, bg=row_bg, fg="#2459d3", width=16, font=("Segoe UI", 10, "bold"), anchor="w").grid(row=row_idx, column=10, padx=2, pady=3, sticky="w")
+
+            mame = entry.get("mame", {})
+            mame_label = tk.Label(self.system_input_rows_frame, text=mame.get("type", ""), bg=row_bg, fg="#101828", width=16, anchor="w")
+            mame_label.grid(row=row_idx, column=11, padx=2, pady=3, sticky="w")
+            label_widgets.append(mame_label)
+            tag_label = tk.Label(self.system_input_rows_frame, text=mame.get("tag", ""), bg=row_bg, fg="#667085", width=14, anchor="w")
+            tag_label.grid(row=row_idx, column=12, padx=2, pady=3, sticky="w")
+            label_widgets.append(tag_label)
+            mask_label = tk.Label(self.system_input_rows_frame, text=mame.get("mask_hex", ""), bg=row_bg, fg="#101828", width=8, anchor="w", font=("Consolas", 9))
+            mask_label.grid(row=row_idx, column=13, padx=2, pady=3, sticky="w")
+            label_widgets.append(mask_label)
+
+            def _sel(evt=None, kk=key, ee=entry):
+                self.select_system_input(kk, ee)
+
+            bubble.bind("<Button-1>", _sel)
+            lbl.bind("<Button-1>", _sel)
+            for widget in label_widgets:
+                widget.bind("<Button-1>", _sel)
+
+            self.system_input_widgets[key] = {
+                "entry": entry,
+                "bubble": bubble,
+                "label_widgets": label_widgets,
+                "slot_labels": slot_labels,
+                "rb_var": rb_var,
+                "rp_var": rp_var,
+                "core_var": core_var,
+            }
+
+    def system_output_key(self, output):
+        return output.get("id") or output.get("name") or str(id(output))
+
+    def ensure_system_output_entry(self, output):
+        output.setdefault("id", output.get("name") or str(id(output)))
+        output.setdefault("label", output.get("function") or output.get("name") or output.get("id"))
+        output.setdefault("color", "Gray")
+        output["color"] = canonical_color_name(output.get("color", "Gray"), "Gray")
+        output.setdefault("input_ref", "")
+        output.setdefault("panel_joystick", None)
+        output.setdefault("slots_by_layout", {layout: None for layout in LAYOUTS})
+        for layout_name in LAYOUTS:
+            output["slots_by_layout"].setdefault(layout_name, None)
+
+    def system_output_short_label(self, output):
+        text = output.get("function") or output.get("label") or output.get("name") or output.get("id", "")
+        parts = re.split(r"[_\s]+", str(text).strip())
+        if len(parts) > 1:
+            return "".join(p[:1] for p in parts if p)[:3].upper()
+        return str(text)[:3].upper()
+
+    def system_output_input_choices(self):
+        choices = [""]
+        for b in self.player_data["buttons"]:
+            prefix = f'B{b["game_button"]}'
+            if b.get("instance_id"):
+                prefix = f'{prefix} {b["instance_id"]}'
+            label = f'{prefix} | {b.get("function", "")}'
+            choices.append(label)
+        for key in self.system_input_order():
+            entry = self.player_data["system_inputs"][key]
+            label = entry.get("label") or key.capitalize()
+            choices.append(f"SYS {key.upper()} | {label}")
+        return choices
+
+    def mame_for_system_output_input(self, output):
+        ref = (output.get("input_ref") or "").strip()
+        if not ref:
+            return {}
+        if ref.upper().startswith("SYS "):
+            key = ref[4:].split("|", 1)[0].strip().lower()
+            entry = self.player_data.get("system_inputs", {}).get(key, {})
+            return entry.get("mame", {})
+        match = re.match(r"B(\d+)(?:\s+([^\|]+))?", ref, re.IGNORECASE)
+        if match:
+            game_button = int(match.group(1))
+            instance_id = (match.group(2) or "").strip()
+            for button in self.player_data["buttons"]:
+                if button.get("game_button") != game_button:
+                    continue
+                if instance_id and button.get("instance_id") != instance_id:
+                    continue
+                return button.get("mame", {})
+        return {}
+
+    def _rebuild_system_output_rows(self):
+        for w in self.system_output_rows_frame.winfo_children():
+            w.destroy()
+        self.system_output_widgets = {}
+
+        outputs = sorted(self.player_data.get("system_outputs", []), key=output_sort_key)
+        title = f"System Outputs ({len(outputs)})"
+        ttk.Label(self.system_output_rows_frame, text=title, width=26, anchor="w").grid(row=0, column=0, columnspan=2, padx=2, pady=(0, 4), sticky="w")
+
+        colspecs = [
+            ("COL", 4, "center"),
+            ("Output", 12, "w"),
+            ("Function", 24, "w"),
+            ("Label / Comment", 24, "w"),
+            ("Color", 10, "w"),
+            ("Input", 26, "w"),
+            ("2", 4, "center"),
+            ("4", 4, "center"),
+            ("6", 4, "center"),
+            ("8", 4, "center"),
+            ("RetroBat", 8, "w"),
+            ("RetroPad", 8, "w"),
+            ("Libretro / FBNeo", 16, "w"),
+            ("MAME", 16, "w"),
+            ("Tag", 14, "w"),
+            ("Mask", 8, "w"),
+        ]
+        for col, (txt, width, anchor) in enumerate(colspecs):
+            ttk.Label(self.system_output_rows_frame, text=txt, width=width, anchor=anchor).grid(row=1, column=col, padx=2, pady=(0, 4), sticky="w")
+
+        input_choices = self.system_output_input_choices()
+        for row_idx, output in enumerate(outputs, start=2):
+            self.ensure_system_output_entry(output)
+            row_bg = "#ffffff"
+            output_key = self.system_output_key(output)
+            bubble = tk.Canvas(self.system_output_rows_frame, width=24, height=24, bg=row_bg, highlightthickness=0)
+            bubble.grid(row=row_idx, column=0, padx=2, pady=3, sticky="w")
+
+            label_widgets = []
+            output_label_text = output.get("name") or output.get("id", "")
+            output_label = tk.Label(
+                self.system_output_rows_frame,
+                text=output_label_text,
+                bg=row_bg,
+                fg="#101828",
+                font=("Segoe UI", 10, "bold"),
+                width=12,
+                anchor="w",
+            )
+            output_label.grid(row=row_idx, column=1, padx=2, pady=3, sticky="w")
+            label_widgets.append(output_label)
+
+            function_label = tk.Label(
+                self.system_output_rows_frame,
+                text=output.get("function", ""),
+                bg=row_bg,
+                fg="#101828",
+                width=24,
+                anchor="w",
+            )
+            function_label.grid(row=row_idx, column=2, padx=2, pady=3, sticky="w")
+            label_widgets.append(function_label)
+
+            comment_text = output.get("comment") or output.get("label", "")
+            comment_label = tk.Label(
+                self.system_output_rows_frame,
+                text=comment_text,
+                bg=row_bg,
+                fg="#667085",
+                width=24,
+                anchor="w",
+            )
+            comment_label.grid(row=row_idx, column=3, padx=2, pady=3, sticky="w")
+            label_widgets.append(comment_label)
+
+            color_var = tk.StringVar(value=canonical_color_name(output.get("color", "Gray"), "Gray"))
+            color_cmb = ttk.Combobox(self.system_output_rows_frame, textvariable=color_var, values=COLOR_CHOICES, width=10)
+            color_cmb.grid(row=row_idx, column=4, padx=2, pady=2, sticky="w")
+            color_cmb.bind("<<ComboboxSelected>>", lambda e, oo=output, vv=color_var: self.on_system_output_color_change(oo, vv))
+            color_cmb.bind("<FocusOut>", lambda e, oo=output, vv=color_var: self.on_system_output_color_change(oo, vv))
+
+            input_var = tk.StringVar(value=output.get("input_ref", ""))
+            input_cmb = ttk.Combobox(self.system_output_rows_frame, textvariable=input_var, values=input_choices, width=26)
+            input_cmb.grid(row=row_idx, column=5, padx=2, pady=2, sticky="w")
+            input_cmb.bind("<<ComboboxSelected>>", lambda e, oo=output, vv=input_var: self.on_system_output_input_change(oo, vv))
+            input_cmb.bind("<FocusOut>", lambda e, oo=output, vv=input_var: self.on_system_output_input_change(oo, vv))
+
+            slot_labels = {}
+            for col_offset, layout_name in enumerate(LAYOUTS, start=6):
+                sl = tk.Label(
+                    self.system_output_rows_frame,
+                    text=self.slot_text(output["slots_by_layout"].get(layout_name)),
+                    bg=row_bg,
+                    fg="#2459d3",
+                    width=4,
+                    font=("Segoe UI", 10, "bold"),
+                    anchor="center",
+                )
+                sl.grid(row=row_idx, column=col_offset, padx=2, pady=3)
+                slot_labels[layout_name] = sl
+                label_widgets.append(sl)
+
+            rb_var = tk.StringVar(value="")
+            rp_var = tk.StringVar(value="")
+            core_var = tk.StringVar(value="")
+            rb_label = tk.Label(self.system_output_rows_frame, textvariable=rb_var, bg=row_bg, fg="#2459d3", width=8, font=("Segoe UI", 10, "bold"), anchor="w")
+            rb_label.grid(row=row_idx, column=10, padx=2, pady=3, sticky="w")
+            label_widgets.append(rb_label)
+            rp_label = tk.Label(self.system_output_rows_frame, textvariable=rp_var, bg=row_bg, fg="#2459d3", width=8, font=("Segoe UI", 10, "bold"), anchor="w")
+            rp_label.grid(row=row_idx, column=11, padx=2, pady=3, sticky="w")
+            label_widgets.append(rp_label)
+            core_label = tk.Label(self.system_output_rows_frame, textvariable=core_var, bg=row_bg, fg="#2459d3", width=16, font=("Segoe UI", 10, "bold"), anchor="w")
+            core_label.grid(row=row_idx, column=12, padx=2, pady=3, sticky="w")
+            label_widgets.append(core_label)
+
+            mame = self.mame_for_system_output_input(output)
+            mame_var = tk.StringVar(value=mame.get("type") or mame.get("input_id") or "")
+            tag_var = tk.StringVar(value=mame.get("tag", ""))
+            mask_var = tk.StringVar(value=mame.get("mask_hex", ""))
+            mame_label = tk.Label(self.system_output_rows_frame, textvariable=mame_var, bg=row_bg, fg="#101828", width=16, anchor="w")
+            mame_label.grid(row=row_idx, column=13, padx=2, pady=3, sticky="w")
+            label_widgets.append(mame_label)
+            tag_label = tk.Label(self.system_output_rows_frame, textvariable=tag_var, bg=row_bg, fg="#667085", width=14, anchor="w")
+            tag_label.grid(row=row_idx, column=14, padx=2, pady=3, sticky="w")
+            label_widgets.append(tag_label)
+            mask_label = tk.Label(self.system_output_rows_frame, textvariable=mask_var, bg=row_bg, fg="#101828", width=8, anchor="w", font=("Consolas", 9))
+            mask_label.grid(row=row_idx, column=15, padx=2, pady=3, sticky="w")
+            label_widgets.append(mask_label)
+
+            def _sel(evt=None, oo=output):
+                self.select_system_output(oo)
+
+            bubble.bind("<Button-1>", _sel)
+            for widget in label_widgets:
+                widget.bind("<Button-1>", _sel)
+
+            self.system_output_widgets[output_key] = {
+                "entry": output,
+                "bubble": bubble,
+                "label_widgets": label_widgets,
+                "slot_labels": slot_labels,
+                "rb_var": rb_var,
+                "rp_var": rp_var,
+                "core_var": core_var,
+                "mame_var": mame_var,
+                "tag_var": tag_var,
+                "mask_var": mask_var,
+            }
+
+    def _rebuild_button_rows(self):
+        for w in self.buttons_rows_frame.winfo_children():
+            w.destroy()
+        self.button_widgets = {}
+
+        colspecs = [
+            ("COL", 4, "center"),
+            ("Input", 26, "w"),
+            ("Color", 10, "w"),
+            ("Output", 18, "w"),
+            ("2", 4, "center"),
+            ("4", 4, "center"),
+            ("6", 4, "center"),
+            ("8", 4, "center"),
+            ("RetroBat", 8, "w"),
+            ("RetroPad", 8, "w"),
+            ("Libretro / FBNeo", 16, "w"),
+            ("MAME", 16, "w"),
+            ("Tag", 14, "w"),
+            ("Mask", 8, "w"),
+        ]
+        for col, (txt, width, anchor) in enumerate(colspecs):
+            ttk.Label(
+                self.buttons_rows_frame,
+                text=txt,
+                width=width,
+                anchor=anchor,
+            ).grid(row=0, column=col, padx=2, pady=(0, 4), sticky="w")
+
+        for row_idx, b in enumerate(self.player_data["buttons"]):
+            grid_row = row_idx + 1
+            row_bg = "#ffffff"
+            b["color"] = canonical_color_name(b.get("color", ""))
+            bubble = tk.Canvas(self.buttons_rows_frame, width=24, height=24, bg=row_bg, highlightthickness=0)
+            bubble.grid(row=grid_row, column=0, padx=2, pady=3, sticky="w")
+
+            label_prefix = f'B{b["game_button"]}'
+            if b.get("instance_id"):
+                label_prefix = f'{label_prefix} {b["instance_id"]}'
+            lbl = tk.Label(
+                self.buttons_rows_frame,
+                text=f'{label_prefix} | {b["function"]}',
+                bg=row_bg,
+                fg="#101828",
+                font=("Segoe UI", 10, "bold"),
+                width=26,
+                anchor="w",
+            )
+            lbl.grid(row=grid_row, column=1, padx=2, pady=3, sticky="w")
+
+            color_var = tk.StringVar(value=canonical_color_name(b["color"]))
+            cmb = ttk.Combobox(self.buttons_rows_frame, textvariable=color_var, values=COLOR_CHOICES, width=10)
+            cmb.grid(row=grid_row, column=2, padx=2, pady=2, sticky="w")
+            cmb.bind("<<ComboboxSelected>>", lambda e, bb=b, vv=color_var: self.on_color_change(bb, vv))
+            cmb.bind("<FocusOut>", lambda e, bb=b, vv=color_var: self.on_color_change(bb, vv))
+
+            output_var = tk.StringVar(value=b.get("output", ""))
+            output_cmb = ttk.Combobox(
+                self.buttons_rows_frame,
+                textvariable=output_var,
+                values=self.player_data.get("output_choices", [""]),
+                width=18,
+            )
+            output_cmb.grid(row=grid_row, column=3, padx=2, pady=2, sticky="w")
+            output_cmb.bind("<<ComboboxSelected>>", lambda e, bb=b, vv=output_var: self.on_output_change(bb, vv))
+            output_cmb.bind("<FocusOut>", lambda e, bb=b, vv=output_var: self.on_output_change(bb, vv))
+
+            slot_labels = {}
+            col = 4
+            for layout_name in LAYOUTS:
+                sl = tk.Label(
+                    self.buttons_rows_frame,
+                    text=self.slot_text(b["slots_by_layout"][layout_name]),
+                    bg=row_bg,
+                    fg="#2459d3",
+                    width=4,
+                    font=("Segoe UI", 10, "bold"),
+                    anchor="center",
+                )
+                sl.grid(row=grid_row, column=col, padx=2, pady=3)
+                slot_labels[layout_name] = sl
+                col += 1
+
+            rb_var = tk.StringVar(value="")
+            rp_var = tk.StringVar(value="")
+            core_var = tk.StringVar(value="")
+
+            tk.Label(self.buttons_rows_frame, textvariable=rb_var, bg=row_bg, fg="#2459d3", width=8, font=("Segoe UI", 10, "bold"), anchor="w").grid(row=grid_row, column=8, padx=2, pady=3, sticky="w")
+            tk.Label(self.buttons_rows_frame, textvariable=rp_var, bg=row_bg, fg="#2459d3", width=8, font=("Segoe UI", 10, "bold"), anchor="w").grid(row=grid_row, column=9, padx=2, pady=3, sticky="w")
+            tk.Label(self.buttons_rows_frame, textvariable=core_var, bg=row_bg, fg="#2459d3", width=16, font=("Segoe UI", 10, "bold"), anchor="w").grid(row=grid_row, column=10, padx=2, pady=3, sticky="w")
+            tk.Label(self.buttons_rows_frame, text=b["mame"].get("type", ""), bg=row_bg, fg="#101828", width=16, anchor="w").grid(row=grid_row, column=11, padx=2, pady=3, sticky="w")
+            tk.Label(self.buttons_rows_frame, text=b["mame"].get("tag", ""), bg=row_bg, fg="#667085", width=14, anchor="w").grid(row=grid_row, column=12, padx=2, pady=3, sticky="w")
+            tk.Label(self.buttons_rows_frame, text=b["mame"].get("mask_hex", ""), bg=row_bg, fg="#101828", width=8, anchor="w", font=("Consolas", 9)).grid(row=grid_row, column=13, padx=2, pady=3, sticky="w")
+
+            def _sel(evt=None, button=b):
+                self.select_button(button)
+
+            bubble.bind("<Button-1>", _sel)
+            lbl.bind("<Button-1>", _sel)
+
+            self.button_widgets[self.button_row_key(b)] = {
+                "bubble": bubble,
+                "lbl": lbl,
+                "row_bg": row_bg,
+                "slot_labels": slot_labels,
+                "rb_var": rb_var,
+                "rp_var": rp_var,
+                "core_var": core_var,
+            }
+
+    def iter_joystick_inputs(self):
+        for dev in self.player_data["devices"]:
+            for direction in ("up", "down", "left", "right"):
+                entry = dev.get("inputs", {}).get(direction)
+                if not entry:
+                    continue
+                entry.setdefault("panel_joystick", None)
+                if "slots_by_layout" not in entry:
+                    entry["slots_by_layout"] = {layout: None for layout in LAYOUTS}
+                if is_specific_joystick_input(entry):
+                    yield dev, direction, entry
+
+    def has_joystick_inputs(self):
+        return any(True for _ in self.iter_joystick_inputs())
+
+    def iter_assignable_items(self):
+        for key in self.system_input_order():
+            entry = self.player_data["system_inputs"][key]
+            self.ensure_system_input_entry(key, entry)
+            yield "system_input", key, entry
+        for output in self.player_data.get("system_outputs", []):
+            self.ensure_system_output_entry(output)
+            yield "system_output", self.system_output_key(output), output
+        for b in self.player_data["buttons"]:
+            b.setdefault("panel_joystick", None)
+            yield "button", str(b["game_button"]), b
+        for _, direction, entry in self.iter_joystick_inputs():
+            yield "joystick", direction, entry
+        for axis in self.iter_axes():
+            yield "axis", axis.get("id", ""), axis
+
+    def iter_axes(self):
+        for axis in self.player_data.get("axes", []):
+            if not isinstance(axis, dict):
+                continue
+            axis.setdefault("panel_joystick", None)
+            if "slots_by_layout" not in axis:
+                axis["slots_by_layout"] = {layout: None for layout in LAYOUTS}
+            if "slots_by_polarity" not in axis:
+                axis["slots_by_polarity"] = {
+                    "negative": {layout: None for layout in LAYOUTS},
+                    "positive": {layout: axis["slots_by_layout"].get(layout) for layout in LAYOUTS},
+                }
+            else:
+                for polarity in ("negative", "positive"):
+                    axis["slots_by_polarity"].setdefault(polarity, {})
+                    for layout in LAYOUTS:
+                        axis["slots_by_polarity"][polarity].setdefault(layout, None)
+            axis.setdefault("joystick", {"negative": "", "positive": ""})
+            yield axis
+
+    def has_axes(self):
+        return any(True for _ in self.iter_axes())
+
+    def joystick_choice_label(self, direction):
+        if not direction:
+            return ""
+        for _, candidate_direction, entry in self.iter_joystick_inputs():
+            if candidate_direction != direction:
+                continue
+            mame = entry.get("mame", {})
+            parts = [
+                direction.upper(),
+                mame.get("type") or mame.get("input_id") or "",
+                mame.get("tag", ""),
+                mame.get("mask_hex", ""),
+            ]
+            return " | ".join([p for p in parts if p])
+        return direction.upper()
+
+    def joystick_choices_for_axes(self):
+        choices = [""]
+        for _, direction, entry in self.iter_joystick_inputs():
+            mame = entry.get("mame", {})
+            parts = [
+                direction.upper(),
+                mame.get("type") or mame.get("input_id") or "",
+                mame.get("tag", ""),
+                mame.get("mask_hex", ""),
+            ]
+            choices.append(" | ".join([p for p in parts if p]))
+        return choices
+
+    def direction_from_joystick_choice(self, value):
+        head = (value or "").split("|", 1)[0].strip().lower()
+        return head if head in JOYSTICK_DIRECTION_MAP else ""
+
+    def selected_axis_joystick_mame(self, axis, polarity):
+        direction = axis.get("joystick", {}).get(polarity, "")
+        if not direction:
+            return {}
+        for _, candidate_direction, entry in self.iter_joystick_inputs():
+            if candidate_direction == direction:
+                return entry.get("mame", {})
+        return {}
+
+    def _rebuild_joystick_rows(self):
+        if self.joystick_rows_frame is None:
+            return
+        for w in self.joystick_rows_frame.winfo_children():
+            w.destroy()
+        self.joystick_widgets = []
+
+        colspecs = [
+            ("COL", 4, "center"),
+            ("Input", 26, "w"),
+            ("Color", 10, "w"),
+            ("Output", 18, "w"),
+            ("2", 4, "center"),
+            ("4", 4, "center"),
+            ("6", 4, "center"),
+            ("8", 4, "center"),
+            ("RetroBat", 8, "w"),
+            ("RetroPad", 8, "w"),
+            ("Libretro / FBNeo", 16, "w"),
+            ("MAME", 16, "w"),
+            ("Tag", 14, "w"),
+            ("Mask", 8, "w"),
+        ]
+        for col, (txt, width, anchor) in enumerate(colspecs):
+            ttk.Label(
+                self.joystick_rows_frame,
+                text=txt,
+                width=width,
+                anchor=anchor,
+            ).grid(row=0, column=col, padx=2, pady=(0, 4), sticky="w")
+
+        rows = list(self.iter_joystick_inputs())
+        if not rows:
+            ttk.Label(
+                self.joystick_rows_frame,
+                text="No usable joystick input for this player.",
+            ).grid(row=1, column=0, columnspan=len(colspecs), padx=2, pady=6, sticky="w")
+            return
+
+        for row_idx, (dev, direction, entry) in enumerate(rows, start=1):
+            row_bg = "#ffffff"
+            entry["color"] = canonical_color_name(entry.get("color", dev.get("color", "")))
+            bubble = tk.Canvas(self.joystick_rows_frame, width=24, height=24, bg=row_bg, highlightthickness=0)
+            bubble.grid(row=row_idx, column=0, padx=2, pady=3, sticky="w")
+
+            label_widgets = []
+            lbl = tk.Label(
+                self.joystick_rows_frame,
+                text=f'{direction.upper()} | {entry.get("function") or dev.get("label", "")}',
+                bg=row_bg,
+                fg="#101828",
+                font=("Segoe UI", 10, "bold"),
+                width=26,
+                anchor="w",
+            )
+            lbl.grid(row=row_idx, column=1, padx=2, pady=3, sticky="w")
+            label_widgets.append(lbl)
+
+            color_var = tk.StringVar(value=canonical_color_name(entry.get("color", dev.get("color", ""))))
+            color_cmb = ttk.Combobox(self.joystick_rows_frame, textvariable=color_var, values=COLOR_CHOICES, width=10)
+            color_cmb.grid(row=row_idx, column=2, padx=2, pady=2, sticky="w")
+            color_cmb.bind("<<ComboboxSelected>>", lambda e, ee=entry, vv=color_var: self.on_joystick_input_color_change(ee, vv))
+            color_cmb.bind("<FocusOut>", lambda e, ee=entry, vv=color_var: self.on_joystick_input_color_change(ee, vv))
+
+            output_var = tk.StringVar(value=entry.get("output", ""))
+            output_cmb = ttk.Combobox(
+                self.joystick_rows_frame,
+                textvariable=output_var,
+                values=self.player_data.get("output_choices", [""]),
+                width=18,
+            )
+            output_cmb.grid(row=row_idx, column=3, padx=2, pady=2, sticky="w")
+            output_cmb.bind("<<ComboboxSelected>>", lambda e, ee=entry, vv=output_var: self.on_output_change(ee, vv))
+            output_cmb.bind("<FocusOut>", lambda e, ee=entry, vv=output_var: self.on_output_change(ee, vv))
+
+            slot_labels = {}
+            for col_offset, layout_name in enumerate(LAYOUTS, start=4):
+                sl = tk.Label(
+                    self.joystick_rows_frame,
+                    text=self.slot_text(entry["slots_by_layout"].get(layout_name)),
+                    bg=row_bg,
+                    fg="#2459d3",
+                    width=4,
+                    font=("Segoe UI", 10, "bold"),
+                    anchor="center",
+                )
+                sl.grid(row=row_idx, column=col_offset, padx=2, pady=3)
+                slot_labels[layout_name] = sl
+                label_widgets.append(sl)
+
+            rb_var = tk.StringVar(value="")
+            rp_var = tk.StringVar(value="")
+            core_var = tk.StringVar(value="")
+
+            rb_label = tk.Label(self.joystick_rows_frame, textvariable=rb_var, bg=row_bg, fg="#2459d3", width=8, font=("Segoe UI", 10, "bold"), anchor="w")
+            rb_label.grid(row=row_idx, column=8, padx=2, pady=3, sticky="w")
+            label_widgets.append(rb_label)
+            rp_label = tk.Label(self.joystick_rows_frame, textvariable=rp_var, bg=row_bg, fg="#2459d3", width=8, font=("Segoe UI", 10, "bold"), anchor="w")
+            rp_label.grid(row=row_idx, column=9, padx=2, pady=3, sticky="w")
+            label_widgets.append(rp_label)
+            core_label = tk.Label(self.joystick_rows_frame, textvariable=core_var, bg=row_bg, fg="#2459d3", width=16, font=("Segoe UI", 10, "bold"), anchor="w")
+            core_label.grid(row=row_idx, column=10, padx=2, pady=3, sticky="w")
+            label_widgets.append(core_label)
+
+            mame = entry.get("mame", {})
+            mame_label = tk.Label(self.joystick_rows_frame, text=mame.get("type") or mame.get("input_id") or "", bg=row_bg, fg="#101828", width=16, anchor="w")
+            mame_label.grid(row=row_idx, column=11, padx=2, pady=3, sticky="w")
+            label_widgets.append(mame_label)
+            tag_label = tk.Label(self.joystick_rows_frame, text=mame.get("tag", ""), bg=row_bg, fg="#667085", width=14, anchor="w")
+            tag_label.grid(row=row_idx, column=12, padx=2, pady=3, sticky="w")
+            label_widgets.append(tag_label)
+            mask_label = tk.Label(self.joystick_rows_frame, text=mame.get("mask_hex", ""), bg=row_bg, fg="#101828", width=8, anchor="w", font=("Consolas", 9))
+            mask_label.grid(row=row_idx, column=13, padx=2, pady=3, sticky="w")
+            label_widgets.append(mask_label)
+
+            def _sel(evt=None, d=dev, dd=direction, ee=entry):
+                self.select_joystick(d, dd, ee)
+
+            bubble.bind("<Button-1>", _sel)
+            for widget in label_widgets:
+                widget.bind("<Button-1>", _sel)
+
+            self.joystick_widgets.append({
+                "dev": dev,
+                "direction": direction,
+                "entry": entry,
+                "bubble": bubble,
+                "label_widgets": label_widgets,
+                "slot_labels": slot_labels,
+                "rb_var": rb_var,
+                "rp_var": rp_var,
+                "core_var": core_var,
+            })
+
+    def _rebuild_axis_rows(self):
+        if self.axes_rows_frame is None:
+            return
+        for w in self.axes_rows_frame.winfo_children():
+            w.destroy()
+        self.axis_widgets = []
+
+        colspecs = [
+            ("COL", 4, "center"),
+            ("Input", 26, "w"),
+            ("Color", 10, "w"),
+            ("Output", 18, "w"),
+            ("2", 4, "center"),
+            ("4", 4, "center"),
+            ("6", 4, "center"),
+            ("8", 4, "center"),
+            ("RetroBat", 8, "w"),
+            ("RetroPad", 8, "w"),
+            ("Libretro / FBNeo", 16, "w"),
+            ("MAME", 16, "w"),
+            ("Tag", 14, "w"),
+            ("Mask", 8, "w"),
+        ]
+        for col, (txt, width, anchor) in enumerate(colspecs):
+            ttk.Label(self.axes_rows_frame, text=txt, width=width, anchor=anchor).grid(row=0, column=col, padx=2, pady=(0, 4), sticky="w")
+
+        for row_idx, axis in enumerate(self.iter_axes(), start=1):
+            row_bg = "#ffffff"
+            label_widgets = []
+            axis["color"] = canonical_color_name(axis.get("color", "Gray"), "Gray")
+
+            bubble = tk.Canvas(self.axes_rows_frame, width=24, height=24, bg=row_bg, highlightthickness=0)
+            bubble.grid(row=row_idx, column=0, padx=2, pady=3, sticky="w")
+
+            label_text = axis.get("label") or axis.get("input") or axis.get("id")
+            short = axis.get("short") or analog_short_label(axis.get("label"), axis.get("input"))
+            short_label = tk.Label(self.axes_rows_frame, text=f"{short} | {label_text}", bg=row_bg, fg="#101828", font=("Segoe UI", 10, "bold"), width=26, anchor="w")
+            short_label.grid(row=row_idx, column=1, padx=2, pady=3, sticky="w")
+            label_widgets.append(short_label)
+
+            color_var = tk.StringVar(value=canonical_color_name(axis.get("color", "Gray"), "Gray"))
+            color_cmb = ttk.Combobox(self.axes_rows_frame, textvariable=color_var, values=COLOR_CHOICES, width=10)
+            color_cmb.grid(row=row_idx, column=2, padx=2, pady=2, sticky="w")
+            color_cmb.bind("<<ComboboxSelected>>", lambda e, aa=axis, vv=color_var: self.on_axis_color_change(aa, vv))
+            color_cmb.bind("<FocusOut>", lambda e, aa=axis, vv=color_var: self.on_axis_color_change(aa, vv))
+
+            output_var = tk.StringVar(value=axis.get("output", ""))
+            output_cmb = ttk.Combobox(
+                self.axes_rows_frame,
+                textvariable=output_var,
+                values=self.player_data.get("output_choices", [""]),
+                width=18,
+            )
+            output_cmb.grid(row=row_idx, column=3, padx=2, pady=2, sticky="w")
+            output_cmb.bind("<<ComboboxSelected>>", lambda e, aa=axis, vv=output_var: self.on_output_change(aa, vv))
+            output_cmb.bind("<FocusOut>", lambda e, aa=axis, vv=output_var: self.on_output_change(aa, vv))
+
+            slot_labels = {}
+            for col_offset, layout_name in enumerate(LAYOUTS, start=4):
+                sl = tk.Label(
+                    self.axes_rows_frame,
+                    text=self.slot_text(axis["slots_by_layout"].get(layout_name)),
+                    bg=row_bg,
+                    fg="#2459d3",
+                    width=4,
+                    font=("Segoe UI", 10, "bold"),
+                    anchor="center",
+                )
+                sl.grid(row=row_idx, column=col_offset, padx=2, pady=3)
+                slot_labels[layout_name] = sl
+                label_widgets.append(sl)
+
+            mame = axis.get("mame", {})
+            rb_var = tk.StringVar(value="")
+            rp_var = tk.StringVar(value="")
+            core_var = tk.StringVar(value="")
+            tk.Label(self.axes_rows_frame, textvariable=rb_var, bg=row_bg, fg="#2459d3", width=8, font=("Segoe UI", 10, "bold"), anchor="w").grid(row=row_idx, column=8, padx=2, pady=3, sticky="w")
+            tk.Label(self.axes_rows_frame, textvariable=rp_var, bg=row_bg, fg="#2459d3", width=8, font=("Segoe UI", 10, "bold"), anchor="w").grid(row=row_idx, column=9, padx=2, pady=3, sticky="w")
+            tk.Label(self.axes_rows_frame, textvariable=core_var, bg=row_bg, fg="#2459d3", width=16, font=("Segoe UI", 10, "bold"), anchor="w").grid(row=row_idx, column=10, padx=2, pady=3, sticky="w")
+
+            mame_label = tk.Label(self.axes_rows_frame, text=mame.get("type") or mame.get("input_id") or axis.get("id", ""), bg=row_bg, fg="#101828", width=16, anchor="w")
+            mame_label.grid(row=row_idx, column=11, padx=2, pady=3, sticky="w")
+            label_widgets.append(mame_label)
+            tag_label = tk.Label(self.axes_rows_frame, text=mame.get("tag", ""), bg=row_bg, fg="#667085", width=14, anchor="w")
+            tag_label.grid(row=row_idx, column=12, padx=2, pady=3, sticky="w")
+            label_widgets.append(tag_label)
+            mask_label = tk.Label(self.axes_rows_frame, text=mame.get("mask_hex", ""), bg=row_bg, fg="#101828", width=8, anchor="w", font=("Consolas", 9))
+            mask_label.grid(row=row_idx, column=13, padx=2, pady=3, sticky="w")
+            label_widgets.append(mask_label)
+
+            def _sel(evt=None, aa=axis):
+                self.select_axis(aa)
+
+            bubble.bind("<Button-1>", _sel)
+            for widget in label_widgets:
+                widget.bind("<Button-1>", _sel)
+
+            self.axis_widgets.append({
+                "axis": axis,
+                "bubble": bubble,
+                "label_widgets": label_widgets,
+                "slot_labels": slot_labels,
+                "rb_var": rb_var,
+                "rp_var": rp_var,
+                "core_var": core_var,
+            })
+
+    def slot_values(self, slot_value):
+        if slot_value is None:
+            return []
+        if isinstance(slot_value, (list, tuple, set)):
+            return [slot for slot in slot_value if slot is not None]
+        return [slot_value]
+
+    def slot_text(self, slot_value):
+        slots = self.slot_values(slot_value)
+        if not slots:
+            return "-"
+        return ",".join(str(slot) for slot in slots)
+
+    def slot_export_payload(self, slot_value):
+        slots = self.slot_values(slot_value)
+        if not slots:
+            return None
+        if len(slots) == 1:
+            return {"panel_slot": slots[0]}
+        return {"panel_slots": slots}
+
+    def first_slot_mapping(self, slot_value):
+        slots = self.slot_values(slot_value)
+        if not slots:
+            return None
+        return SLOT_MAP.get(str(slots[0]))
+
+    def ensure_system_input_entry(self, key, entry):
+        entry.setdefault("label", key.capitalize())
+        entry.setdefault("color", "")
+        entry["color"] = canonical_color_name(entry.get("color", ""))
+        entry.setdefault("output", "")
+        entry.setdefault("panel_joystick", None)
+        entry.setdefault("mame", {})
+        entry.setdefault("slots_by_layout", {layout: None for layout in LAYOUTS})
+        for layout_name in LAYOUTS:
+            entry["slots_by_layout"].setdefault(layout_name, None)
+
+    def button_row_key(self, button):
+        return button.get("instance_id") or str(button["game_button"])
+
+    def next_button_instance_id(self, button):
+        base = str(button["game_button"])
+        used = {
+            str(b.get("instance_id"))
+            for b in self.player_data["buttons"]
+            if b.get("instance_id")
+        }
+        idx = 2
+        while f"{base}#{idx}" in used:
+            idx += 1
+        return f"{base}#{idx}"
+
+    def duplicate_button_for_slot(self, button, layout_name, slot):
+        clone = copy.deepcopy(button)
+        clone["instance_id"] = self.next_button_instance_id(button)
+        clone["duplicate_of"] = button.get("duplicate_of", button["game_button"])
+        clone["slots_by_layout"] = {layout: None for layout in LAYOUTS}
+        clone["slots_by_layout"][layout_name] = slot
+        clone["panel_joystick"] = None
+        idx = self.player_data["buttons"].index(button) + 1
+        self.player_data["buttons"].insert(idx, clone)
+        self.selected_button = clone
+        self._rebuild_button_rows()
+        return clone
+
+    def button_allocation_text(self, button):
+        parts = []
+        for layout_name in LAYOUTS:
+            text = self.slot_text(button["slots_by_layout"].get(layout_name))
+            if text != "-":
+                parts.append(f"{layout_name}:{text}")
+        return ", ".join(parts) if parts else "none"
+
+    def update_delete_duplicate_state(self):
+        if not self.delete_duplicate_button:
+            return
+        state = "normal" if self.selected_button and self.selected_button.get("instance_id") else "disabled"
+        self.delete_duplicate_button.configure(state=state)
+
+    def delete_selected_duplicate_button(self):
+        button = self.selected_button
+        if not button or not button.get("instance_id"):
+            return
+        if button in self.player_data["buttons"]:
+            self.player_data["buttons"].remove(button)
+        self.selected_button = None
+        self.selected_label_var.set("Selected: none")
+        self._rebuild_button_rows()
+        self.refresh()
+        self._auto_copy_if_needed()
+
+    def on_color_change(self, button, var):
+        button["color"] = canonical_color_name(var.get())
+        var.set(button["color"])
+        self.refresh()
+
+    def on_output_change(self, button, var):
+        button["output"] = var.get().strip()
+
+    def on_axis_color_change(self, axis, var):
+        axis["color"] = canonical_color_name(var.get(), "Gray")
+        var.set(axis["color"])
+        self.refresh()
+
+    def on_joystick_input_color_change(self, entry, var):
+        entry["color"] = canonical_color_name(var.get())
+        var.set(entry["color"])
+        self.refresh()
+
+    def on_axis_joystick_change(self, axis, polarity, var):
+        axis.setdefault("joystick", {"negative": "", "positive": ""})
+        axis["joystick"][polarity] = self.direction_from_joystick_choice(var.get())
+        axis["physical_joystick"] = axis["joystick"].get("positive", "")
+        self.refresh()
+        self._auto_copy_if_needed()
+
+    def select_button(self, button):
+        self.selected_button = button
+        self.selected_system_input = None
+        self.selected_system_output = None
+        self.selected_joystick = None
+        self.selected_axis = None
+        self.refresh_button_selection()
+        self.refresh_system_input_selection()
+        self.refresh_system_output_selection()
+        self.refresh_joystick_selection()
+        self.refresh_axis_selection()
+        self.update_delete_duplicate_state()
+        instance = f' {button["instance_id"]}' if button.get("instance_id") else ""
+        self.selected_label_var.set(
+            f'Selected button: B{button["game_button"]}{instance} {button["function"]} ({button["color"]}) | Allocated: {self.button_allocation_text(button)}'
+        )
+
+    def select_system_input(self, key, entry):
+        self.selected_button = None
+        self.selected_system_input = {
+            "key": key,
+            "entry": entry,
+        }
+        self.selected_system_output = None
+        self.selected_joystick = None
+        self.selected_axis = None
+        self.refresh_button_selection()
+        self.refresh_system_input_selection()
+        self.refresh_system_output_selection()
+        self.refresh_joystick_selection()
+        self.refresh_axis_selection()
+        self.update_delete_duplicate_state()
+        self.selected_label_var.set(
+            f'Selected system input: {key.capitalize()} | Allocated: {self.button_allocation_text(entry)}'
+        )
+
+    def select_system_output(self, output):
+        self.selected_button = None
+        self.selected_system_input = None
+        self.selected_system_output = output
+        self.selected_joystick = None
+        self.selected_axis = None
+        self.refresh_button_selection()
+        self.refresh_system_input_selection()
+        self.refresh_system_output_selection()
+        self.refresh_joystick_selection()
+        self.refresh_axis_selection()
+        self.update_delete_duplicate_state()
+        output_name = output.get("name") or output.get("id") or ""
+        output_function = output.get("function") or output.get("label") or ""
+        details = output_name
+        if output_function and output_function != output_name:
+            details = f"{output_name} ({output_function})"
+        self.selected_label_var.set(
+            f'Selected system output: {details} | Allocated: {self.button_allocation_text(output)}'
+        )
+
+    def select_joystick(self, dev, direction, entry):
+        self.selected_button = None
+        self.selected_system_input = None
+        self.selected_system_output = None
+        self.selected_axis = None
+        self.selected_joystick = {
+            "dev": dev,
+            "direction": direction,
+            "entry": entry,
+        }
+        self.refresh_button_selection()
+        self.refresh_system_input_selection()
+        self.refresh_system_output_selection()
+        self.refresh_joystick_selection()
+        self.refresh_axis_selection()
+        self.update_delete_duplicate_state()
+        self.selected_label_var.set(
+            f'Selected joystick: {dev.get("label", "Device")} {direction.upper()}'
+        )
+
+    def select_axis(self, axis):
+        self.selected_button = None
+        self.selected_system_input = None
+        self.selected_system_output = None
+        self.selected_joystick = None
+        self.selected_axis = axis
+        self.refresh_button_selection()
+        self.refresh_system_input_selection()
+        self.refresh_system_output_selection()
+        self.refresh_joystick_selection()
+        self.refresh_axis_selection()
+        self.update_delete_duplicate_state()
+        self.selected_label_var.set(
+            f'Selected axis: {axis.get("label") or axis.get("id")}'
+        )
+
+    def refresh_button_selection(self):
+        for b in self.player_data["buttons"]:
+            widgets = self.button_widgets[self.button_row_key(b)]
+            selected = b is self.selected_button
+            bg = "#eef4ff" if selected else "#ffffff"
+            fg = "#2459d3" if selected else "#101828"
+            widgets["lbl"].configure(bg=bg, fg=fg)
+            widgets["bubble"].configure(bg=bg)
+            for sl in widgets["slot_labels"].values():
+                sl.configure(bg=bg)
+            widgets["bubble"].configure(
+                highlightthickness=2 if selected else 0,
+                highlightbackground="#2563eb" if selected else "#ffffff",
+            )
+
+    def refresh_system_input_selection(self):
+        selected_entry = self.selected_system_input["entry"] if self.selected_system_input else None
+        for widgets in self.system_input_widgets.values():
+            selected = widgets["entry"] is selected_entry
+            bg = "#eef4ff" if selected else "#ffffff"
+            fg = "#2459d3" if selected else "#101828"
+            widgets["bubble"].configure(
+                bg=bg,
+                highlightthickness=2 if selected else 0,
+                highlightbackground="#2563eb" if selected else "#ffffff",
+            )
+            for label in widgets["label_widgets"]:
+                label.configure(bg=bg)
+            for label in widgets["slot_labels"].values():
+                label.configure(bg=bg)
+            if widgets["label_widgets"]:
+                widgets["label_widgets"][0].configure(fg=fg)
+
+    def refresh_system_output_selection(self):
+        selected_entry = self.selected_system_output
+        for widgets in self.system_output_widgets.values():
+            selected = widgets["entry"] is selected_entry
+            bg = "#eef4ff" if selected else "#ffffff"
+            fg = "#2459d3" if selected else "#101828"
+            widgets["bubble"].configure(
+                bg=bg,
+                highlightthickness=2 if selected else 0,
+                highlightbackground="#2563eb" if selected else "#ffffff",
+            )
+            for label in widgets["label_widgets"]:
+                label.configure(bg=bg)
+            for label in widgets["slot_labels"].values():
+                label.configure(bg=bg)
+            if widgets["label_widgets"]:
+                widgets["label_widgets"][0].configure(fg=fg)
+
+    def refresh_joystick_selection(self):
+        selected_entry = self.selected_joystick["entry"] if self.selected_joystick else None
+        for widgets in self.joystick_widgets:
+            selected = widgets["entry"] is selected_entry
+            bg = "#eef4ff" if selected else "#ffffff"
+            fg = "#2459d3" if selected else "#101828"
+            widgets["bubble"].configure(
+                bg=bg,
+                highlightthickness=2 if selected else 0,
+                highlightbackground="#2563eb" if selected else "#ffffff",
+            )
+            for label in widgets["label_widgets"]:
+                label.configure(bg=bg)
+            for label in widgets["slot_labels"].values():
+                label.configure(bg=bg)
+            if len(widgets["label_widgets"]) > 1:
+                widgets["label_widgets"][1].configure(fg=fg)
+
+    def refresh_axis_selection(self):
+        for widgets in self.axis_widgets:
+            selected = widgets["axis"] is self.selected_axis
+            bg = "#eef4ff" if selected else "#ffffff"
+            fg = "#2459d3" if selected else "#101828"
+            widgets["bubble"].configure(
+                bg=bg,
+                highlightthickness=2 if selected else 0,
+                highlightbackground="#2563eb" if selected else "#ffffff",
+            )
+            for label in widgets["label_widgets"]:
+                label.configure(bg=bg)
+            for label in widgets["slot_labels"].values():
+                label.configure(bg=bg)
+            if widgets["label_widgets"]:
+                widgets["label_widgets"][0].configure(fg=fg)
+
+    def assigned_map_for_layout(self, layout_name):
+        out = {}
+        for key in self.system_input_order():
+            entry = self.player_data["system_inputs"][key]
+            self.ensure_system_input_entry(key, entry)
+            slots = self.slot_values(entry["slots_by_layout"].get(layout_name))
+            for slot in slots:
+                out[slot] = {
+                    "short": (entry.get("label") or key)[:3].upper(),
+                    "color": entry.get("color", "Gray"),
+                }
+        for output in self.player_data.get("system_outputs", []):
+            self.ensure_system_output_entry(output)
+            slots = self.slot_values(output["slots_by_layout"].get(layout_name))
+            for slot in slots:
+                out[slot] = {
+                    "short": self.system_output_short_label(output),
+                    "color": output.get("color", "Gray"),
+                }
+        for b in self.player_data["buttons"]:
+            slots = self.slot_values(b["slots_by_layout"].get(layout_name))
+            for slot in slots:
+                out[slot] = {
+                    "short": normalize_mk_role(b["function"]) or b["logical_name"],
+                    "color": b["color"],
+                }
+        for dev, direction, entry in self.iter_joystick_inputs():
+            slots = self.slot_values(entry["slots_by_layout"].get(layout_name))
+            for slot in slots:
+                if slot in out:
+                    continue
+                out[slot] = {
+                    "short": direction[:1].upper(),
+                    "color": entry.get("color", dev.get("color", "")),
+                }
+        for axis in self.iter_axes():
+            slots = self.slot_values(axis["slots_by_layout"].get(layout_name))
+            for slot in slots:
+                if slot in out:
+                    continue
+                out[slot] = {
+                    "short": axis.get("short") or analog_short_label(axis.get("label"), axis.get("input")),
+                    "color": axis.get("color", "Gray"),
+                }
+        return out
+
+    def selected_assignable_item(self):
+        if self.selected_button:
+            return "button", str(self.selected_button["game_button"]), self.selected_button
+        if self.selected_system_input:
+            return "system_input", self.selected_system_input["key"], self.selected_system_input["entry"]
+        if self.selected_system_output:
+            return "system_output", self.system_output_key(self.selected_system_output), self.selected_system_output
+        if self.selected_joystick:
+            return "joystick", self.selected_joystick["direction"], self.selected_joystick["entry"]
+        if self.selected_axis:
+            return "axis", self.selected_axis.get("id", ""), self.selected_axis
+        return None, "", None
+
+    def panel_joystick_assignments_for_item(self, item):
+        value = item.get("panel_joystick")
+        if not value:
+            return []
+        if isinstance(value, dict):
+            out = []
+            for polarity in ("negative", "positive"):
+                direction = value.get(polarity)
+                if direction:
+                    out.append((direction, polarity))
+            return out
+        return [(value, "")]
+
+    def assigned_panel_joystick_map(self):
+        out = {}
+        for kind, item_id, item in self.iter_assignable_items():
+            if kind == "button":
+                short = normalize_mk_role(item.get("function")) or item.get("logical_name") or item_id
+                color = item.get("color", "Gray")
+            elif kind == "system_input":
+                short = (item.get("label") or item_id)[:3].upper()
+                color = item.get("color", "Gray")
+            elif kind == "system_output":
+                short = self.system_output_short_label(item)
+                color = item.get("color", "Gray")
+            elif kind == "joystick":
+                short = str(item_id)[:1].upper()
+                color = item.get("color", "Gray")
+            else:
+                short = item.get("short") or analog_short_label(item.get("label"), item.get("input")) or item_id
+                color = item.get("color", "Gray")
+            for direction, polarity in self.panel_joystick_assignments_for_item(item):
+                out[direction] = {
+                    "kind": kind,
+                    "id": item_id,
+                    "polarity": polarity,
+                    "short": short,
+                    "color": color,
+                }
+        return out
+
+    def export_panel_joystick(self):
+        out = {}
+        for kind, item_id, item in self.iter_assignable_items():
+            for direction, polarity in self.panel_joystick_assignments_for_item(item):
+                payload = {
+                    "kind": kind,
+                    "id": item_id,
+                }
+                if polarity:
+                    payload["polarity"] = polarity
+                out[direction] = payload
+        return out
+
+    def clear_panel_joystick_conflicts(self, directions, selected_item=None):
+        if isinstance(directions, str):
+            directions = {directions}
+        else:
+            directions = set(directions)
+        for _, _, item in self.iter_assignable_items():
+            if item is selected_item:
+                continue
+            value = item.get("panel_joystick")
+            if isinstance(value, dict):
+                for polarity, assigned_direction in list(value.items()):
+                    if assigned_direction in directions:
+                        value[polarity] = ""
+                if not any(value.values()):
+                    item["panel_joystick"] = None
+            elif value in directions:
+                item["panel_joystick"] = None
+
+    def on_panel_joystick_click(self, direction):
+        _, _, selected_item = self.selected_assignable_item()
+        if selected_item is None:
+            return
+        self.clear_panel_joystick_conflicts(direction, selected_item=selected_item)
+        selected_item["panel_joystick"] = direction
+        self.refresh()
+        self._auto_copy_if_needed()
+
+    def on_panel_joystick_right_click(self, direction):
+        changed_item = None
+        for _, _, item in self.iter_assignable_items():
+            value = item.get("panel_joystick")
+            if isinstance(value, dict):
+                for polarity, assigned_direction in list(value.items()):
+                    if assigned_direction == direction:
+                        value[polarity] = ""
+                        changed_item = item
+                if not any(value.values()):
+                    item["panel_joystick"] = None
+            elif value == direction:
+                item["panel_joystick"] = None
+                changed_item = item
+        if changed_item is None:
+            return
+        self.refresh()
+        if changed_item is self.selected_button:
+            self.select_button(self.selected_button)
+        elif self.selected_system_input and changed_item is self.selected_system_input.get("entry"):
+            self.select_system_input(self.selected_system_input["key"], self.selected_system_input["entry"])
+        elif changed_item is self.selected_system_output:
+            self.select_system_output(self.selected_system_output)
+        elif self.selected_joystick and changed_item is self.selected_joystick.get("entry"):
+            self.refresh_joystick_selection()
+        elif changed_item is self.selected_axis:
+            self.refresh_axis_selection()
+        self._auto_copy_if_needed()
+
+    def auto_panel_joystick_mapping_for_axis(self, axis):
+        mame = axis.get("mame", {})
+        tokens = {
+            normalize_mame_token(axis.get("input", "")),
+            normalize_mame_token(axis.get("id", "")),
+            normalize_mame_token(mame.get("type", "")),
+            normalize_mame_token(mame.get("ipt", "")),
+            normalize_mame_token(mame.get("extend", {}).get("ipt", "")),
+        }
+        if tokens.intersection({"DIAL", "IPT_DIAL", "PADDLE", "IPT_PADDLE", "TRACKBALL_X", "IPT_TRACKBALL_X", "AD_STICK_X", "IPT_AD_STICK_X", "LIGHTGUN_X", "IPT_LIGHTGUN_X"}):
+            return {"negative": "left", "positive": "right"}
+        if tokens.intersection({"DIAL_V", "IPT_DIAL_V", "PADDLE_V", "IPT_PADDLE_V", "TRACKBALL_Y", "IPT_TRACKBALL_Y", "AD_STICK_Y", "IPT_AD_STICK_Y", "LIGHTGUN_Y", "IPT_LIGHTGUN_Y"}):
+            return {"negative": "up", "positive": "down"}
+        return None
+
+    def on_panel_joystick_center_click(self):
+        if not self.selected_axis:
+            return
+        mapping = self.auto_panel_joystick_mapping_for_axis(self.selected_axis)
+        if not mapping:
+            return
+        self.clear_panel_joystick_conflicts(mapping.values(), selected_item=self.selected_axis)
+        self.selected_axis["panel_joystick"] = mapping
+        self.refresh()
+        self._auto_copy_if_needed()
+
+    def clear_slot_conflicts(self, layout_name, slot, selected_button=None, selected_system_input=None, selected_system_output=None, selected_joystick_entry=None, selected_axis=None):
+        for key in self.system_input_order():
+            entry = self.player_data["system_inputs"][key]
+            self.ensure_system_input_entry(key, entry)
+            if entry is selected_system_input:
+                continue
+            slots = self.slot_values(entry["slots_by_layout"].get(layout_name))
+            if slot in slots:
+                slots = [s for s in slots if s != slot]
+                entry["slots_by_layout"][layout_name] = slots if len(slots) > 1 else (slots[0] if slots else None)
+        for output in self.player_data.get("system_outputs", []):
+            self.ensure_system_output_entry(output)
+            if output is selected_system_output:
+                continue
+            slots = self.slot_values(output["slots_by_layout"].get(layout_name))
+            if slot in slots:
+                slots = [s for s in slots if s != slot]
+                output["slots_by_layout"][layout_name] = slots if len(slots) > 1 else (slots[0] if slots else None)
+        for b in self.player_data["buttons"]:
+            if b is selected_button:
+                continue
+            slots = self.slot_values(b["slots_by_layout"].get(layout_name))
+            if slot in slots:
+                slots = [s for s in slots if s != slot]
+                b["slots_by_layout"][layout_name] = slots if len(slots) > 1 else (slots[0] if slots else None)
+        for _, _, entry in self.iter_joystick_inputs():
+            if entry is selected_joystick_entry:
+                continue
+            slots = self.slot_values(entry["slots_by_layout"].get(layout_name))
+            if slot in slots:
+                slots = [s for s in slots if s != slot]
+                entry["slots_by_layout"][layout_name] = slots if len(slots) > 1 else (slots[0] if slots else None)
+        for axis in self.iter_axes():
+            if axis is selected_axis:
+                continue
+            slots = self.slot_values(axis["slots_by_layout"].get(layout_name))
+            if slot in slots:
+                slots = [s for s in slots if s != slot]
+                axis["slots_by_layout"][layout_name] = slots if len(slots) > 1 else (slots[0] if slots else None)
+
+    def assign_slot_to_item(self, item, layout_name, slot):
+        if self.single_slot_var.get():
+            item["slots_by_layout"][layout_name] = slot
+            return
+        slots = self.slot_values(item["slots_by_layout"].get(layout_name))
+        if slot in slots:
+            slots = [s for s in slots if s != slot]
+        else:
+            slots.append(slot)
+        item["slots_by_layout"][layout_name] = slots if len(slots) > 1 else (slots[0] if slots else None)
+
+    def remove_slot_from_item(self, item, layout_name, slot):
+        slots = self.slot_values(item["slots_by_layout"].get(layout_name))
+        if slot not in slots:
+            return False
+        slots = [s for s in slots if s != slot]
+        item["slots_by_layout"][layout_name] = slots if len(slots) > 1 else (slots[0] if slots else None)
+        return True
+
+    def on_slot_click(self, layout_name, slot):
+        self.set_active_layout(layout_name, notify=True)
+        if self.selected_button:
+            self.clear_slot_conflicts(layout_name, slot, selected_button=self.selected_button)
+            if not self.single_slot_var.get():
+                current_slots = self.slot_values(self.selected_button["slots_by_layout"].get(layout_name))
+                if current_slots and slot not in current_slots:
+                    self.duplicate_button_for_slot(self.selected_button, layout_name, slot)
+                else:
+                    self.assign_slot_to_item(self.selected_button, layout_name, slot)
+            else:
+                self.assign_slot_to_item(self.selected_button, layout_name, slot)
+        elif self.selected_system_input:
+            entry = self.selected_system_input["entry"]
+            self.clear_slot_conflicts(layout_name, slot, selected_system_input=entry)
+            self.assign_slot_to_item(entry, layout_name, slot)
+        elif self.selected_system_output:
+            self.clear_slot_conflicts(layout_name, slot, selected_system_output=self.selected_system_output)
+            self.assign_slot_to_item(self.selected_system_output, layout_name, slot)
+        elif self.selected_joystick:
+            entry = self.selected_joystick["entry"]
+            self.clear_slot_conflicts(layout_name, slot, selected_joystick_entry=entry)
+            self.assign_slot_to_item(entry, layout_name, slot)
+        elif self.selected_axis:
+            self.clear_slot_conflicts(layout_name, slot, selected_axis=self.selected_axis)
+            self.assign_slot_to_item(self.selected_axis, layout_name, slot)
+
+        self.refresh()
+        if self.selected_button:
+            self.select_button(self.selected_button)
+        elif self.selected_system_input:
+            self.select_system_input(self.selected_system_input["key"], self.selected_system_input["entry"])
+        elif self.selected_system_output:
+            self.select_system_output(self.selected_system_output)
+        if self.selected_button or self.selected_system_input or self.selected_system_output or self.selected_joystick or self.selected_axis:
+            self._auto_copy_if_needed()
+
+    def on_slot_right_click(self, layout_name, slot):
+        self.set_active_layout(layout_name, notify=True)
+        changed_item = None
+        for key in self.system_input_order():
+            entry = self.player_data["system_inputs"][key]
+            self.ensure_system_input_entry(key, entry)
+            if self.remove_slot_from_item(entry, layout_name, slot):
+                changed_item = entry
+                break
+        for b in self.player_data["buttons"]:
+            if changed_item is not None:
+                break
+            if self.remove_slot_from_item(b, layout_name, slot):
+                changed_item = b
+                break
+        if changed_item is None:
+            for output in self.player_data.get("system_outputs", []):
+                self.ensure_system_output_entry(output)
+                if self.remove_slot_from_item(output, layout_name, slot):
+                    changed_item = output
+                    break
+        if changed_item is None:
+            for _, _, entry in self.iter_joystick_inputs():
+                if self.remove_slot_from_item(entry, layout_name, slot):
+                    changed_item = entry
+                    break
+        if changed_item is None:
+            for axis in self.iter_axes():
+                if self.remove_slot_from_item(axis, layout_name, slot):
+                    changed_item = axis
+                    break
+        if changed_item is None:
+            return
+        self.refresh()
+        if changed_item is self.selected_button:
+            self.select_button(self.selected_button)
+        elif self.selected_system_input and changed_item is self.selected_system_input.get("entry"):
+            self.select_system_input(self.selected_system_input["key"], self.selected_system_input["entry"])
+        elif changed_item is self.selected_system_output:
+            self.select_system_output(self.selected_system_output)
+        elif self.selected_joystick and changed_item is self.selected_joystick.get("entry"):
+            self.refresh_joystick_selection()
+        elif changed_item is self.selected_axis:
+            self.refresh_axis_selection()
+        self._auto_copy_if_needed()
+
+    def clear_all(self):
+        self.set_active_layout("4-Button", notify=True)
+        for key in self.system_input_order():
+            entry = self.player_data["system_inputs"][key]
+            self.ensure_system_input_entry(key, entry)
+            for layout_name in LAYOUTS:
+                entry["slots_by_layout"][layout_name] = None
+            entry["panel_joystick"] = None
+        for output in self.player_data.get("system_outputs", []):
+            self.ensure_system_output_entry(output)
+            for layout_name in LAYOUTS:
+                output["slots_by_layout"][layout_name] = None
+            output["panel_joystick"] = None
+        for b in self.player_data["buttons"]:
+            for layout_name in LAYOUTS:
+                b["slots_by_layout"][layout_name] = None
+            b["panel_joystick"] = None
+        for _, _, entry in self.iter_joystick_inputs():
+            for layout_name in LAYOUTS:
+                entry["slots_by_layout"][layout_name] = None
+            entry["panel_joystick"] = None
+        for axis in self.iter_axes():
+            for layout_name in LAYOUTS:
+                axis["slots_by_layout"][layout_name] = None
+            axis["physical_joystick"] = ""
+            axis["joystick"] = {"negative": "", "positive": ""}
+            axis["panel_joystick"] = None
+        self.selected_button = None
+        self.selected_system_input = None
+        self.selected_system_output = None
+        self.selected_joystick = None
+        self.selected_axis = None
+        self.selected_label_var.set("Selected: none")
+        self.update_delete_duplicate_state()
+        self.refresh()
+        self._auto_copy_if_needed()
+
+    def _apply_pattern_if_empty(self):
+        has_any = any(any(v is not None for v in b["slots_by_layout"].values()) for b in self.player_data["buttons"])
+        if not has_any:
+            self.apply_pattern()
+
+    def apply_pattern(self):
+        pattern = self.pattern_var.get()
+        mapping = PATTERN_LIBRARY.get(pattern, {})
+
+        for b in self.player_data["buttons"]:
+            role = normalize_mk_role(b["function"])
+            lname = (b["logical_name"] or "").strip().upper()
+            index_key = str(b["game_button"])
+
+            for layout_name in LAYOUTS:
+                slot = None
+                if role and role in mapping:
+                    slot = mapping[role].get(layout_name)
+                elif lname in mapping:
+                    slot = mapping[lname].get(layout_name)
+                elif index_key in mapping:
+                    slot = mapping[index_key].get(layout_name)
+                b["slots_by_layout"][layout_name] = slot
+
+        self.refresh()
+        self._auto_copy_if_needed()
+
+    def _auto_copy_if_needed(self):
+        if self.player_data["player"] == 1 and self.autocopy_var.get() and self.on_apply_p1:
+            self.on_apply_p1(self)
+
+    def apply_to_others(self):
+        if self.player_data["player"] == 1 and self.on_apply_p1:
+            self.on_apply_p1(self)
+
+    def refresh(self):
+        for layout_name, gv in self.grid_views.items():
+            gv.render(self.assigned_map_for_layout(layout_name))
+        for layout_name, card in self.layout_cards.items():
+            card.set_active(layout_name == self.active_layout)
+            card.render(self.assigned_map_for_layout(layout_name))
+        if self.joystick_card:
+            self.joystick_card.render(self.assigned_panel_joystick_map())
+
+        for key in self.system_input_order():
+            entry = self.player_data["system_inputs"][key]
+            self.ensure_system_input_entry(key, entry)
+            widgets = self.system_input_widgets.get(key)
+            if not widgets:
+                continue
+            widgets["bubble"].delete("all")
+            short = (entry.get("label") or key)[:3].upper()
+            widgets["bubble"].create_oval(2, 2, 22, 22, fill=color_to_hex(entry.get("color", "Gray")), outline="#111827")
+            widgets["bubble"].create_text(12, 12, text=short, fill="#111827", font=("Segoe UI", 7, "bold"))
+
+            for layout_name in LAYOUTS:
+                widgets["slot_labels"][layout_name].configure(text=self.slot_text(entry["slots_by_layout"].get(layout_name)))
+
+            rb = ""
+            rp = ""
+            core = ""
+            layout_order = [self.active_layout] + [x for x in LAYOUTS if x != self.active_layout]
+            for layout_name in layout_order:
+                sm = self.first_slot_mapping(entry["slots_by_layout"].get(layout_name))
+                if sm:
+                    rb = sm["retrobat_button"]
+                    rp = str(sm["retropad_id"])
+                    lr = sm.get("libretro_button", "")
+                    fb = sm.get("fbneo_button", "")
+                    core = lr if lr == fb else f"{lr} / {fb}"
+                    break
+            widgets["rb_var"].set(rb)
+            widgets["rp_var"].set(rp)
+            widgets["core_var"].set(core)
+
+        for output in self.player_data.get("system_outputs", []):
+            self.ensure_system_output_entry(output)
+            widgets = self.system_output_widgets.get(self.system_output_key(output))
+            if not widgets:
+                continue
+            widgets["bubble"].delete("all")
+            short = self.system_output_short_label(output)
+            widgets["bubble"].create_oval(2, 2, 22, 22, fill=color_to_hex(output.get("color", "Gray")), outline="#111827")
+            widgets["bubble"].create_text(12, 12, text=short[:3], fill="#111827", font=("Segoe UI", 7, "bold"))
+
+            for layout_name in LAYOUTS:
+                widgets["slot_labels"][layout_name].configure(text=self.slot_text(output["slots_by_layout"].get(layout_name)))
+
+            rb = ""
+            rp = ""
+            core = ""
+            layout_order = [self.active_layout] + [x for x in LAYOUTS if x != self.active_layout]
+            for layout_name in layout_order:
+                sm = self.first_slot_mapping(output["slots_by_layout"].get(layout_name))
+                if sm:
+                    rb = sm["retrobat_button"]
+                    rp = str(sm["retropad_id"])
+                    lr = sm.get("libretro_button", "")
+                    fb = sm.get("fbneo_button", "")
+                    core = lr if lr == fb else f"{lr} / {fb}"
+                    break
+            mame = self.mame_for_system_output_input(output)
+            widgets["rb_var"].set(rb)
+            widgets["rp_var"].set(rp)
+            widgets["core_var"].set(core)
+            widgets["mame_var"].set(mame.get("type") or mame.get("input_id") or "")
+            widgets["tag_var"].set(mame.get("tag", ""))
+            widgets["mask_var"].set(mame.get("mask_hex", ""))
+
+        for b in self.player_data["buttons"]:
+            widgets = self.button_widgets[self.button_row_key(b)]
+            widgets["bubble"].delete("all")
+            short = normalize_mk_role(b["function"]) or b["logical_name"]
+            widgets["bubble"].create_oval(2, 2, 22, 22, fill=color_to_hex(b["color"]), outline="#111827")
+            widgets["bubble"].create_text(12, 12, text=short, fill="#111827", font=("Segoe UI", 8, "bold"))
+
+            for layout_name in LAYOUTS:
+                widgets["slot_labels"][layout_name].configure(text=self.slot_text(b["slots_by_layout"][layout_name]))
+
+            rb = ""
+            rp = ""
+            core = ""
+            layout_order = [self.active_layout] + [x for x in LAYOUTS if x != self.active_layout]
+            for layout_name in layout_order:
+                sm = self.first_slot_mapping(b["slots_by_layout"][layout_name])
+                if sm:
+                    rb = sm["retrobat_button"]
+                    rp = str(sm["retropad_id"])
+                    lr = sm.get("libretro_button", "")
+                    fb = sm.get("fbneo_button", "")
+                    core = lr if lr == fb else f"{lr} / {fb}"
+                    break
+            widgets["rb_var"].set(rb)
+            widgets["rp_var"].set(rp)
+            widgets["core_var"].set(core)
+
+        for widgets in self.joystick_widgets:
+            entry = widgets["entry"]
+            widgets["bubble"].delete("all")
+            short = widgets["direction"][:1].upper()
+            widgets["bubble"].create_oval(2, 2, 22, 22, fill=color_to_hex(entry.get("color", widgets["dev"].get("color", ""))), outline="#111827")
+            widgets["bubble"].create_text(12, 12, text=short, fill="#111827", font=("Segoe UI", 8, "bold"))
+
+            for layout_name in LAYOUTS:
+                widgets["slot_labels"][layout_name].configure(text=self.slot_text(entry["slots_by_layout"].get(layout_name)))
+
+            rb = ""
+            rp = ""
+            core = ""
+            layout_order = [self.active_layout] + [x for x in LAYOUTS if x != self.active_layout]
+            for layout_name in layout_order:
+                sm = self.first_slot_mapping(entry["slots_by_layout"].get(layout_name))
+                if sm:
+                    rb = sm["retrobat_button"]
+                    rp = str(sm["retropad_id"])
+                    lr = sm.get("libretro_button", "")
+                    fb = sm.get("fbneo_button", "")
+                    core = lr if lr == fb else f"{lr} / {fb}"
+                    break
+            if not rb:
+                sm = JOYSTICK_DIRECTION_MAP.get(widgets["direction"], {})
+                rb = sm.get("retrobat_button", "")
+                rp = "" if sm.get("retropad_id") is None else str(sm.get("retropad_id", ""))
+                lr = sm.get("libretro_button", "")
+                fb = sm.get("fbneo_button", "")
+                core = lr if lr == fb else f"{lr} / {fb}"
+            widgets["rb_var"].set(rb)
+            widgets["rp_var"].set(rp)
+            widgets["core_var"].set(core)
+
+        for widgets in self.axis_widgets:
+            axis = widgets["axis"]
+            widgets["bubble"].delete("all")
+            short = axis.get("short") or analog_short_label(axis.get("label"), axis.get("input"))
+            widgets["bubble"].create_oval(2, 2, 22, 22, fill=color_to_hex(axis.get("color", "Gray")), outline="#111827")
+            widgets["bubble"].create_text(12, 12, text=str(short)[:3], fill="#111827", font=("Segoe UI", 7, "bold"))
+            for layout_name in LAYOUTS:
+                widgets["slot_labels"][layout_name].configure(text=self.slot_text(axis["slots_by_layout"].get(layout_name)))
+
+            rb = ""
+            rp = ""
+            core = ""
+            layout_order = [self.active_layout] + [x for x in LAYOUTS if x != self.active_layout]
+            for layout_name in layout_order:
+                sm = self.first_slot_mapping(axis["slots_by_layout"].get(layout_name))
+                if sm:
+                    rb = sm["retrobat_button"]
+                    rp = str(sm["retropad_id"])
+                    lr = sm.get("libretro_button", "")
+                    fb = sm.get("fbneo_button", "")
+                    core = lr if lr == fb else f"{lr} / {fb}"
+                    break
+            widgets["rb_var"].set(rb)
+            widgets["rp_var"].set(rp)
+            widgets["core_var"].set(core)
+
+        self.refresh_button_selection()
+        self.refresh_system_input_selection()
+        self.refresh_system_output_selection()
+        self.refresh_joystick_selection()
+        self.refresh_axis_selection()
+
+    def export_player(self):
+        player_id = str(self.player_data["player"])
+
+        devices = []
+        for dev in self.player_data["devices"]:
+            inputs = {}
+            for direction, entry in dev.get("inputs", {}).items():
+                if direction in JOYSTICK_DIRECTION_MAP and not is_specific_joystick_input(entry):
+                    continue
+                direction_mapping = JOYSTICK_DIRECTION_MAP.get(direction, {})
+                exported_entry = {
+                    k: v
+                    for k, v in entry.items()
+                    if k != "slots_by_layout"
+                }
+                if direction_mapping:
+                    exported_entry["mapping"] = direction_mapping
+                layouts = {}
+                for layout_name in LAYOUTS:
+                    payload = self.slot_export_payload(entry.get("slots_by_layout", {}).get(layout_name))
+                    if payload:
+                        layouts[layout_name] = payload
+                if layouts:
+                    exported_entry["layouts"] = layouts
+                inputs[direction] = exported_entry
+
+            devices.append({
+                "id": dev["id"],
+                "label": dev["label"],
+                "type": dev["type"],
+                "raw": dev.get("raw", ""),
+                "codes": dev.get("codes", []),
+                "color": dev.get("color", ""),
+                "inputs": inputs,
+                "axes": dev.get("axes", {}),
+            })
+
+        buttons = {}
+        for b in self.player_data["buttons"]:
+            button_key = self.button_row_key(b)
+            buttons[button_key] = {
+                "game_button": b["game_button"],
+                "logical_name": b["logical_name"],
+                "function": b["function"],
+                "color": b["color"],
+                "output": b.get("output", ""),
+                "panel_joystick": b.get("panel_joystick"),
+                "mame": b["mame"],
+            }
+            if b.get("instance_id"):
+                buttons[button_key]["instance_id"] = b["instance_id"]
+                buttons[button_key]["duplicate_of"] = b.get("duplicate_of", b["game_button"])
+
+        axes = []
+        for axis in self.iter_axes():
+            exported_axis = {
+                k: v
+                for k, v in axis.items()
+                if k not in {"slots_by_layout", "slots_by_polarity"}
+            }
+            layouts_for_axis = {}
+            for layout_name in LAYOUTS:
+                payload = self.slot_export_payload(axis.get("slots_by_layout", {}).get(layout_name))
+                if payload:
+                    layouts_for_axis[layout_name] = payload
+            if layouts_for_axis:
+                exported_axis["layouts"] = layouts_for_axis
+            axes.append(exported_axis)
+
+        system_outputs = []
+        for output in self.player_data.get("system_outputs", []):
+            self.ensure_system_output_entry(output)
+            exported_output = {
+                k: v
+                for k, v in output.items()
+                if k != "slots_by_layout"
+            }
+            layouts_for_output = {}
+            for layout_name in LAYOUTS:
+                payload = self.slot_export_payload(output.get("slots_by_layout", {}).get(layout_name))
+                if payload:
+                    layouts_for_output[layout_name] = payload
+            if layouts_for_output:
+                exported_output["layouts"] = layouts_for_output
+            system_outputs.append(exported_output)
+
+        layouts = {}
+        for layout_name in LAYOUTS:
+            layout_system_inputs = {}
+            for key in self.system_input_order():
+                entry = self.player_data["system_inputs"][key]
+                self.ensure_system_input_entry(key, entry)
+                payload = self.slot_export_payload(entry["slots_by_layout"].get(layout_name))
+                if not payload:
+                    continue
+                layout_system_inputs[key] = payload
+
+            layout_system_outputs = {}
+            for output in self.player_data.get("system_outputs", []):
+                self.ensure_system_output_entry(output)
+                payload = self.slot_export_payload(output["slots_by_layout"].get(layout_name))
+                if not payload:
+                    continue
+                layout_system_outputs[self.system_output_key(output)] = payload
+
+            layout_buttons = {}
+            for b in self.player_data["buttons"]:
+                payload = self.slot_export_payload(b["slots_by_layout"][layout_name])
+                if not payload:
+                    continue
+                layout_buttons[self.button_row_key(b)] = payload
+
+            layout_axes = {}
+            for axis in self.iter_axes():
+                payload = self.slot_export_payload(axis["slots_by_layout"].get(layout_name))
+                if not payload:
+                    continue
+                layout_axes[axis["id"]] = payload
+
+            layouts[layout_name] = {
+                "pattern": self.pattern_var.get(),
+                "system_inputs": layout_system_inputs,
+                "system_outputs": layout_system_outputs,
+                "buttons": layout_buttons,
+                "axes": layout_axes,
+            }
+
+        return player_id, {
+            "devices": devices,
+            "system_inputs": self.player_data["system_inputs"],
+            "system_outputs": system_outputs,
+            "buttons": buttons,
+            "axes": axes,
+            "panel_joystick": self.export_panel_joystick(),
+            "mame_inputs_extra": self.player_data.get("mame_inputs_extra", []),
+            "layouts": layouts,
+        }
+
+
+# ============================================================
+# COMMON BUTTON VARS EDITOR
+# ============================================================
+
+class CommonButtonsEditor(ttk.Frame):
+    def __init__(self, parent, common_vars, on_apply):
+        super().__init__(parent)
+        self.common_vars = common_vars
+        self.on_apply = on_apply
+        self.vars = {}
+        self._build_ui()
+
+    def _build_ui(self):
+        ttk.Label(self, text="Edit common logical names and functions, then apply them to all players.").pack(anchor="w", padx=4, pady=(2, 6))
+
+        header = ttk.Frame(self)
+        header.pack(fill="x", padx=4, pady=2)
+
+        ttk.Label(header, text="Index", width=6).grid(row=0, column=0, padx=2, sticky="w")
+        ttk.Label(header, text="Logical Name", width=14).grid(row=0, column=1, padx=2, sticky="w")
+        ttk.Label(header, text="Function", width=22).grid(row=0, column=2, padx=2, sticky="w")
+
+        body = ttk.Frame(self)
+        body.pack(fill="x", padx=4, pady=4)
+
+        row_idx = 0
+        for key in sorted(self.common_vars.keys(), key=lambda x: int(x)):
+            entry = self.common_vars[key]
+            logical_var = tk.StringVar(value=entry.get("logical_name", ""))
+            function_var = tk.StringVar(value=entry.get("function", ""))
+
+            ttk.Label(body, text=key, width=6).grid(row=row_idx, column=0, padx=2, pady=2, sticky="w")
+            ttk.Entry(body, textvariable=logical_var, width=14).grid(row=row_idx, column=1, padx=2, pady=2, sticky="w")
+            ttk.Entry(body, textvariable=function_var, width=22).grid(row=row_idx, column=2, padx=2, pady=2, sticky="w")
+
+            self.vars[key] = {
+                "logical_name": logical_var,
+                "function": function_var,
+            }
+            row_idx += 1
+
+        actions = ttk.Frame(self)
+        actions.pack(fill="x", padx=4, pady=4)
+        ttk.Button(actions, text="Apply to all players", command=self.apply_all).pack(side="left", padx=4)
+
+    def apply_all(self):
+        payload = {}
+        for key, entry in self.vars.items():
+            payload[key] = {
+                "logical_name": entry["logical_name"].get().strip(),
+                "function": entry["function"].get().strip(),
+            }
+        self.on_apply(payload)
+
+
+# ============================================================
+# APP
+# ============================================================
+
+class CuratorApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Panel Curator Ultimate")
+        self.repo = DataRepository()
+        self.roms = list_roms()
+        if not self.roms:
+            raise RuntimeError("No MAME ROM with panel image found.")
+
+        style = ttk.Style()
+        style.configure("Selected.TLabel", background="#dbeafe", foreground="#111827")
+
+        self.index = 0
+        self.current_data = None
+        self.current_photo = None
+        self.player_editors = []
+        self.common_editor = None
+        self.export_layout_var = tk.StringVar(value="4-Button")
+
+        self._build_ui()
+        self.load_current()
+
+    def _build_ui(self):
+        self.root.geometry("1920x1080")
+
+        action_bar = ttk.Frame(self.root)
+        action_bar.pack(fill="x", padx=8, pady=8)
+
+        ttk.Button(action_bar, text="Previous", command=self.prev_rom).pack(side="left", padx=4)
+        ttk.Button(action_bar, text="Save", command=self.save_current).pack(side="left", padx=4)
+        ttk.Button(action_bar, text="Save + Next", command=self.save_and_next).pack(side="left", padx=4)
+        ttk.Button(action_bar, text="Next", command=self.next_rom).pack(side="left", padx=4)
+        ttk.Button(action_bar, text="Reload", command=self.load_current).pack(side="left", padx=4)
+        ttk.Button(action_bar, text="Export systems", command=self.export_systems).pack(side="left", padx=4)
+
+        ttk.Separator(action_bar, orient="vertical").pack(side="left", fill="y", padx=8)
+
+        ttk.Label(action_bar, text="Search ROM").pack(side="left", padx=(4, 2))
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(action_bar, textvariable=self.search_var, width=18)
+        self.search_entry.pack(side="left", padx=2)
+        ttk.Button(action_bar, text="Go", command=self.goto_search).pack(side="left", padx=2)
+
+        ttk.Label(action_bar, text="Index").pack(side="left", padx=(12, 2))
+        self.goto_var = tk.StringVar()
+        self.goto_entry = ttk.Entry(action_bar, textvariable=self.goto_var, width=8)
+        self.goto_entry.pack(side="left", padx=2)
+        ttk.Button(action_bar, text="Go to", command=self.goto_index).pack(side="left", padx=2)
+
+        self.status_var = tk.StringVar()
+        ttk.Label(action_bar, textvariable=self.status_var).pack(side="right", padx=8)
+
+        header = ttk.Frame(self.root)
+        header.pack(fill="x", padx=8, pady=4)
+
+        self.rom_var = tk.StringVar()
+        self.game_var = tk.StringVar()
+
+        ttk.Label(header, textvariable=self.rom_var, font=("Segoe UI", 16, "bold")).pack(side="left", padx=8)
+        ttk.Label(header, textvariable=self.game_var, font=("Segoe UI", 13)).pack(side="left", padx=8)
+
+        body = ttk.Panedwindow(self.root, orient="horizontal")
+        body.pack(fill="both", expand=True)
+
+        left = ttk.Frame(body)
+        right = ttk.Frame(body)
+        body.add(left, weight=2)
+        body.add(right, weight=3)
+
+        panel_box = ttk.LabelFrame(left, text="Panel")
+        panel_box.pack(fill="x", padx=8, pady=8)
+
+        self.image_label = ttk.Label(panel_box)
+        self.image_label.pack(fill="x", padx=8, pady=8)
+
+        meta_box = ttk.LabelFrame(left, text="Metadata")
+        meta_box.pack(fill="x", padx=8, pady=8)
+
+        self.meta_text = tk.Text(meta_box, height=10, wrap="word")
+        self.meta_text.pack(fill="x", padx=6, pady=6)
+
+        common_box = ttk.LabelFrame(left, text="Common Button Variables")
+        common_box.pack(fill="x", padx=8, pady=8)
+
+        self.common_container = ttk.Frame(common_box)
+        self.common_container.pack(fill="x", padx=4, pady=4)
+
+        self.notebook = ttk.Notebook(right)
+        self.notebook.pack(fill="both", expand=True, padx=8, pady=8)
+
+    def clear_notebook(self):
+        for tab_id in self.notebook.tabs():
+            self.notebook.forget(tab_id)
+        self.player_editors = []
+
+    def clear_common_editor(self):
+        for w in self.common_container.winfo_children():
+            w.destroy()
+        self.common_editor = None
+
+    def load_image(self, rom):
+        path = find_panel_image(rom)
+        if not path:
+            self.current_photo = None
+            self.image_label.configure(image="", text="No image")
+            return
+
+        img = Image.open(path)
+        img.thumbnail((520, 300))
+        self.current_photo = ImageTk.PhotoImage(img)
+        self.image_label.configure(image=self.current_photo)
+
+    def load_current(self):
+        rom = self.roms[self.index]
+        self.current_data = self.repo.get_game_data(rom)
+
+        self.rom_var.set(rom)
+        self.game_var.set(self.current_data["game_name"])
+        if hasattr(self, "top_game_var"):
+            self.top_game_var.set(self.current_data["game_name"])
+        self.status_var.set(f"{self.index + 1} / {len(self.roms)}")
+
+        self.load_image(rom)
+
+        self.meta_text.delete("1.0", "end")
+        meta = self.current_data["meta"]
+        self.meta_text.insert(
+            "end",
+            (
+                f"system: {self.current_data['system']}\n"
+                f"players: {meta['players']}\n"
+                f"alternating: {meta['alternating']}\n"
+                f"mirrored: {meta['mirrored']}\n"
+                f"tilt: {meta['tilt']}\n"
+                f"cocktail: {meta['cocktail']}\n"
+                f"uses_service: {meta['uses_service']}\n\n"
+                f"{meta['misc_details']}\n"
+            )
+        )
+
+        self.clear_common_editor()
+        self.common_editor = CommonButtonsEditor(
+            self.common_container,
+            self.current_data["common_button_vars"],
+            on_apply=self.apply_common_button_vars
+        )
+        self.common_editor.pack(fill="x")
+
+        self.clear_notebook()
+        for pdata in self.current_data["players_data"]:
+            editor = PlayerEditor(self.notebook, pdata, on_apply_p1=self.copy_p1_to_others, on_layout_select=self.on_visual_panel_selected)
+            editor.set_active_layout(self.export_layout_var.get())
+            self.player_editors.append(editor)
+            self.notebook.add(editor, text=f'Player {pdata["player"]}')
+
+    def apply_common_button_vars(self, payload):
+        self.current_data["common_button_vars"] = payload
+
+        for pdata in self.current_data["players_data"]:
+            for b in pdata["buttons"]:
+                key = str(b["game_button"])
+                if key in payload:
+                    if payload[key]["logical_name"]:
+                        b["logical_name"] = payload[key]["logical_name"]
+                    if payload[key]["function"]:
+                        b["function"] = payload[key]["function"]
+
+        current_tab = self.notebook.index(self.notebook.select()) if self.notebook.tabs() else 0
+        self.clear_notebook()
+        for pdata in self.current_data["players_data"]:
+            editor = PlayerEditor(self.notebook, pdata, on_apply_p1=self.copy_p1_to_others, on_layout_select=self.on_visual_panel_selected)
+            editor.set_active_layout(self.export_layout_var.get())
+            self.player_editors.append(editor)
+            self.notebook.add(editor, text=f'Player {pdata["player"]}')
+        if self.notebook.tabs():
+            self.notebook.select(min(current_tab, len(self.notebook.tabs()) - 1))
+
+    def on_visual_panel_selected(self, layout_name):
+        if layout_name in LAYOUTS:
+            self.export_layout_var.set(layout_name)
+
+    def on_export_layout_changed(self, event=None):
+        layout_name = self.export_layout_var.get()
+        if layout_name not in LAYOUTS:
+            return
+        for editor in self.player_editors:
+            editor.set_active_layout(layout_name)
+
+    def copy_p1_to_others(self, source_editor):
+        if source_editor.player_data["player"] != 1:
+            return
+
+        src_buttons = {b["game_button"]: b for b in source_editor.player_data["buttons"]}
+        src_axes = {a.get("id"): a for a in source_editor.player_data.get("axes", []) if isinstance(a, dict)}
+        src_outputs = {
+            source_editor.system_output_key(out): out
+            for out in source_editor.player_data.get("system_outputs", [])
+            if isinstance(out, dict)
+        }
+        src_pattern = source_editor.pattern_var.get()
+
+        for editor in self.player_editors:
+            if editor is source_editor:
+                continue
+
+            tgt_buttons = {b["game_button"]: b for b in editor.player_data["buttons"]}
+            editor.pattern_var.set(src_pattern)
+
+            for key, src_entry in source_editor.player_data.get("system_inputs", {}).items():
+                tgt_entry = editor.player_data.get("system_inputs", {}).get(key)
+                if not tgt_entry:
+                    continue
+                tgt_entry["color"] = src_entry.get("color", tgt_entry.get("color", ""))
+                tgt_entry["output"] = src_entry.get("output", tgt_entry.get("output", ""))
+                tgt_entry["panel_joystick"] = src_entry.get("panel_joystick")
+                tgt_entry.setdefault("slots_by_layout", {layout: None for layout in LAYOUTS})
+                for layout_name in LAYOUTS:
+                    tgt_entry["slots_by_layout"][layout_name] = src_entry.get("slots_by_layout", {}).get(layout_name)
+
+            tgt_outputs = {
+                editor.system_output_key(out): out
+                for out in editor.player_data.get("system_outputs", [])
+                if isinstance(out, dict)
+            }
+            for output_key, src_output in src_outputs.items():
+                tgt_output = tgt_outputs.get(output_key)
+                if not tgt_output:
+                    continue
+                editor.ensure_system_output_entry(tgt_output)
+                tgt_output["color"] = src_output.get("color", tgt_output.get("color", "Gray"))
+                tgt_output["input_ref"] = src_output.get("input_ref", tgt_output.get("input_ref", ""))
+                tgt_output["panel_joystick"] = src_output.get("panel_joystick")
+                for layout_name in LAYOUTS:
+                    tgt_output["slots_by_layout"][layout_name] = src_output.get("slots_by_layout", {}).get(layout_name)
+
+            for idx, srcb in src_buttons.items():
+                tgtb = tgt_buttons.get(idx)
+                if not tgtb:
+                    continue
+                for layout_name in LAYOUTS:
+                    tgtb["slots_by_layout"][layout_name] = srcb["slots_by_layout"][layout_name]
+                tgtb["panel_joystick"] = srcb.get("panel_joystick")
+
+            for dev_idx, src_dev in enumerate(source_editor.player_data["devices"]):
+                if dev_idx >= len(editor.player_data["devices"]):
+                    continue
+                tgt_dev = editor.player_data["devices"][dev_idx]
+                for direction, src_entry in src_dev.get("inputs", {}).items():
+                    tgt_entry = tgt_dev.get("inputs", {}).get(direction)
+                    if not tgt_entry:
+                        continue
+                    for layout_name in LAYOUTS:
+                        tgt_entry.setdefault("slots_by_layout", {layout: None for layout in LAYOUTS})
+                        tgt_entry["slots_by_layout"][layout_name] = src_entry.get("slots_by_layout", {}).get(layout_name)
+                    tgt_entry["panel_joystick"] = src_entry.get("panel_joystick")
+
+            tgt_axes = {a.get("id"): a for a in editor.player_data.get("axes", []) if isinstance(a, dict)}
+            for axis_id, src_axis in src_axes.items():
+                tgt_axis = tgt_axes.get(axis_id)
+                if not tgt_axis:
+                    continue
+                tgt_axis["physical_joystick"] = src_axis.get("physical_joystick", "")
+                tgt_axis["joystick"] = {
+                    "negative": src_axis.get("joystick", {}).get("negative", ""),
+                    "positive": src_axis.get("joystick", {}).get("positive", ""),
+                }
+                tgt_axis["physical_axis"] = src_axis.get("physical_axis", "")
+                tgt_axis["panel_joystick"] = src_axis.get("panel_joystick")
+                for layout_name in LAYOUTS:
+                    tgt_axis.setdefault("slots_by_layout", {layout: None for layout in LAYOUTS})
+                    tgt_axis["slots_by_layout"][layout_name] = src_axis.get("slots_by_layout", {}).get(layout_name)
+                    tgt_axis.setdefault("slots_by_polarity", {
+                        "negative": {layout: None for layout in LAYOUTS},
+                        "positive": {layout: None for layout in LAYOUTS},
+                    })
+                    for polarity in ("negative", "positive"):
+                        tgt_axis["slots_by_polarity"].setdefault(polarity, {})
+                        tgt_axis["slots_by_polarity"][polarity][layout_name] = src_axis.get("slots_by_polarity", {}).get(polarity, {}).get(layout_name)
+
+            editor.refresh()
+
+    def slot_values_for_export(self, slot_value):
+        if slot_value is None:
+            return []
+        if isinstance(slot_value, (list, tuple, set)):
+            return [slot for slot in slot_value if slot is not None]
+        return [slot_value]
+
+    def slot_keycodes(self, slot_value, player=1):
+        slots = self.slot_values_for_export(slot_value)
+        tokens = []
+        for slot in slots:
+            key = str(slot)
+            keycode = MAME_SLOT_KEYCODES.get(key)
+            joycode = MAME_SLOT_JOYCODES.get(key)
+            if keycode and keycode not in tokens:
+                tokens.append(keycode)
+            if joycode:
+                token = joycode.format(player=player)
+                if token not in tokens:
+                    tokens.append(token)
+        return tokens
+
+    def slot_mame_types(self, slot_value, player=1):
+        return [
+            f"P{player}_BUTTON{slot}"
+            for slot in self.slot_values_for_export(slot_value)
+            if str(slot).isdigit()
+        ]
+
+    def joystick_keycodes(self, direction, player=1):
+        tokens = []
+        keycode = MAME_JOYSTICK_KEYCODES.get(direction)
+        joycode = MAME_JOYSTICK_JOYCODES.get(direction)
+        if keycode:
+            tokens.append(keycode)
+        if joycode:
+            tokens.append(joycode.format(player=player))
+        return tokens
+
+    def system_input_tokens(self, key, player=1):
+        tokens = []
+        keycode = MAME_SYSTEM_KEYCODES.get(key)
+        joycode = MAME_SYSTEM_JOYCODES.get(key)
+        if keycode:
+            tokens.append(keycode)
+        if joycode:
+            tokens.append(joycode.format(player=player))
+        return tokens
+
+    def slot_retropad_ids(self, slot_value):
+        ids = []
+        for slot in self.slot_values_for_export(slot_value):
+            mapping = SLOT_MAP.get(str(slot))
+            if not mapping:
+                continue
+            retropad_id = mapping.get("retropad_id")
+            if retropad_id is not None and retropad_id not in ids:
+                ids.append(retropad_id)
+        return ids
+
+    def joystick_retropad_id(self, direction):
+        mapping = JOYSTICK_DIRECTION_MAP.get(direction, {})
+        return mapping.get("retropad_id")
+
+    def rmp_button_key_from_mame(self, mame):
+        raw = str((mame or {}).get("type") or (mame or {}).get("input_id") or "").upper()
+        match = re.search(r"(?:P\d+_)?BUTTON(\d+)$", raw)
+        if match:
+            return LIBRETRO_ARCADE_BUTTON_KEYS.get(int(match.group(1)))
+        if re.search(r"(?:P\d+_)?START\d*$", raw):
+            return "start"
+        if raw in {"COIN", "COIN1", "COIN2", "P1_COIN", "P2_COIN", "SELECT"}:
+            return "select"
+        match = re.search(r"(?:P\d+_)?JOYSTICK_?(UP|DOWN|LEFT|RIGHT)$", raw)
+        if match:
+            return LIBRETRO_DIRECTION_BUTTON_KEYS.get(match.group(1).lower())
+        return None
+
+    def rmp_add_assignment(self, remaps, conflicts, player, button_key, retropad_id, source):
+        if not button_key or retropad_id is None:
+            return
+        key = f"input_player{player}_btn_{button_key}"
+        value = str(retropad_id)
+        existing = remaps.get(key)
+        if existing is None:
+            remaps[key] = value
+        elif existing != value:
+            conflicts.append(f"{key}: {existing} kept, {value} ignored ({source})")
+
+    def rmp_add_slots(self, remaps, conflicts, player, button_key, slot_value, source):
+        ids = self.slot_retropad_ids(slot_value)
+        if not ids:
+            return
+        self.rmp_add_assignment(remaps, conflicts, player, button_key, ids[0], source)
+        for extra_id in ids[1:]:
+            conflicts.append(f"input_player{player}_btn_{button_key}: extra RetroPad {extra_id} ignored ({source})")
+
+    def rmp_add_panel_joystick(self, remaps, conflicts, player, button_key, item, source):
+        value = item.get("panel_joystick")
+        if not value or not button_key:
+            return
+        directions = value.values() if isinstance(value, dict) else [value]
+        for direction in directions:
+            retropad_id = self.joystick_retropad_id(direction)
+            self.rmp_add_assignment(remaps, conflicts, player, button_key, retropad_id, source)
+
+    def rmp_button_key_for_button(self, button):
+        button_key = self.rmp_button_key_from_mame(button.get("mame", {}))
+        if button_key:
+            return button_key
+        game_button = button.get("game_button")
+        if str(game_button).isdigit():
+            return LIBRETRO_ARCADE_BUTTON_KEYS.get(int(game_button))
+        return None
+
+    def collect_retroarch_rmp_assignments(self):
+        remaps = {}
+        conflicts = []
+        export_layout = self.export_layout_var.get()
+        if export_layout not in LAYOUTS:
+            export_layout = "4-Button"
+
+        for editor in self.player_editors:
+            layout_name = export_layout
+            player = editor.player_data.get("player", 1)
+
+            for key in editor.system_input_order():
+                entry = editor.player_data["system_inputs"][key]
+                editor.ensure_system_input_entry(key, entry)
+                button_key = LIBRETRO_SYSTEM_BUTTON_KEYS.get(key) or self.rmp_button_key_from_mame(entry.get("mame", {}))
+                self.rmp_add_slots(remaps, conflicts, player, button_key, entry.get("slots_by_layout", {}).get(layout_name), f"system input {key}")
+                self.rmp_add_panel_joystick(remaps, conflicts, player, button_key, entry, f"system input {key}")
+
+            for button in editor.player_data["buttons"]:
+                button_key = self.rmp_button_key_for_button(button)
+                source = f'button {button.get("game_button")}'
+                self.rmp_add_slots(remaps, conflicts, player, button_key, button.get("slots_by_layout", {}).get(layout_name), source)
+                self.rmp_add_panel_joystick(remaps, conflicts, player, button_key, button, source)
+
+            for _, direction, entry in editor.iter_joystick_inputs():
+                button_key = self.rmp_button_key_from_mame(entry.get("mame", {})) or LIBRETRO_DIRECTION_BUTTON_KEYS.get(direction)
+                source = f"joystick {direction}"
+                self.rmp_add_slots(remaps, conflicts, player, button_key, entry.get("slots_by_layout", {}).get(layout_name), source)
+                self.rmp_add_panel_joystick(remaps, conflicts, player, button_key, entry, source)
+
+            for axis in editor.iter_axes():
+                button_key = self.rmp_button_key_from_mame(axis.get("mame", {}))
+                source = axis.get("id") or axis.get("input") or "axis"
+                self.rmp_add_slots(remaps, conflicts, player, button_key, axis.get("slots_by_layout", {}).get(layout_name), source)
+                self.rmp_add_panel_joystick(remaps, conflicts, player, button_key, axis, source)
+
+            for output in editor.player_data.get("system_outputs", []):
+                editor.ensure_system_output_entry(output)
+                if not output.get("input_ref"):
+                    continue
+                mame = editor.mame_for_system_output_input(output)
+                button_key = self.rmp_button_key_from_mame(mame)
+                source = f'system output {output.get("name") or output.get("id") or ""}'.strip()
+                self.rmp_add_slots(remaps, conflicts, player, button_key, output.get("slots_by_layout", {}).get(layout_name), source)
+                self.rmp_add_panel_joystick(remaps, conflicts, player, button_key, output, source)
+
+        return remaps, conflicts
+
+    def build_retroarch_rmp_text(self):
+        remaps, conflicts = self.collect_retroarch_rmp_assignments()
+        if not remaps:
+            return "", conflicts
+
+        player_numbers = sorted({
+            int(editor.player_data.get("player", 1))
+            for editor in self.player_editors
+            if str(editor.player_data.get("player", 1)).isdigit()
+        })
+        max_player = max(player_numbers or [1])
+        max_player = max(4, max_player)
+
+        lines = []
+        for player in range(1, max_player + 1):
+            lines.append(f'input_libretro_device_p{player} = "1"')
+
+        for player in range(1, max_player + 1):
+            lines.append(f'input_player{player}_analog_dpad_mode = "0"')
+            prefix = f"input_player{player}_btn_"
+            player_keys = sorted(
+                [key for key in remaps if key.startswith(prefix)],
+                key=natural_sort_key,
+            )
+            if not player_keys:
+                continue
+
+            suffixes = {key[len(prefix):] for key in player_keys}
+            if any(suffix in suffixes for suffix in LIBRETRO_RMP_BUTTON_KEY_ORDER):
+                for suffix in LIBRETRO_RMP_BUTTON_KEY_ORDER:
+                    key = f"{prefix}{suffix}"
+                    lines.append(f'{key} = "{remaps.get(key, "-1")}"')
+
+            ordered_standard_keys = {f"{prefix}{suffix}" for suffix in LIBRETRO_RMP_BUTTON_KEY_ORDER}
+            for key in player_keys:
+                if key in ordered_standard_keys:
+                    continue
+                lines.append(f'{key} = "{remaps[key]}"')
+
+        for player in range(1, max_player + 1):
+            lines.append(f'input_remap_port_p{player} = "{player - 1}"')
+        lines.extend(RMP_STATIC_LINES)
+        return "\n".join(lines) + "\n", conflicts
+
+    def add_cfg_assignment(self, port_map, mame, seq_type, token):
+        identity = mame_port_identity(mame)
+        if not identity or not token:
+            return
+        entry = port_map.setdefault(identity, {
+            "standard": [],
+            "increment": [],
+            "decrement": [],
+        })
+        tokens = entry.setdefault(seq_type, [])
+        if token not in tokens:
+            tokens.append(token)
+
+    def add_cfg_item_slots(self, port_map, item, layout_name, player=1, mame=None):
+        mame = mame or item.get("mame", {})
+        for token in self.slot_keycodes(item.get("slots_by_layout", {}).get(layout_name), player):
+            self.add_cfg_assignment(port_map, mame, "standard", token)
+
+    def add_cfg_panel_joystick(self, port_map, item, player=1, mame=None, analog=False):
+        mame = mame or item.get("mame", {})
+        value = item.get("panel_joystick")
+        if not value:
+            return
+        if isinstance(value, dict):
+            for polarity, direction in value.items():
+                seq_type = "decrement" if polarity == "negative" else "increment"
+                for token in self.joystick_keycodes(direction, player):
+                    self.add_cfg_assignment(port_map, mame, seq_type, token)
+            return
+
+        seq_type = mame_axis_sequence_type_for_direction(value) if analog else "standard"
+        for token in self.joystick_keycodes(value, player):
+            self.add_cfg_assignment(port_map, mame, seq_type, token)
+
+    def collect_mame_cfg_assignments(self):
+        port_map = {}
+        export_layout = self.export_layout_var.get()
+        if export_layout not in LAYOUTS:
+            export_layout = "4-Button"
+        for editor in self.player_editors:
+            layout_name = export_layout
+            player = editor.player_data.get("player", 1)
+
+            for key in editor.system_input_order():
+                entry = editor.player_data["system_inputs"][key]
+                editor.ensure_system_input_entry(key, entry)
+                if not entry.get("slots_by_layout", {}).get(layout_name):
+                    for token in self.system_input_tokens(key, player):
+                        self.add_cfg_assignment(port_map, entry.get("mame", {}), "standard", token)
+                self.add_cfg_item_slots(port_map, entry, layout_name, player)
+                self.add_cfg_panel_joystick(port_map, entry, player)
+
+            for button in editor.player_data["buttons"]:
+                self.add_cfg_item_slots(port_map, button, layout_name, player)
+                self.add_cfg_panel_joystick(port_map, button, player)
+
+            for _, _, entry in editor.iter_joystick_inputs():
+                self.add_cfg_item_slots(port_map, entry, layout_name, player)
+                self.add_cfg_panel_joystick(port_map, entry, player)
+
+            for axis in editor.iter_axes():
+                for polarity, seq_type in (("negative", "decrement"), ("positive", "increment")):
+                    slot_value = axis.get("slots_by_polarity", {}).get(polarity, {}).get(layout_name)
+                    for token in self.slot_keycodes(slot_value, player):
+                        self.add_cfg_assignment(port_map, axis.get("mame", {}), seq_type, token)
+                self.add_cfg_panel_joystick(port_map, axis, player, analog=True)
+
+            for output in editor.player_data.get("system_outputs", []):
+                editor.ensure_system_output_entry(output)
+                if not output.get("input_ref"):
+                    continue
+                mame = editor.mame_for_system_output_input(output)
+                for token in self.slot_keycodes(output.get("slots_by_layout", {}).get(layout_name), player):
+                    self.add_cfg_assignment(port_map, mame, "standard", token)
+                self.add_cfg_panel_joystick(port_map, output, player, mame=mame)
+
+        return port_map
+
+    def build_mame_cfg_tree(self):
+        rom = self.current_data["system"]
+        port_map = self.collect_mame_cfg_assignments()
+        root = ET.Element("mameconfig", {"version": "10"})
+        system = ET.SubElement(root, "system", {"name": rom})
+        input_node = ET.SubElement(system, "input")
+
+        for tag, mtype, mask_dec, defvalue_dec in sorted(port_map, key=lambda x: (x[0], x[1], x[2], x[3])):
+            seqs = port_map[(tag, mtype, mask_dec, defvalue_dec)]
+            if not any(seqs.values()):
+                continue
+            port = ET.SubElement(input_node, "port", {
+                "tag": tag,
+                "type": mtype,
+                "mask": str(mask_dec),
+                "defvalue": str(defvalue_dec),
+            })
+            for seq_type in ("standard", "increment", "decrement"):
+                tokens = seqs.get(seq_type, [])
+                if not tokens:
+                    continue
+                newseq = ET.SubElement(port, "newseq", {"type": seq_type})
+                newseq.text = " OR ".join(tokens)
+
+        mame_xml_indent(root)
+        return ET.ElementTree(root), len(input_node.findall("port"))
+
+    def generate_mame_cfg(self):
+        tree, port_count = self.build_mame_cfg_tree()
+        if port_count == 0:
+            messagebox.showwarning("MAME CFG", "No mapped MAME input found for the active layouts.")
+            return
+
+        rom = self.current_data["system"]
+        path = os.path.join(MAME_CFG_DIR, f"{rom}.cfg")
+        if os.path.exists(path):
+            if not messagebox.askyesno("MAME CFG", f"Overwrite existing MAME cfg?\n\n{path}"):
+                return
+
+        os.makedirs(MAME_CFG_DIR, exist_ok=True)
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+
+        if messagebox.askyesno("MAME CFG", f"CFG generated with {port_count} input ports:\n{path}\n\nLaunch MAME now for testing?"):
+            self.launch_mame_current()
+
+    def launch_mame_current(self):
+        rom = self.current_data["system"]
+        if not os.path.exists(MAME_EXE):
+            messagebox.showerror("MAME", f"MAME executable not found:\n{MAME_EXE}")
+            return
+        try:
+            subprocess.Popen([
+                MAME_EXE,
+                rom,
+                "-rompath", ROMS_DIR,
+                "-cfg_directory", MAME_CFG_DIR,
+                "-joystick",
+            ])
+        except Exception as exc:
+            messagebox.showerror("MAME", f"Unable to launch MAME:\n{exc}")
+
+    def generate_retroarch_rmp(self):
+        text, conflicts = self.build_retroarch_rmp_text()
+        if not text:
+            messagebox.showwarning("RetroArch RMP", "No mapped RetroArch input found for the active layout.")
+            return
+
+        rom = self.current_data["system"]
+        target_dir = os.path.join(RETROARCH_REMAPS_DIR, RETROARCH_RMP_CORE_DIR)
+        path = os.path.join(target_dir, f"{rom}.rmp")
+        if os.path.exists(path):
+            if not messagebox.askyesno("RetroArch RMP", f"Overwrite existing RetroArch remap?\n\n{path}"):
+                return
+
+        os.makedirs(target_dir, exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+
+        detail = f"RMP generated:\n{path}"
+        if conflicts:
+            preview = "\n".join(conflicts[:8])
+            more = "" if len(conflicts) <= 8 else f"\n... and {len(conflicts) - 8} more."
+            detail += f"\n\nSome remaps could not be represented more than once in RetroArch RMP:\n{preview}{more}"
+        messagebox.showinfo("RetroArch RMP", detail)
+
+    def generate_retrobat_xml_placeholder(self):
+        messagebox.showinfo("RetroBat XML", "RetroBat XML generation will be implemented after the MAME CFG target.")
+
+    def generate_libretro_placeholder(self):
+        messagebox.showinfo("Libretro", "Libretro export will be implemented after the MAME CFG target.")
+
+    def generate_fbneo_placeholder(self):
+        messagebox.showinfo("FBNeo", "FBNeo export will be implemented after the MAME CFG target.")
+
+    def build_export_json(self):
+        players_obj = {}
+        for editor in self.player_editors:
+            pkey, pobj = editor.export_player()
+            players_obj[pkey] = pobj
+
+        return {
+            "schema": "api_expose.panel.v1",
+            "scope": "game",
+            "system": "mame",
+            "rom": self.current_data["system"],
+            "game_name": self.current_data["game_name"],
+            "meta": self.current_data["meta"],
+            "panel": {
+                "convention": PANEL_CONVENTION,
+                "slots": SLOT_MAP,
+                "system_slots": SYSTEM_SLOT_MAP,
+            },
+            "players": players_obj,
+            "system_template": {},
+            "events": self.current_data.get("events", empty_events()),
+            "mame": self.current_data.get("mame", {}),
+            "context": [],
+        }
+
+    def save_current(self, silent=False):
+        export = self.build_export_json()
+        path = os.path.join(OUTPUT_DIR, export["rom"] + ".json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(export, f, indent=2, ensure_ascii=False)
+        if not silent:
+            messagebox.showinfo("Save", f"File saved:\n{path}")
+
+    def save_and_next(self):
+        self.save_current()
+        self.next_rom()
+
+    def reset_current_json(self):
+        rom = self.current_data["system"] if self.current_data else self.roms[self.index]
+        path = os.path.join(OUTPUT_DIR, rom + ".json")
+        if os.path.exists(path):
+            if not messagebox.askyesno("Reset JSON", f"Delete generated JSON and reload from sources?\n\n{path}"):
+                return
+            os.remove(path)
+            self.load_current()
+            messagebox.showinfo("Reset JSON", f"Generated JSON deleted and view reset:\n{path}")
+            return
+
+        self.load_current()
+        messagebox.showinfo("Reset JSON", "No generated JSON found. View reloaded from sources.")
+
+    def export_systems(self):
+        count = export_system_templates()
+        messagebox.showinfo("Systems", f"{count} system templates exported to:\n{SYSTEM_OUTPUT_DIR}")
+
+    def next_rom(self):
+        current_rom = self.current_data["system"] if self.current_data else None
+        if current_rom:
+            path = os.path.join(OUTPUT_DIR, current_rom + ".json")
+            if not os.path.exists(path):
+                self.save_current(silent=True)
+
+        if self.index < len(self.roms) - 1:
+            self.index += 1
+            self.load_current()
+
+    def prev_rom(self):
+        if self.index > 0:
+            self.index -= 1
+            self.load_current()
+
+    def goto_search(self):
+        q = self.search_var.get().strip().lower()
+        if not q:
+            return
+        for i, rom in enumerate(self.roms):
+            if q in rom.lower():
+                self.index = i
+                self.load_current()
+                return
+        messagebox.showwarning("Search", f"No ROM found for: {q}")
+
+    def goto_index(self):
+        raw = self.goto_var.get().strip()
+        if not raw.isdigit():
+            messagebox.showwarning("Index", "Enter a valid number.")
+            return
+        idx = int(raw)
+        if 1 <= idx <= len(self.roms):
+            self.index = idx - 1
+            self.load_current()
+        else:
+            messagebox.showwarning("Index", f"Index out of range: 1 to {len(self.roms)}")
+
+
+    def _build_ui(self):
+        self.root.geometry("1680x980")
+        self.root.configure(bg="#f6f8fb")
+        self.root.grid_rowconfigure(1, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+
+        top = tk.Frame(self.root, bg="#f6f8fb", height=60)
+        top.grid(row=0, column=0, sticky="ew")
+        top.grid_propagate(False)
+        self.top_game_var = tk.StringVar(value="")
+        tk.Label(top, textvariable=self.top_game_var, bg="#f6f8fb", fg="#101828", font=("Segoe UI", 18, "bold")).pack(side="left", padx=(24, 30))
+        tk.Frame(top, width=1, bg="#d0d5dd", height=28).pack(side="left", padx=8)
+        tk.Button(top, text="PREV", bd=0, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold"), command=self.prev_rom).pack(side="left", padx=4)
+        tk.Button(top, text="NEXT", bd=0, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold"), command=self.next_rom).pack(side="left", padx=4)
+        tk.Button(top, text="SAVE", bd=0, bg="#f6f8fb", fg="#2459d3", font=("Segoe UI", 10, "bold"), command=self.save_current).pack(side="left", padx=8)
+        tk.Button(top, text="SAVE + NEXT", bd=0, bg="#f6f8fb", fg="#2459d3", font=("Segoe UI", 10, "bold"), command=self.save_and_next).pack(side="left", padx=4)
+        tk.Label(top, text="EXPORT PANEL", bg="#f6f8fb", fg="#667085", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(12, 4))
+        export_layout_combo = ttk.Combobox(top, textvariable=self.export_layout_var, values=LAYOUTS, width=9, state="readonly")
+        export_layout_combo.pack(side="left", padx=4)
+        export_layout_combo.bind("<<ComboboxSelected>>", self.on_export_layout_changed)
+        tk.Button(top, text="MAME CFG", bd=0, bg="#f6f8fb", fg="#0f766e", font=("Segoe UI", 10, "bold"), command=self.generate_mame_cfg).pack(side="left", padx=4)
+        tk.Button(top, text="RETROARCH RMP", bd=0, bg="#f6f8fb", fg="#0f766e", font=("Segoe UI", 10, "bold"), command=self.generate_retroarch_rmp).pack(side="left", padx=4)
+        tk.Button(top, text="RETROBAT XML", bd=0, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold"), command=self.generate_retrobat_xml_placeholder).pack(side="left", padx=4)
+        tk.Button(top, text="LIBRETRO", bd=0, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold"), command=self.generate_libretro_placeholder).pack(side="left", padx=4)
+        tk.Button(top, text="FBNEO", bd=0, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold"), command=self.generate_fbneo_placeholder).pack(side="left", padx=4)
+        tk.Button(top, text="RESET JSON", bd=0, bg="#f6f8fb", fg="#b42318", font=("Segoe UI", 10, "bold"), command=self.reset_current_json).pack(side="left", padx=4)
+        tk.Button(top, text="EXPORT SYSTEMS", bd=0, bg="#f6f8fb", fg="#2459d3", font=("Segoe UI", 10, "bold"), command=self.export_systems).pack(side="left", padx=4)
+
+        self.status_var = tk.StringVar()
+        tk.Label(top, textvariable=self.status_var, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold")).pack(side="right", padx=(8, 18))
+        search = tk.Frame(top, bg="#edf1f7", bd=0)
+        search.pack(side="right", padx=8)
+        self.search_var = tk.StringVar()
+        ent = tk.Entry(search, textvariable=self.search_var, bd=0, bg="#edf1f7", fg="#101828", width=20)
+        ent.pack(side="left", padx=10, pady=10)
+        ent.bind("<Return>", lambda e: self.goto_search())
+        tk.Button(search, text="SEARCH", bd=0, bg="#edf1f7", fg="#667085", font=("Segoe UI", 9, "bold"), command=self.goto_search).pack(side="left", padx=8)
+        self.goto_var = tk.StringVar()
+        goto = tk.Entry(top, textvariable=self.goto_var, width=6, bd=1)
+        goto.pack(side="right", padx=(0, 8))
+        goto.bind("<Return>", lambda e: self.goto_index())
+        tk.Button(top, text="GO", bd=0, bg="#f6f8fb", fg="#101828", font=("Segoe UI", 9, "bold"), command=self.goto_index).pack(side="right")
+
+        self.rom_var = tk.StringVar()
+        self.game_var = tk.StringVar()
+
+        content = tk.PanedWindow(
+            self.root,
+            orient="horizontal",
+            bg="#d0d5dd",
+            sashwidth=8,
+            sashrelief="flat",
+            bd=0,
+            showhandle=True,
+        )
+        content.grid(row=1, column=0, sticky="nsew")
+
+        left = tk.Frame(content, bg="#f6f8fb")
+        right = tk.Frame(content, bg="#f6f8fb")
+        right.grid_rowconfigure(0, weight=1)
+        right.grid_columnconfigure(0, weight=1)
+        content.add(left, minsize=360, stretch="always", padx=20, pady=14)
+        content.add(right, minsize=760, stretch="always", padx=20, pady=14)
+        self.main_pane = content
+        self.root.after_idle(self.reset_main_pane_position)
+
+        preview_card = tk.Frame(left, bg="#ffffff")
+        preview_card.pack(fill="x", pady=(0, 18))
+        tk.Label(preview_card, textvariable=self.rom_var, bg="#ffffff", fg="#101828", font=("Segoe UI", 16, "bold"), anchor="w").pack(fill="x", padx=20, pady=(18, 0))
+        tk.Label(preview_card, textvariable=self.game_var, bg="#ffffff", fg="#667085", font=("Segoe UI", 10, "bold"), anchor="w", wraplength=430, justify="left").pack(fill="x", padx=20, pady=(2, 10))
+        self.image_label = tk.Label(preview_card, bg="#ffffff")
+        self.image_label.pack(fill="x", padx=20, pady=(0, 20))
+        tk.Label(preview_card, text="SURFACE_PREVIEW", bg="#2459d3", fg="white", font=("Segoe UI", 9, "bold")).place(x=18, y=76)
+
+        meta_box = tk.Frame(left, bg="#ffffff")
+        meta_box.pack(fill="x", pady=(0, 18))
+        tk.Label(meta_box, text="METADATA", bg="#ffffff", fg="#667085", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
+        self.meta_text = tk.Text(meta_box, height=10, wrap="word", bd=0, bg="#ffffff", fg="#101828", font=("Consolas", 10))
+        self.meta_text.pack(fill="x", padx=14, pady=(0, 14))
+
+        common_box = tk.Frame(left, bg="#ffffff")
+        common_box.pack(fill="both", expand=True)
+        tk.Label(common_box, text="COMMON BUTTON VARIABLES", bg="#ffffff", fg="#667085", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
+        self.common_container = ttk.Frame(common_box)
+        self.common_container.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+        self.notebook = ttk.Notebook(right)
+        self.notebook.grid(row=0, column=0, sticky="nsew")
+
+    def reset_main_pane_position(self):
+        if not hasattr(self, "main_pane"):
+            return
+        width = max(self.main_pane.winfo_width(), 1)
+        self.main_pane.sash_place(0, int(width * 0.34), 0)
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = CuratorApp(root)
+    root.mainloop()

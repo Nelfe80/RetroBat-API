@@ -1,0 +1,11 @@
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\bin\Debug\net8.0\RetroBat.Domain.deps.json
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\bin\Debug\net8.0\RetroBat.Domain.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\bin\Debug\net8.0\RetroBat.Domain.pdb
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\obj\Debug\net8.0\RetroBat.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\obj\Debug\net8.0\RetroBat.Domain.AssemblyInfoInputs.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\obj\Debug\net8.0\RetroBat.Domain.AssemblyInfo.cs
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\obj\Debug\net8.0\RetroBat.Domain.csproj.CoreCompileInputs.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\obj\Debug\net8.0\RetroBat.Domain.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\obj\Debug\net8.0\refint\RetroBat.Domain.dll
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\obj\Debug\net8.0\RetroBat.Domain.pdb
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Domain\obj\Debug\net8.0\ref\RetroBat.Domain.dll

@@ -1,0 +1,15 @@
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\obj\Debug\net8.0\RetroBat.Providers.MameOutputs.csproj.AssemblyReference.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\obj\Debug\net8.0\RetroBat.Providers.MameOutputs.GeneratedMSBuildEditorConfig.editorconfig
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\obj\Debug\net8.0\RetroBat.Providers.MameOutputs.AssemblyInfoInputs.cache
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\obj\Debug\net8.0\RetroBat.Providers.MameOutputs.AssemblyInfo.cs
+C:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\obj\Debug\net8.0\RetroBat.Providers.MameOutputs.csproj.CoreCompileInputs.cache
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\bin\Debug\net8.0\RetroBat.Providers.MameOutputs.deps.json
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\bin\Debug\net8.0\RetroBat.Providers.MameOutputs.dll
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\bin\Debug\net8.0\RetroBat.Providers.MameOutputs.pdb
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\bin\Debug\net8.0\RetroBat.Domain.dll
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\bin\Debug\net8.0\RetroBat.Domain.pdb
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\obj\Debug\net8.0\RetroBat.D3600500.Up2Date
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\obj\Debug\net8.0\RetroBat.Providers.MameOutputs.dll
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\obj\Debug\net8.0\refint\RetroBat.Providers.MameOutputs.dll
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\obj\Debug\net8.0\RetroBat.Providers.MameOutputs.pdb
+c:\RetroBat\plugins\APIExpose\src\RetroBat.Providers.MameOutputs\obj\Debug\net8.0\ref\RetroBat.Providers.MameOutputs.dll

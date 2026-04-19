@@ -1,0 +1,11 @@
+{
+  "rom": "m68705r3",
+  "game_context": {
+    "class": "",
+    "machine": "",
+    "input": ""
+  },
+  "inputs": [],
+  "outputs": [],
+  "mappings": []
+}

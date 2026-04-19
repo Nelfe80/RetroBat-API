@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "RetroBat.MediaStore/1.0.0": {
+        "dependencies": {
+          "RetroBat.Domain": "1.0.0"
+        },
+        "runtime": {
+          "RetroBat.MediaStore.dll": {}
+        }
+      },
+      "RetroBat.Domain/1.0.0": {
+        "runtime": {
+          "RetroBat.Domain.dll": {
+            "assemblyVersion": "1.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "RetroBat.MediaStore/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "RetroBat.Domain/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
