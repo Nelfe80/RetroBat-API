@@ -1,0 +1,114 @@
+[01:13:43.510] [DOF API] Fichier MEM charge :
+[01:13:43.510] [!] Fichier MEM non trouve ou vide !
+[01:13:46.973] [DEBUG WRAPPER] ERREUR : Aucun mapping RAM actif !
+[01:13:46.977] - Jeu : 1944
+[01:13:46.979] - Chemin cherche :
+[01:13:46.980] - Raison probable : Fichier MEM introuvable : E:\RetroBat\plugins\APIExpose\resources\ram\mame\1944.MEM
+[01:15:18.316] [DOF API] Fichier MEM charge :
+[01:15:18.316] [!] Fichier MEM non trouve ou vide !
+[01:15:21.473] [DEBUG WRAPPER] ERREUR : Aucun mapping RAM actif !
+[01:15:21.480] - Jeu : 1944
+[01:15:21.484] - Chemin cherche :
+[01:15:21.487] - Raison probable : Fichier MEM introuvable : E:\RetroBat\plugins\APIExpose\resources\ram\mame\1944.MEM
+[01:16:05.571] [DOF API] Fichier MEM charge :
+[01:16:05.571] [!] Fichier MEM non trouve ou vide !
+[01:16:08.770] [DEBUG WRAPPER] ERREUR : Aucun mapping RAM actif !
+[01:16:08.772] - Jeu : 1943kai
+[01:16:08.774] - Chemin cherche :
+[01:16:08.776] - Raison probable : Fichier MEM introuvable : E:\RetroBat\plugins\APIExpose\resources\ram\mame\1943kai.MEM
+[01:16:28.576] [DOF API] Fichier MEM charge :
+[01:16:28.576] [!] Fichier MEM non trouve ou vide !
+[01:16:31.373] [DEBUG WRAPPER] ERREUR : Aucun mapping RAM actif !
+[01:16:31.375] - Jeu : 1943
+[01:16:31.377] - Chemin cherche :
+[01:16:31.378] - Raison probable : Fichier MEM introuvable : E:\RetroBat\plugins\APIExpose\resources\ram\mame\1943.MEM
+[01:16:46.349] [DOF API] Dictionnaire d'Alias applique: 1943mii -> 1943-the-battle-of-midway-mark-ii
+[01:16:46.349] [DOF API] Fichier MEM charge : E:\RetroBat\plugins\APIExpose\resources\ram\mame\1943-the-battle-of-midway-mark-ii.MEM
+[01:16:46.349] [ADDR:0x000450] [VAL:0x00] [DOF API] LISTENING: [unknown.progression] -> 450 [LOG:NO, SURVEY:YES] - Scene ID
+[01:16:46.349] [ADDR:0x002206] [VAL:0x00] [DOF API] LISTENING: [unknown.resources] -> 2206 [LOG:YES, SURVEY:YES] - P1 Health
+[01:16:46.349] [ADDR:0x002286] [VAL:0x00] [DOF API] LISTENING: [unknown.resources] -> 2286 [LOG:YES, SURVEY:YES] - P2 Health
+[01:16:46.349] [ADDR:0x002251] [VAL:0x00] [DOF API] LISTENING: [unknown.inventory] -> 2251 [LOG:YES, SURVEY:YES] - Player 1 weapon
+[01:16:46.349] [ADDR:0x0022D1] [VAL:0x00] [DOF API] LISTENING: [unknown.inventory] -> 22D1 [LOG:YES, SURVEY:YES] - Player 2 weapon
+[01:16:46.349] [ADDR:0x0001D7] [VAL:0x00] [DOF API] LISTENING: [unknown.state] -> 1D7 [LOG:YES, SURVEY:YES] - Difficulty
+[01:16:46.349] [ADDR:0x0025C3] [VAL:0x00] [DOF API] LISTENING: [unknown.world_interaction] -> 25C3 [LOG:NO, SURVEY:YES] - Object 1 Y-position
+[01:16:46.349] [DOF API] Initialisation terminee, attente de la premiere frame...
+[01:16:49.914] [ADDR:0x002286] [VAL:0x00] [UDP_OUT] ACTION:LOSE_LIFE | SOURCE:P2 Health | VALUE:0 | RATE:237   (P2 Health [LOSE_LIFE])
+[01:16:49.914] [ADDR:0x0022D1] [VAL:0xC6] [UDP_OUT] ACTION:UPDATE | SOURCE:Player 2 weapon | VALUE:198 | RATE:198
+[01:17:57.059] [DOF API] Signature MD5 detectee : 6695542d06ef34f78f501ce42e5bf02a
+[01:17:57.059] [DOF API] Dictionnaire d'Alias applique: 1942 -> 1942
+[01:17:57.059] [DOF API] Fichier MEM charge : E:\RetroBat\plugins\APIExpose\resources\ram\mame\1942.MEM
+[01:17:57.059] [ADDR:0x000000] [VAL:0x00] [DOF API] LISTENING: [unknown.state] -> 0 [LOG:YES, SURVEY:YES] - Game state (found by PsyHunter29)
+[01:17:57.059] [DOF API] Initialisation terminee, attente de la premiere frame...
+[01:18:00.247] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:01.297] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:02.347] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:03.447] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:07.013] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:08.029] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:09.063] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:10.080] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:11.130] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:12.147] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.049] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.080] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.109] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.147] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.172] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.194] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.231] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.256] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.291] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.322] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.360] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.411] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.446] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.481] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.515] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.545] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.579] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.616] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.649] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.698] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.779] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.810] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.850] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.887] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.917] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.957] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:13.987] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:14.039] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:14.070] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:14.430] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:15.465] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:16.497] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:17.566] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:18.582] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:19.680] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:20.698] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:21.765] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:22.781] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:23.830] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:24.863] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:25.897] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:26.930] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:28.014] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:28.560] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:28.588] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:28.614] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:28.648] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:28.691] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:28.784] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:28.835] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:28.881] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:28.938] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:29.003] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:29.465] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:30.498] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:18:31.516] [DEBUG WRAPPER] ERREUR : System RAM pointer est NULL ou taille = 0 ! (ram_size = 0)
+[01:19:20.876] [DOF API] Signature MD5 detectee : 93615be60e5e853c1feff3d1df63b0d3
+[01:19:20.876] [DOF API] Fichier MEM charge :
+[01:19:20.876] [!] Fichier MEM non trouve ou vide !
+[01:19:24.068] [DEBUG WRAPPER] ERREUR : Aucun mapping RAM actif !
+[01:19:24.069] - Jeu : aerofgt
+[01:19:24.072] - Chemin cherche :
+[01:19:24.074] - Raison probable : Fichier MEM introuvable : E:\RetroBat\plugins\APIExpose\resources\ram\mame\aerofgt.MEM

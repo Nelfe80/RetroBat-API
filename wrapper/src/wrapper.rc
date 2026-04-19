@@ -1,0 +1,23 @@
+1 VERSIONINFO
+FILEVERSION 0,300,0,0
+PRODUCTVERSION 0,300,0,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904E4"
+    BEGIN
+      VALUE "CompanyName", "Wrapper"
+      VALUE "FileDescription", "Arcade Wrapper DLL"
+      VALUE "FileVersion", "0.300.0.0"
+      VALUE "InternalName", "wrapper"
+      VALUE "LegalCopyright", "Copyright Nelfe 2026"
+      VALUE "OriginalFilename", "mame_libretro.dll"
+      VALUE "ProductName", "Arcade Wrapper"
+      VALUE "ProductVersion", "0.300.0.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1252
+  END
+END
