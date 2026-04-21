@@ -1,13 +1,26 @@
 import os
 import re
+import shlex
 import json
 import copy
+import shutil
 import configparser
 import subprocess
 import xml.etree.ElementTree as ET
 import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
+from profiles_db import (
+    SLOT_MAP as DB_SLOT_MAP,
+    SYSTEM_SLOT_MAP as DB_SYSTEM_SLOT_MAP,
+    JOYSTICK_DIRECTION_MAP as DB_JOYSTICK_DIRECTION_MAP,
+    MAME_SLOT_KEYCODES as DB_MAME_SLOT_KEYCODES,
+    MAME_SLOT_JOYCODES as DB_MAME_SLOT_JOYCODES,
+    MAME_SYSTEM_KEYCODES as DB_MAME_SYSTEM_KEYCODES,
+    MAME_SYSTEM_JOYCODES as DB_MAME_SYSTEM_JOYCODES,
+    RMP_SLOT_BUTTONS_BY_LAYOUT as DB_RMP_SLOT_BUTTONS_BY_LAYOUT,
+    RMP_SYSTEM_BUTTON_MAP as DB_RMP_SYSTEM_BUTTON_MAP,
+)
 
 
 # ============================================================
@@ -16,25 +29,104 @@ from PIL import Image, ImageTk
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESOURCES_DIR = os.path.join(BASE_DIR, "resources")
+APP_INI_PATH = os.path.join(BASE_DIR, "panel_curator.ini")
 
-ROMS_DIR = r"E:\RetroBat\roms\mame"
-MAME_EXE = r"E:\RetroBat\emulators\mame\mame.exe"
-PANEL_DIR = r"E:\myrient\mame-cpanel"
-RESOURCE_CPANEL_DIR = os.path.join(RESOURCES_DIR, "artwork", "cpanel")
-MYRIENT_CABINETS_DIR = r"E:\myrient\mame-cabinets"
-CONTROLS_INI = os.path.join(RESOURCES_DIR, "controls", "controls.ini")
-COLORS_INI = os.path.join(RESOURCES_DIR, "colors", "colors.ini")
-MAME_CFG_DIR = r"E:\RetroBat\bios\mame\cfg"
-RETROARCH_REMAPS_DIR = r"E:\RetroBat\emulators\retroarch\config\remaps"
-RETROARCH_RMP_CORE_DIR = "MAME"
-MAME_OUTPUTS_DIR = os.path.join(RESOURCES_DIR, "outputs", "mame")
-SYSTEMS_PANEL_DIR = os.path.join(RESOURCES_DIR, "panels", "systems")
-ARCADE_LIP_DIR = os.path.join(RESOURCES_DIR, "panels", "mame")
-OUTPUT_DIR = os.path.join(BASE_DIR, "kpanels", "mame")
-SYSTEM_OUTPUT_DIR = os.path.join(BASE_DIR, "kpanels", "systems")
+
+def _resolve_config_path(value):
+    if not value:
+        return ""
+    value = os.path.expandvars(os.path.expanduser(str(value).strip()))
+    if os.path.isabs(value):
+        return os.path.normpath(value)
+    return os.path.normpath(os.path.join(BASE_DIR, value))
+
+
+def load_app_ini():
+    cfg = configparser.ConfigParser()
+    cfg.read_dict({
+        "paths": {
+            "source_roms_mame_dir": os.path.join("..", "..", "roms", "mame"),
+            "source_mame_exe": os.path.join("..", "..", "emulators", "mame", "mame.exe"),
+            "source_retroarch_exe": os.path.join("..", "..", "emulators", "retroarch", "retroarch.exe"),
+            "source_retroarch_mame_core": os.path.join("..", "..", "emulators", "retroarch", "cores", "mame_libretro.dll"),
+            "source_myrient_panel_dir": os.path.join("..", "..", "..", "myrient", "mame-cpanel"),
+            "source_resource_cpanel_dir": os.path.join("resources", "artwork", "cpanel"),
+            "source_myrient_cabinets_dir": os.path.join("..", "..", "..", "myrient", "mame-cabinets"),
+            "source_controls_ini": os.path.join("resources", "controls", "controls.ini"),
+            "source_colors_ini": os.path.join("resources", "colors", "colors.ini"),
+            "source_mame_cfg_dir": os.path.join("..", "..", "bios", "mame", "cfg"),
+            "source_mame_outputs_dir": os.path.join("resources", "outputs", "mame"),
+            "source_systems_panel_dir": os.path.join("resources", "panels", "systems"),
+            "source_arcade_lip_dir": os.path.join("resources", "panels", "mame"),
+            "source_retrobat_bios_dir": os.path.join("..", "..", "bios"),
+            "source_mame_cheats_dir": os.path.join("..", "..", "cheats", "mame"),
+            "source_mame_artwork_dir": os.path.join("..", "..", "saves", "mame", "artwork"),
+            "export_kpanels_mame_dir": os.path.join("kpanels", "mame"),
+            "export_kpanels_systems_dir": os.path.join("kpanels", "systems"),
+            "export_mame_ctrlr_dir": os.path.join("..", "..", "saves", "mame", "ctrlr"),
+            "export_retroarch_remaps_dir": os.path.join("..", "..", "emulators", "retroarch", "config", "remaps"),
+            "export_generated_mame_copy_dir": os.path.join("resources", "controls", "mame"),
+            "export_generated_retroarch_copy_dir": os.path.join("resources", "controls", "retroarch", "mame"),
+            "export_retroarch_log_file": os.path.join("..", "..", "emulationstation", ".emulationstation", "es_launch_stdout.log"),
+        },
+        "export": {
+            "retroarch_rmp_core_dir": "MAME",
+        },
+        "launch": {
+            "retroarch_extra_args": "--verbose",
+            "retroarch_content_template": "{rom_path}",
+        },
+    })
+    if os.path.exists(APP_INI_PATH):
+        cfg.read(APP_INI_PATH, encoding="utf-8")
+    return cfg
+
+
+def cfg_path(name, legacy=None, fallback=""):
+    value = APP_CONFIG.get("paths", name, fallback="")
+    if (not value) and legacy:
+        value = APP_CONFIG.get("paths", legacy, fallback="")
+    if not value:
+        value = fallback
+    return _resolve_config_path(value)
+
+
+def cfg_text(section, name, fallback=""):
+    return APP_CONFIG.get(section, name, fallback=fallback).strip()
+
+
+APP_CONFIG = load_app_ini()
+ROMS_DIR = cfg_path("source_roms_mame_dir", "roms_dir")
+MAME_EXE = cfg_path("source_mame_exe", "mame_exe")
+RETROARCH_EXE = cfg_path("source_retroarch_exe")
+RETROARCH_MAME_CORE = cfg_path("source_retroarch_mame_core")
+PANEL_DIR = cfg_path("source_myrient_panel_dir", "panel_dir")
+RESOURCE_CPANEL_DIR = cfg_path("source_resource_cpanel_dir", "resource_cpanel_dir", os.path.join("resources", "artwork", "cpanel"))
+MYRIENT_CABINETS_DIR = cfg_path("source_myrient_cabinets_dir", "myrient_cabinets_dir")
+CONTROLS_INI = cfg_path("source_controls_ini", "controls_ini", os.path.join("resources", "controls", "controls.ini"))
+COLORS_INI = cfg_path("source_colors_ini", "colors_ini", os.path.join("resources", "colors", "colors.ini"))
+MAME_CFG_DIR = cfg_path("source_mame_cfg_dir", "mame_cfg_dir")
+MAME_CTRLR_DIR = cfg_path("export_mame_ctrlr_dir", "mame_ctrlr_dir")
+RETROARCH_REMAPS_DIR = cfg_path("export_retroarch_remaps_dir", "retroarch_remaps_dir")
+RETROARCH_RMP_CORE_DIR = APP_CONFIG.get("export", "retroarch_rmp_core_dir", fallback="MAME")
+MAME_OUTPUTS_DIR = cfg_path("source_mame_outputs_dir", "mame_outputs_dir", os.path.join("resources", "outputs", "mame"))
+SYSTEMS_PANEL_DIR = cfg_path("source_systems_panel_dir", "systems_panel_dir", os.path.join("resources", "panels", "systems"))
+ARCADE_LIP_DIR = cfg_path("source_arcade_lip_dir", "arcade_lip_dir", os.path.join("resources", "panels", "mame"))
+RETROBAT_BIOS_DIR = cfg_path("source_retrobat_bios_dir")
+MAME_CHEATS_DIR = cfg_path("source_mame_cheats_dir")
+MAME_ARTWORK_DIR = cfg_path("source_mame_artwork_dir")
+OUTPUT_DIR = cfg_path("export_kpanels_mame_dir", "output_dir", os.path.join("kpanels", "mame"))
+SYSTEM_OUTPUT_DIR = cfg_path("export_kpanels_systems_dir", "system_output_dir", os.path.join("kpanels", "systems"))
+GENERATED_MAME_COPY_DIR = cfg_path("export_generated_mame_copy_dir", "generated_mame_copy_dir", os.path.join("resources", "controls", "mame"))
+GENERATED_RETROARCH_COPY_DIR = cfg_path("export_generated_retroarch_copy_dir", "generated_retroarch_copy_dir", os.path.join("resources", "controls", "retroarch", "mame"))
+RETROARCH_LOG_FILE = cfg_path("export_retroarch_log_file")
+RETROARCH_EXTRA_ARGS = cfg_text("launch", "retroarch_extra_args", "--verbose")
+RETROARCH_CONTENT_TEMPLATE = cfg_text("launch", "retroarch_content_template", "{rom_path}")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(SYSTEM_OUTPUT_DIR, exist_ok=True)
+os.makedirs(GENERATED_MAME_COPY_DIR, exist_ok=True)
+os.makedirs(GENERATED_RETROARCH_COPY_DIR, exist_ok=True)
 
 ROM_EXTS = {".zip", ".7z", ".chd", ".cue", ".bin", ".iso", ".rom"}
 
@@ -45,62 +137,77 @@ ROM_EXTS = {".zip", ".7z", ".chd", ".cue", ".bin", ".iso", ".rom"}
 
 PANEL_CONVENTION = "retrobat_standard"
 
+
+def _normalize_profile_entry(entry, fallback=None):
+    fallback = fallback or {}
+    return {
+        "retrobat_button": entry.get("retrobat", fallback.get("retrobat_button", "")),
+        "retropad_id": entry.get("retropad_id", fallback.get("retropad_id")),
+        "libretro_button": entry.get("libretro", fallback.get("libretro_button", "")),
+        "fbneo_button": entry.get("dinput", fallback.get("fbneo_button", "")),
+        "rmp_button": entry.get("rmp_button", fallback.get("rmp_button")),
+        "mame_button": entry.get("mame_btn", fallback.get("mame_button", "")),
+    }
+
+
 SLOT_MAP = {
-    "1": {"retrobat_button": "A", "retropad_id": 8, "libretro_button": "a", "fbneo_button": "a"},
-    "2": {"retrobat_button": "B", "retropad_id": 0, "libretro_button": "b", "fbneo_button": "b"},
-    "3": {"retrobat_button": "X", "retropad_id": 9, "libretro_button": "x", "fbneo_button": "x"},
-    "4": {"retrobat_button": "Y", "retropad_id": 1, "libretro_button": "y", "fbneo_button": "y"},
-    "5": {"retrobat_button": "L1", "retropad_id": 10, "libretro_button": "leftshoulder", "fbneo_button": "leftshoulder"},
-    "6": {"retrobat_button": "R1", "retropad_id": 11, "libretro_button": "rightshoulder", "fbneo_button": "rightshoulder"},
-    "7": {"retrobat_button": "L2", "retropad_id": 12, "libretro_button": "lefttrigger", "fbneo_button": "lefttrigger"},
-    "8": {"retrobat_button": "R2", "retropad_id": 13, "libretro_button": "righttrigger", "fbneo_button": "righttrigger"},
+    key: _normalize_profile_entry(value)
+    for key, value in DB_SLOT_MAP.items()
 }
 
 SYSTEM_SLOT_MAP = {
-    "start": {"retrobat_button": "START", "retropad_id": 3, "libretro_button": "start", "fbneo_button": "start"},
-    "coin": {"retrobat_button": "SELECT", "retropad_id": 2, "libretro_button": "select", "fbneo_button": "back"},
+    key: _normalize_profile_entry(value, {"rmp_button": DB_RMP_SYSTEM_BUTTON_MAP.get(key)})
+    for key, value in DB_SYSTEM_SLOT_MAP.items()
 }
+
+RMP_SLOT_BUTTONS_BY_LAYOUT = DB_RMP_SLOT_BUTTONS_BY_LAYOUT
+RMP_SYSTEM_BUTTON_MAP = DB_RMP_SYSTEM_BUTTON_MAP
+
+
+def slot_source_retropad_id(slot):
+    mapping = SLOT_MAP.get(str(slot), {})
+    return mapping.get("retropad_id")
+
+
+def system_source_retropad_id(system_key):
+    mapping = SYSTEM_SLOT_MAP.get(system_key, {})
+    return mapping.get("retropad_id")
+
+
+def mame_source_retropad_id(mame):
+    raw = str((mame or {}).get("type") or (mame or {}).get("input_id") or "").upper()
+    match = re.search(r"(?:P\d+_)?BUTTON(\d+)$", raw)
+    if match:
+        return slot_source_retropad_id(match.group(1))
+    if re.search(r"(?:P\d+_)?START\d*$", raw):
+        return system_source_retropad_id("start")
+    if raw in {"COIN", "COIN1", "COIN2", "P1_COIN", "P2_COIN", "SELECT"}:
+        return system_source_retropad_id("coin")
+    return None
+
+
+def logical_button_source_retropad_id(button):
+    game_button = button.get("game_button")
+    if str(game_button).isdigit():
+        retropad_id = slot_source_retropad_id(game_button)
+        if retropad_id is not None:
+            return retropad_id
+    return mame_source_retropad_id(button.get("mame", {}))
 
 JOYSTICK_DIRECTION_MAP = {
-    "up": {"retrobat_button": "UP", "retropad_id": 4, "libretro_button": "up", "fbneo_button": "up"},
-    "down": {"retrobat_button": "DOWN", "retropad_id": 5, "libretro_button": "down", "fbneo_button": "down"},
-    "left": {"retrobat_button": "LEFT", "retropad_id": 6, "libretro_button": "left", "fbneo_button": "left"},
-    "right": {"retrobat_button": "RIGHT", "retropad_id": 7, "libretro_button": "right", "fbneo_button": "right"},
+    key: {
+        "retrobat_button": value.get("retrobat", ""),
+        "retropad_id": value.get("retropad_id"),
+        "libretro_button": value.get("libretro", ""),
+        "fbneo_button": value.get("dinput", ""),
+    }
+    for key, value in DB_JOYSTICK_DIRECTION_MAP.items()
 }
 
-MAME_SLOT_KEYCODES = {
-    "1": "KEYCODE_LCONTROL",
-    "2": "KEYCODE_LALT",
-    "3": "KEYCODE_SPACE",
-    "4": "KEYCODE_LSHIFT",
-    "5": "KEYCODE_Z",
-    "6": "KEYCODE_X",
-    "7": "KEYCODE_C",
-    "8": "KEYCODE_V",
-}
-
-MAME_SLOT_JOYCODES = {
-    "1": "JOYCODE_{player}_BUTTON1",
-    "2": "JOYCODE_{player}_BUTTON2",
-    "3": "JOYCODE_{player}_BUTTON3",
-    "4": "JOYCODE_{player}_BUTTON4",
-    "5": "JOYCODE_{player}_BUTTON5",
-    "6": "JOYCODE_{player}_BUTTON6",
-    "7": "JOYCODE_{player}_BUTTON7",
-    "8": "JOYCODE_{player}_BUTTON8",
-}
-
-MAME_SYSTEM_KEYCODES = {
-    "start": "KEYCODE_1",
-    "select": "KEYCODE_2",
-    "coin": "KEYCODE_5",
-}
-
-MAME_SYSTEM_JOYCODES = {
-    "start": "JOYCODE_{player}_BUTTON12",
-    "select": "JOYCODE_{player}_BUTTON12",
-    "coin": "JOYCODE_{player}_BUTTON11",
-}
+MAME_SLOT_KEYCODES = DB_MAME_SLOT_KEYCODES
+MAME_SLOT_JOYCODES = DB_MAME_SLOT_JOYCODES
+MAME_SYSTEM_KEYCODES = DB_MAME_SYSTEM_KEYCODES
+MAME_SYSTEM_JOYCODES = DB_MAME_SYSTEM_JOYCODES
 
 MAME_JOYSTICK_KEYCODES = {
     "up": "KEYCODE_UP",
@@ -136,31 +243,7 @@ MAME_JOYSTICK_JOYCODES = {
     ),
 }
 
-LIBRETRO_ARCADE_BUTTON_KEYS = {
-    1: "a",
-    2: "b",
-    3: "x",
-    4: "y",
-    5: "l",
-    6: "r",
-    7: "l2",
-    8: "r2",
-}
-
-LIBRETRO_SYSTEM_BUTTON_KEYS = {
-    "start": "start",
-    "select": "select",
-    "coin": "select",
-}
-
-LIBRETRO_DIRECTION_BUTTON_KEYS = {
-    "up": "up",
-    "down": "down",
-    "left": "left",
-    "right": "right",
-}
-
-LIBRETRO_RMP_BUTTON_KEY_ORDER = ["a", "b", "l", "l2", "r", "r2", "x", "y"]
+RMP_BUTTON_OUTPUT_ORDER = ["a", "b", "l", "l2", "r", "r2", "x", "y"]
 
 RMP_STATIC_LINES = [
     'input_turbo_allow_dpad = "false"',
@@ -469,6 +552,17 @@ def list_roms():
 
     roms = sorted(roms)
     return roms
+
+
+def find_rom_content_path(rom):
+    if not os.path.isdir(ROMS_DIR):
+        return ""
+    candidates = []
+    for ext in sorted(ROM_EXTS):
+        path = os.path.join(ROMS_DIR, rom + ext)
+        if os.path.exists(path):
+            candidates.append(path)
+    return candidates[0] if candidates else ""
 
 
 def find_exact_image_in_dir(directory, rom, extensions=(".png",)):
@@ -3636,6 +3730,9 @@ class PlayerEditor(ttk.Frame):
             return None
         return SLOT_MAP.get(str(slots[0]))
 
+    def system_input_default_mapping(self, key):
+        return SYSTEM_SLOT_MAP.get(key, {})
+
     def ensure_system_input_entry(self, key, entry):
         entry.setdefault("label", key.capitalize())
         entry.setdefault("color", "")
@@ -4350,6 +4447,16 @@ class PlayerEditor(ttk.Frame):
                     fb = sm.get("fbneo_button", "")
                     core = lr if lr == fb else f"{lr} / {fb}"
                     break
+            if not rb:
+                sm = self.system_input_default_mapping(key)
+                rb = sm.get("retrobat_button", "")
+                rp = "" if sm.get("retropad_id") is None else str(sm.get("retropad_id", ""))
+                lr = sm.get("libretro_button", "")
+                fb = sm.get("fbneo_button", "")
+                core = lr if lr == fb else f"{lr} / {fb}"
+            source_rp = system_source_retropad_id(key)
+            if source_rp is not None:
+                rp = str(source_rp)
             widgets["rb_var"].set(rb)
             widgets["rp_var"].set(rp)
             widgets["core_var"].set(core)
@@ -4381,6 +4488,9 @@ class PlayerEditor(ttk.Frame):
                     core = lr if lr == fb else f"{lr} / {fb}"
                     break
             mame = self.mame_for_system_output_input(output)
+            source_rp = mame_source_retropad_id(mame)
+            if source_rp is not None:
+                rp = str(source_rp)
             widgets["rb_var"].set(rb)
             widgets["rp_var"].set(rp)
             widgets["core_var"].set(core)
@@ -4411,6 +4521,9 @@ class PlayerEditor(ttk.Frame):
                     fb = sm.get("fbneo_button", "")
                     core = lr if lr == fb else f"{lr} / {fb}"
                     break
+            source_rp = logical_button_source_retropad_id(b)
+            if source_rp is not None:
+                rp = str(source_rp)
             widgets["rb_var"].set(rb)
             widgets["rp_var"].set(rp)
             widgets["core_var"].set(core)
@@ -4445,6 +4558,9 @@ class PlayerEditor(ttk.Frame):
                 lr = sm.get("libretro_button", "")
                 fb = sm.get("fbneo_button", "")
                 core = lr if lr == fb else f"{lr} / {fb}"
+            source_rp = JOYSTICK_DIRECTION_MAP.get(widgets["direction"], {}).get("retropad_id")
+            if source_rp is not None:
+                rp = str(source_rp)
             widgets["rb_var"].set(rb)
             widgets["rp_var"].set(rp)
             widgets["core_var"].set(core)
@@ -4471,6 +4587,9 @@ class PlayerEditor(ttk.Frame):
                     fb = sm.get("fbneo_button", "")
                     core = lr if lr == fb else f"{lr} / {fb}"
                     break
+            source_rp = mame_source_retropad_id(axis.get("mame", {}))
+            if source_rp is not None:
+                rp = str(source_rp)
             widgets["rb_var"].set(rb)
             widgets["rp_var"].set(rp)
             widgets["core_var"].set(core)
@@ -4967,19 +5086,22 @@ class CuratorApp:
             return [slot for slot in slot_value if slot is not None]
         return [slot_value]
 
+    def mame_slot_joycode(self, slot, player=1):
+        joycode = MAME_SLOT_JOYCODES.get(str(slot))
+        return joycode.format(player=player) if joycode else None
+
     def slot_keycodes(self, slot_value, player=1):
         slots = self.slot_values_for_export(slot_value)
         tokens = []
         for slot in slots:
             key = str(slot)
             keycode = MAME_SLOT_KEYCODES.get(key)
-            joycode = MAME_SLOT_JOYCODES.get(key)
+            joycode = self.mame_slot_joycode(key, player)
             if keycode and keycode not in tokens:
                 tokens.append(keycode)
             if joycode:
-                token = joycode.format(player=player)
-                if token not in tokens:
-                    tokens.append(token)
+                if joycode not in tokens:
+                    tokens.append(joycode)
         return tokens
 
     def slot_mame_types(self, slot_value, player=1):
@@ -5009,34 +5131,38 @@ class CuratorApp:
             tokens.append(joycode.format(player=player))
         return tokens
 
-    def slot_retropad_ids(self, slot_value):
-        ids = []
-        for slot in self.slot_values_for_export(slot_value):
-            mapping = SLOT_MAP.get(str(slot))
-            if not mapping:
-                continue
-            retropad_id = mapping.get("retropad_id")
-            if retropad_id is not None and retropad_id not in ids:
-                ids.append(retropad_id)
-        return ids
-
     def joystick_retropad_id(self, direction):
         mapping = JOYSTICK_DIRECTION_MAP.get(direction, {})
         return mapping.get("retropad_id")
 
-    def rmp_button_key_from_mame(self, mame):
+    def rmp_key_from_slot(self, slot, layout_name):
+        layout_map = RMP_SLOT_BUTTONS_BY_LAYOUT.get(layout_name) or {}
+        return layout_map.get(str(slot))
+
+    def rmp_keys_from_slot_value(self, slot_value, layout_name):
+        keys = []
+        for slot in self.slot_values_for_export(slot_value):
+            key = self.rmp_key_from_slot(slot, layout_name)
+            if key and key not in keys:
+                keys.append(key)
+        return keys
+
+    def rmp_default_retropad_id_from_button(self, button):
+        return logical_button_source_retropad_id(button)
+
+    def rmp_retropad_id_from_mame(self, mame):
+        source_rp = mame_source_retropad_id(mame)
+        if source_rp is not None:
+            return source_rp
         raw = str((mame or {}).get("type") or (mame or {}).get("input_id") or "").upper()
-        match = re.search(r"(?:P\d+_)?BUTTON(\d+)$", raw)
-        if match:
-            return LIBRETRO_ARCADE_BUTTON_KEYS.get(int(match.group(1)))
-        if re.search(r"(?:P\d+_)?START\d*$", raw):
-            return "start"
-        if raw in {"COIN", "COIN1", "COIN2", "P1_COIN", "P2_COIN", "SELECT"}:
-            return "select"
         match = re.search(r"(?:P\d+_)?JOYSTICK_?(UP|DOWN|LEFT|RIGHT)$", raw)
         if match:
-            return LIBRETRO_DIRECTION_BUTTON_KEYS.get(match.group(1).lower())
+            return self.joystick_retropad_id(match.group(1).lower())
         return None
+
+    def rmp_system_source_value(self, player, system_key):
+        retropad_id = system_source_retropad_id(system_key)
+        return None if retropad_id is None else str(retropad_id)
 
     def rmp_add_assignment(self, remaps, conflicts, player, button_key, retropad_id, source):
         if not button_key or retropad_id is None:
@@ -5049,31 +5175,25 @@ class CuratorApp:
         elif existing != value:
             conflicts.append(f"{key}: {existing} kept, {value} ignored ({source})")
 
-    def rmp_add_slots(self, remaps, conflicts, player, button_key, slot_value, source):
-        ids = self.slot_retropad_ids(slot_value)
-        if not ids:
+    def rmp_add_slot_destinations(self, remaps, conflicts, player, slot_value, layout_name, source_retropad_id, source):
+        keys = self.rmp_keys_from_slot_value(slot_value, layout_name)
+        if not keys:
             return
-        self.rmp_add_assignment(remaps, conflicts, player, button_key, ids[0], source)
-        for extra_id in ids[1:]:
-            conflicts.append(f"input_player{player}_btn_{button_key}: extra RetroPad {extra_id} ignored ({source})")
+        self.rmp_add_assignment(remaps, conflicts, player, keys[0], source_retropad_id, source)
+        for extra_key in keys[1:]:
+            self.rmp_add_assignment(remaps, conflicts, player, extra_key, source_retropad_id, source)
 
-    def rmp_add_panel_joystick(self, remaps, conflicts, player, button_key, item, source):
+    def rmp_add_system_default(self, remaps, conflicts, player, system_key, button_key, source):
+        self.rmp_add_assignment(remaps, conflicts, player, button_key, self.rmp_system_source_value(player, system_key), source)
+
+    def rmp_add_panel_joystick_destinations(self, remaps, conflicts, player, item, source_retropad_id, source):
         value = item.get("panel_joystick")
-        if not value or not button_key:
+        if not value:
             return
         directions = value.values() if isinstance(value, dict) else [value]
         for direction in directions:
-            retropad_id = self.joystick_retropad_id(direction)
-            self.rmp_add_assignment(remaps, conflicts, player, button_key, retropad_id, source)
-
-    def rmp_button_key_for_button(self, button):
-        button_key = self.rmp_button_key_from_mame(button.get("mame", {}))
-        if button_key:
-            return button_key
-        game_button = button.get("game_button")
-        if str(game_button).isdigit():
-            return LIBRETRO_ARCADE_BUTTON_KEYS.get(int(game_button))
-        return None
+            key = direction if direction in JOYSTICK_DIRECTION_MAP else None
+            self.rmp_add_assignment(remaps, conflicts, player, key, source_retropad_id, source)
 
     def collect_retroarch_rmp_assignments(self):
         remaps = {}
@@ -5089,37 +5209,42 @@ class CuratorApp:
             for key in editor.system_input_order():
                 entry = editor.player_data["system_inputs"][key]
                 editor.ensure_system_input_entry(key, entry)
-                button_key = LIBRETRO_SYSTEM_BUTTON_KEYS.get(key) or self.rmp_button_key_from_mame(entry.get("mame", {}))
-                self.rmp_add_slots(remaps, conflicts, player, button_key, entry.get("slots_by_layout", {}).get(layout_name), f"system input {key}")
-                self.rmp_add_panel_joystick(remaps, conflicts, player, button_key, entry, f"system input {key}")
+                button_key = RMP_SYSTEM_BUTTON_MAP.get(key) or SYSTEM_SLOT_MAP.get(key, {}).get("rmp_button")
+                slot_value = entry.get("slots_by_layout", {}).get(layout_name)
+                source_retropad_id = self.rmp_system_source_value(player, key)
+                if slot_value is None and not entry.get("panel_joystick"):
+                    self.rmp_add_system_default(remaps, conflicts, player, key, button_key, f"system input {key} default")
+                else:
+                    self.rmp_add_slot_destinations(remaps, conflicts, player, slot_value, layout_name, source_retropad_id, f"system input {key}")
+                self.rmp_add_panel_joystick_destinations(remaps, conflicts, player, entry, source_retropad_id, f"system input {key}")
 
             for button in editor.player_data["buttons"]:
-                button_key = self.rmp_button_key_for_button(button)
                 source = f'button {button.get("game_button")}'
-                self.rmp_add_slots(remaps, conflicts, player, button_key, button.get("slots_by_layout", {}).get(layout_name), source)
-                self.rmp_add_panel_joystick(remaps, conflicts, player, button_key, button, source)
+                source_retropad_id = self.rmp_default_retropad_id_from_button(button)
+                self.rmp_add_slot_destinations(remaps, conflicts, player, button.get("slots_by_layout", {}).get(layout_name), layout_name, source_retropad_id, source)
+                self.rmp_add_panel_joystick_destinations(remaps, conflicts, player, button, source_retropad_id, source)
 
             for _, direction, entry in editor.iter_joystick_inputs():
-                button_key = self.rmp_button_key_from_mame(entry.get("mame", {})) or LIBRETRO_DIRECTION_BUTTON_KEYS.get(direction)
                 source = f"joystick {direction}"
-                self.rmp_add_slots(remaps, conflicts, player, button_key, entry.get("slots_by_layout", {}).get(layout_name), source)
-                self.rmp_add_panel_joystick(remaps, conflicts, player, button_key, entry, source)
+                source_retropad_id = self.joystick_retropad_id(direction)
+                self.rmp_add_slot_destinations(remaps, conflicts, player, entry.get("slots_by_layout", {}).get(layout_name), layout_name, source_retropad_id, source)
+                self.rmp_add_panel_joystick_destinations(remaps, conflicts, player, entry, source_retropad_id, source)
 
             for axis in editor.iter_axes():
-                button_key = self.rmp_button_key_from_mame(axis.get("mame", {}))
                 source = axis.get("id") or axis.get("input") or "axis"
-                self.rmp_add_slots(remaps, conflicts, player, button_key, axis.get("slots_by_layout", {}).get(layout_name), source)
-                self.rmp_add_panel_joystick(remaps, conflicts, player, button_key, axis, source)
+                source_retropad_id = self.rmp_retropad_id_from_mame(axis.get("mame", {}))
+                self.rmp_add_slot_destinations(remaps, conflicts, player, axis.get("slots_by_layout", {}).get(layout_name), layout_name, source_retropad_id, source)
+                self.rmp_add_panel_joystick_destinations(remaps, conflicts, player, axis, source_retropad_id, source)
 
             for output in editor.player_data.get("system_outputs", []):
                 editor.ensure_system_output_entry(output)
                 if not output.get("input_ref"):
                     continue
                 mame = editor.mame_for_system_output_input(output)
-                button_key = self.rmp_button_key_from_mame(mame)
                 source = f'system output {output.get("name") or output.get("id") or ""}'.strip()
-                self.rmp_add_slots(remaps, conflicts, player, button_key, output.get("slots_by_layout", {}).get(layout_name), source)
-                self.rmp_add_panel_joystick(remaps, conflicts, player, button_key, output, source)
+                source_retropad_id = self.rmp_retropad_id_from_mame(mame)
+                self.rmp_add_slot_destinations(remaps, conflicts, player, output.get("slots_by_layout", {}).get(layout_name), layout_name, source_retropad_id, source)
+                self.rmp_add_panel_joystick_destinations(remaps, conflicts, player, output, source_retropad_id, source)
 
         return remaps, conflicts
 
@@ -5151,12 +5276,12 @@ class CuratorApp:
                 continue
 
             suffixes = {key[len(prefix):] for key in player_keys}
-            if any(suffix in suffixes for suffix in LIBRETRO_RMP_BUTTON_KEY_ORDER):
-                for suffix in LIBRETRO_RMP_BUTTON_KEY_ORDER:
+            if any(suffix in suffixes for suffix in RMP_BUTTON_OUTPUT_ORDER):
+                for suffix in RMP_BUTTON_OUTPUT_ORDER:
                     key = f"{prefix}{suffix}"
                     lines.append(f'{key} = "{remaps.get(key, "-1")}"')
 
-            ordered_standard_keys = {f"{prefix}{suffix}" for suffix in LIBRETRO_RMP_BUTTON_KEY_ORDER}
+            ordered_standard_keys = {f"{prefix}{suffix}" for suffix in RMP_BUTTON_OUTPUT_ORDER}
             for key in player_keys:
                 if key in ordered_standard_keys:
                     continue
@@ -5279,15 +5404,21 @@ class CuratorApp:
             return
 
         rom = self.current_data["system"]
-        path = os.path.join(MAME_CFG_DIR, f"{rom}.cfg")
+        path = os.path.join(MAME_CTRLR_DIR, f"{rom}.cfg")
         if os.path.exists(path):
             if not messagebox.askyesno("MAME CFG", f"Overwrite existing MAME cfg?\n\n{path}"):
                 return
 
-        os.makedirs(MAME_CFG_DIR, exist_ok=True)
+        os.makedirs(MAME_CTRLR_DIR, exist_ok=True)
         tree.write(path, encoding="utf-8", xml_declaration=True)
+        os.makedirs(GENERATED_MAME_COPY_DIR, exist_ok=True)
+        copy_path = os.path.join(GENERATED_MAME_COPY_DIR, f"{rom}.cfg")
+        shutil.copy2(path, copy_path)
 
-        if messagebox.askyesno("MAME CFG", f"CFG generated with {port_count} input ports:\n{path}\n\nLaunch MAME now for testing?"):
+        if messagebox.askyesno(
+            "MAME CFG",
+            f"Controller CFG generated with {port_count} input ports:\n{path}\n\nCopy saved to:\n{copy_path}\n\nLaunch MAME now for testing?",
+        ):
             self.launch_mame_current()
 
     def launch_mame_current(self):
@@ -5300,11 +5431,49 @@ class CuratorApp:
                 MAME_EXE,
                 rom,
                 "-rompath", ROMS_DIR,
-                "-cfg_directory", MAME_CFG_DIR,
+                "-ctrlrpath", MAME_CTRLR_DIR,
+                "-ctrlr", rom,
                 "-joystick",
             ])
         except Exception as exc:
             messagebox.showerror("MAME", f"Unable to launch MAME:\n{exc}")
+
+    def launch_retroarch_current(self):
+        rom = self.current_data["system"]
+        if not os.path.exists(RETROARCH_EXE):
+            messagebox.showerror("RetroArch", f"RetroArch executable not found:\n{RETROARCH_EXE}")
+            return
+        if not os.path.exists(RETROARCH_MAME_CORE):
+            messagebox.showerror("RetroArch", f"RetroArch MAME core not found:\n{RETROARCH_MAME_CORE}")
+            return
+
+        rom_path = find_rom_content_path(rom)
+        if not rom_path:
+            messagebox.showerror("RetroArch", f"ROM file not found in:\n{ROMS_DIR}\n\nROM: {rom}")
+            return
+
+        fmt = {
+            "rom": rom,
+            "rom_path": rom_path,
+            "roms_dir": ROMS_DIR,
+            "bios_dir": RETROBAT_BIOS_DIR,
+            "cheats_dir": MAME_CHEATS_DIR,
+            "artwork_dir": MAME_ARTWORK_DIR,
+            "log_file": RETROARCH_LOG_FILE,
+        }
+
+        content_arg = RETROARCH_CONTENT_TEMPLATE.format(**fmt).strip() if RETROARCH_CONTENT_TEMPLATE else rom_path
+        cmd = [RETROARCH_EXE]
+        if RETROARCH_LOG_FILE:
+            cmd.extend(["--log-file", RETROARCH_LOG_FILE])
+        if RETROARCH_EXTRA_ARGS:
+            cmd.extend(shlex.split(RETROARCH_EXTRA_ARGS, posix=False))
+        cmd.extend(["-L", RETROARCH_MAME_CORE, content_arg])
+
+        try:
+            subprocess.Popen(cmd)
+        except Exception as exc:
+            messagebox.showerror("RetroArch", f"Unable to launch RetroArch:\n{exc}")
 
     def generate_retroarch_rmp(self):
         text, conflicts = self.build_retroarch_rmp_text()
@@ -5322,13 +5491,17 @@ class CuratorApp:
         os.makedirs(target_dir, exist_ok=True)
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
+        os.makedirs(GENERATED_RETROARCH_COPY_DIR, exist_ok=True)
+        copy_path = os.path.join(GENERATED_RETROARCH_COPY_DIR, f"{rom}.rmp")
+        shutil.copy2(path, copy_path)
 
-        detail = f"RMP generated:\n{path}"
+        detail = f"RMP generated:\n{path}\n\nCopy saved to:\n{copy_path}"
         if conflicts:
             preview = "\n".join(conflicts[:8])
             more = "" if len(conflicts) <= 8 else f"\n... and {len(conflicts) - 8} more."
             detail += f"\n\nSome remaps could not be represented more than once in RetroArch RMP:\n{preview}{more}"
-        messagebox.showinfo("RetroArch RMP", detail)
+        if messagebox.askyesno("RetroArch RMP", detail + "\n\nLaunch RetroArch now for testing?"):
+            self.launch_retroarch_current()
 
     def generate_retrobat_xml_placeholder(self):
         messagebox.showinfo("RetroBat XML", "RetroBat XML generation will be implemented after the MAME CFG target.")
@@ -5360,7 +5533,6 @@ class CuratorApp:
             "players": players_obj,
             "system_template": {},
             "events": self.current_data.get("events", empty_events()),
-            "mame": self.current_data.get("mame", {}),
             "context": [],
         }
 

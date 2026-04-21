@@ -1,0 +1,319 @@
+﻿
+
+
+    
+    
+    
+    
+    Cahier des charges consolidé pour une API locale RetroBat en C# orientée hub temps réel, médias centralisés, règles réactives et multi‑bornes
+    
+    Synthèse exécutive et décisions d’architecture
+    Ce projet vise à créer un service local en C# (.NET 8 / ASP.NET Core) exposé sur http://127.0.0.1:12345 avec :
+    REST (lecture/commande) + WebSocket (événements temps réel) + Swagger UI (doc + test). [1]
+    Une capacité “standalone” (chaque borne fonctionne seule), et un mode ArcadeHub optionnel (centralisateur LAN) avec rôle Hub/Master et Node/Client (opt‑in). [2]
+    Une ambition claire : devenir la source canonique (state + média + règles) utilisée par des clients spécialisés (marquee, DMD, LED panel, molding RGB, scoreboard, multi‑écrans), en migrant progressivement tes services actuels (Marquee Manager / LedPanel Manager) vers des clients API.
+    Le point structurant issu de tes systèmes actuels et des inspirations étudiées : l’API ne doit pas seulement “exposer de la donnée”, elle doit exposer un état canonique + un moteur d’intentions (scènes) + un moteur de règles réactives, afin de supporter des comportements avancés déjà présents dans tes formats :
+    LIP (ton DSL) : événements d’inputs physiques (press/release) déclenchant des macros (set_panel_colors, restore_panel, set_button…), donc un rule engine. (exemples fournis par toi)
+    LAY (layouts marquee réactifs aux outputs MAME) : binding d’éléments graphiques à des outputs (ex : genout5) pour allumer/éteindre des overlays de lampes, donc un rule engine aussi, mais côté affichage. (exemple fourni par toi)
+    Outputs MAME : flux key=value via -output network (port 8000 fixé côté MAME) alimentant des effets temps réel. [3]
+    Événements EmulationStation : scripts/événements (game-start, game-end, game-selected…) déjà formalisés dans ton events.ini (host/port + liste d’actions). [4]
+    Enfin, tu demandes explicitement (a) push d’une vue (jeu/système/collection) d’un poste vers une borne (marquee + layout + éventuellement launch), (b) centralisation des dossiers XML/LIP, pools de scrap, command.dat et autres fichiers clés dans l’API, (c) réflexion “score courant” (idéalement) et scoreboard global, et (d) pilotage LED complet (boutons, ring, molding RGB…) en s’inspirant de Pixelcade sans l’intégrer.
+    Note de transparence : tu as fourni api.zip (début d’API). Je n’ai pas pu l’exploiter via l’outil de recherche de fichiers du contexte (pas de résultats indexés). La proposition ci‑dessous est donc consolidée à partir des dépôts et sources web ; elle est compatible avec une intégration/migration de ton brouillon existant, mais sans analyse de son code.
+    
+    
+    Benchmark des services comparables et leçons à retenir
+    
+    Comparatif condensé
+    Projet / famillePhilosophieTemps réelRéseauAuthIdées “transposables”MarquesasServer (plugin frontend)State + Assets via HTTPmoyen (pages auto-refresh)oui LANoptionnelEndpoints “SelectedGame/StateManager” + endpoints d’images/binaires (/Image/*, /Binary/*) + UI index. [5]Playnite WebRemote control + API extensibleouiouiloginremote start/stop, API “Graph” pour intégrer domotique/clients. [6]Ton Marquee Manager (events.ini)Event-driven + moteur d’affichageouilocaln/agrammaire d’actions métier (game-selected, system-selected, screensaver…) + host/port configurable. [4]MAME -output networkFlux outputs natif émulateurouiTCPn/astandard “key=value”, port réseau 8000 fixé pour network. [7]OutputBlaster (pattern discovery LAN)Outputs over LAN + discoveryouiTCP + UDP broadcastn/aenvoi initial mame_start=game, discovery UDP (port configurable) → modèle pour ArcadeHub. [2]LEDBlinky (inspiration LED + hi2txt + requêtes web)Outputs → actionsouilocal + HTTP GETn/amappe outputs (MameOutputs.ini), peut déclencher requêtes web GET, intègre hi2txt, affiche hi-scores et gère “FE Scroll”. [8]Pixelcade (inspiration, non intégré)“Device driven by events + priorité/scroll”ouilocaln/aservice local pilotable et update pendant le scroll (pattern UI/TTL/prio). [9]RetroAchievements Web APIenrichissement externepollinginternetclé APImapping par hashes (MD5) et récupération des datasets RA. [10]
+    
+    
+    Leçons de conception
+    1) Séparer “State canonique” et “Intent”MarquesasServer expose un état (SelectedGame) ET des assets (images). [11]Ton besoin de “pousser une vue” implique de pouvoir publier une intention qui override l’état naturel (sélection ES) pendant un temps (contest, attract mode, multi‑écrans).
+    2) Le temps réel doit être event-driven- Côté ES : scripts/événements. Ton events.ini catalogue des événements riches. [12]- Côté MAME : outputs réseau (-output network) et parseur key=value. [3]
+    3) Le “rule engine” est centralLes LIP et les LAY expriment déjà une logique “si trigger alors macro”. L’API doit donc fournir : - un modèle canonique de triggers/actions,- un chargement/validation/versionning des règles,- et un bus temps réel vers les clients qui exécutent (LED / overlay / marquee).
+    
+    
+    
+    Inventaire des sources de données locales et ingestion
+    
+    Sources à supporter en priorité (et cohérence avec tes projets)
+    Événements ES / RetroBat - RetroBat peut exécuter des scripts dans des dossiers d’événements (game-start, game-end, shutdown, etc.) situés sous C:\RetroBat\emulationstation\.emulationstation\scripts. [13]- Ton système Marquee Manager formalise events.ini : host, port, et une liste de commandes (game-selected, system-selected, screensaver…) utilisables comme “contrat d’événements”. [4]- LedPanel Manager observe ESEvent.arg (event=game-selected) et en extrait param1 (émulateur) + param2 (rom path). [14]
+    Métadonnées jeux - gamelist.xml (EmulationStation) est un pivot : tags standards (name, desc, image, releasedate, players, playcount, lastplayed) et chemins relatifs/absolus selon conventions. [15]- LPEvents.py démontre une stratégie robuste : cache des gamelists et index (system, name|basename) → (emulator, core). [16]
+    MAME référentiel + outputs - mame -listxml : export XML exhaustif exploité par frontends/outils. [17]- mame -output network : outputs key=value, port réseau fixe 8000. [7]- Ton listener MAME se connecte à 127.0.0.1:8000, lit des fragments, split \r, déduplique les séquences et transmet. [18]
+    Hi-scores - hi2txt décode des hi-scores à partir des fichiers nvram (natif) ou .hi (plugin hiscore + hiscore.dat). [19]- hi2txt-xml existe précisément pour permettre à des logiciels tiers de parser/normaliser des scores pour leaderboard/achievements. [20]- LEDBlinky illustre l’intégration “prête à l’emploi” : il utilise Hi2txt pour décoder les fichiers MAME et peut afficher top1/top3/all, y compris lors d’événements (FE Scroll). [8]
+    RetroAchievements - La Web API nécessite une Web API Key et se comporte “comme un mot de passe”. [21]- Endpoint “Get Game Hashes” : mapping par MD5. [22]- Ton script ESRetroAchievements active les logs RetroArch (log_to_file, log_verbosity) et appelle l’API RA via paramètres z/y. [23]
+    
+    
+    Méthodes d’ingestion recommandées
+    HTTP ingest (fortement recommandé) : scripts ES → POST /ingest/es (évite les courses/latences des fichiers d’état). Les docs Recalbox rappellent qu’un statefile peut déjà avoir changé si des événements sont rapprochés, et recommandent de vérifier l’action associée. [24]
+    FileSystemWatcher : utile en fallback et pour les dossiers hi/nvram/media/caches (déclenchements sur création/modif). [25]
+    TCP output provider : pour MAME -output network + futurs output servers (pattern OutputBlaster + UDP discovery). [26]
+    
+    
+    
+    Modèle canonique “State + Intent + Rules” incluant LIP et LAY
+    
+    Concept clé : State (observé) vs Intent (voulu)
+    State : ce que la borne vit réellement (sélection ES, jeu en cours, outputs MAME, hi-scores persistés, etc.).
+    Intent : ce que l’on désire afficher/activer (ex : “affiche la fiche de ce jeu” même si l’utilisateur browse autre chose ; “mode contest” ; “attract”).Le “winner” entre State et Intent se décide par un arbitre (orchestrator) : priorité, TTL, source (local/hub), règles de sécurité.
+    
+    
+    Modèle canonique minimal (proposition)
+    
+    Contexte global
+    {  &quot;schemaVersion&quot;: &quot;1.0&quot;,  &quot;node&quot;: { &quot;nodeId&quot;: &quot;cab-01&quot;, &quot;mode&quot;: &quot;standalone|node|hub&quot; },  &quot;ui&quot;: {    &quot;frontend&quot;: &quot;emulationstation&quot;,    &quot;state&quot;: &quot;browsing|playing|screensaver&quot;,    &quot;selected&quot;: { &quot;systemId&quot;: &quot;mame&quot;, &quot;gameId&quot;: &quot;rb:...&quot; },    &quot;running&quot;:  { &quot;systemId&quot;: &quot;mame&quot;, &quot;gameId&quot;: &quot;rb:...&quot; }  },  &quot;time&quot;: { &quot;utc&quot;: &quot;2026-03-01T12:34:56Z&quot; }}
+    
+    
+    Game identity &amp; sheet
+    Basé sur gamelist.xml (tags standardisés) et enrichissable par MAME -listxml et RA hash mapping. [27]
+    
+    
+    Outputs
+    {  &quot;source&quot;: &quot;mame.network&quot;,  &quot;port&quot;: 8000,  &quot;machineName&quot;: &quot;chasehq&quot;,  &quot;signals&quot;: [    { &quot;key&quot;: &quot;genout5&quot;, &quot;value&quot;: 1, &quot;ts&quot;: &quot;...&quot; },    { &quot;key&quot;: &quot;genout6&quot;, &quot;value&quot;: 0, &quot;ts&quot;: &quot;...&quot; }  ]}
+    MAME décrit bien le principe “output notifiers” et le mode network (port 8000). [7]
+    
+    
+    HiScore
+    Objectif : normaliser (rank, initials, score, date). hi2txt explique les origines des fichiers (hi/ vs nvram/) et hi2txt-xml la finalité “leaderboard”. [19]
+    {  &quot;gameId&quot;: &quot;rb:...&quot;,  &quot;source&quot;: &quot;hi2txt&quot;,  &quot;entries&quot;: [    { &quot;rank&quot;: 1, &quot;name&quot;: &quot;AAA&quot;, &quot;score&quot;: 123456, &quot;raw&quot;: &quot;AAA 123456&quot; },    { &quot;rank&quot;: 2, &quot;name&quot;: &quot;BBB&quot;, &quot;score&quot;: 100000 }  ],  &quot;ts&quot;: &quot;...&quot;}
+    
+    
+    
+    Moteur de règles réactives : un IR canonique commun à LIP et LAY
+    Tu as deux DSLs puissants : - LIP : triggers d’inputs physiques (press/release) + macros (set_panel_colors, restore_panel, set_button…).- LAY : binding d’éléments (images) à des outputs MAME (ex : genout5 → afficher lamp overlay).
+    La proposition : l’API doit définir un IR (Intermediate Representation) commun :
+    
+    Triggers canoniques
+    input.button.press / input.button.release (ex : B6, B8…)
+    mame.output.changed (key genout5, genout6…) [3]
+    ui.game.selected / ui.game.started / ui.game.ended (depuis scripts ES/events.ini) [28]
+    hiscore.updated (filewatch hi/nvram + hi2txt) [29]
+    ra.achievement.unlocked / ra.leaderboard (mode avancé) [30]
+    
+    
+    Actions canoniques (exécutions côté clients)
+    led.setColors(panelRef, colors…)
+    led.restore(panelRef)
+    led.setButton(panelRef, button, color)
+    display.setScene(target, sceneSpec) (marquee/dmd/lcd…)
+    display.setElementState(sceneId, elementId, state) (cas LAY)
+    system.launch(gameRef, options) (commande contrôlée)
+    http.get(url) (optionnel, inspiration LEDBlinky “web request GET” via outputs) [8]
+    
+    
+    Exemple IR (inspiré de tes LIP)
+    {  &quot;ruleSetId&quot;: &quot;lip:Nintendo64:Arcade-Shark-8B&quot;,  &quot;scope&quot;: { &quot;systemId&quot;: &quot;n64&quot;, &quot;layout&quot;: &quot;8-Button&quot; },  &quot;rules&quot;: [    {      &quot;when&quot;: { &quot;type&quot;: &quot;input.button.press&quot;, &quot;button&quot;: &quot;B8&quot; },      &quot;then&quot;: [        {          &quot;type&quot;: &quot;led.setColors&quot;,          &quot;panel&quot;: &quot;CURRENT&quot;,          &quot;colors&quot;: {            &quot;B1&quot;: &quot;YELLOW&quot;, &quot;B2&quot;: &quot;YELLOW&quot;, &quot;B3&quot;: &quot;YELLOW&quot;, &quot;B4&quot;: &quot;YELLOW&quot;,            &quot;B5&quot;: &quot;GRAY&quot;, &quot;B6&quot;: &quot;GRAY&quot;, &quot;B9&quot;: &quot;GRAY&quot;, &quot;B10&quot;: &quot;RED&quot;          }        }      ]    },    {      &quot;when&quot;: { &quot;type&quot;: &quot;input.button.release&quot;, &quot;button&quot;: &quot;B8&quot; },      &quot;then&quot;: [ { &quot;type&quot;: &quot;led.restore&quot;, &quot;panel&quot;: &quot;CURRENT&quot; } ]    }  ]}
+    
+    
+    Exemple IR (inspiré de ton LAY “chasehq”)
+    {  &quot;ruleSetId&quot;: &quot;lay:chasehq:Marquee_Only&quot;,  &quot;scope&quot;: { &quot;systemId&quot;: &quot;mame&quot;, &quot;machine&quot;: &quot;chasehq&quot; },  &quot;assets&quot;: {    &quot;marquee&quot;: &quot;chasehq_marquee.png&quot;,    &quot;redlamp&quot;: &quot;redlamp.png&quot;,    &quot;bluelamp&quot;: &quot;bluelamp.png&quot;  },  &quot;bindings&quot;: [    { &quot;outputKey&quot;: &quot;genout5&quot;, &quot;element&quot;: &quot;redlamp&quot;, &quot;states&quot;: { &quot;0&quot;: &quot;hidden&quot;, &quot;1&quot;: &quot;visible&quot; } },    { &quot;outputKey&quot;: &quot;genout6&quot;, &quot;element&quot;: &quot;bluelamp&quot;, &quot;states&quot;: { &quot;0&quot;: &quot;hidden&quot;, &quot;1&quot;: &quot;visible&quot; } }  ],  &quot;views&quot;: [    { &quot;name&quot;: &quot;Marquee_Only&quot;, &quot;target&quot;: &quot;marquee&quot;, &quot;resolution&quot;: &quot;1920x360&quot; }  ]}
+    Ce design répond directement à ton besoin : les LIPs ne sont pas des “configs”, ce sont des règles ; les LAYs aussi. L’API doit donc : - stocker/versionner ces règles, - choisir le bon ruleset selon le contexte (jeu, système, layout physique), - et publier des “intentions d’exécution” aux clients.
+    
+    
+    
+    
+    Spécification d’API REST et contrat WebSocket
+    
+    Principes d’API
+    REST pour lecture/administration/commandes ponctuelles.
+    WebSocket pour diffusion d’événements (state changes, outputs, rules triggers, intents).
+    OpenAPI/Swagger UI en local pour doc/test (Swashbuckle). [31]
+    
+    
+    Endpoints REST proposés (v1)
+    Tableau (sans exhaustivité, mais couvrant MVP ⇒ V1) :
+    DomaineMéthode/RouteDescriptionNotesCoreGET /api/v1/healthétat service + providersCoreGET /api/v1/versionversion API + buildContexteGET /api/v1/contextstate canonique courant (browsing/playing, selected/running)alimenté par scripts ES + parsers [32]ES ingestPOST /api/v1/ingest/esendpoint appelé par scripts (event, param*, ts)remplace/centralise events.ini host/port [33]JeuxGET /api/v1/systemsliste systèmesissu es_systems.cfg / structures RetroBat [34]JeuxGET /api/v1/games?systemId=index jeuxbase gamelist.xml [35]JeuxGET /api/v1/games/{gameId}fiche jeu canoniqueenrichissement MAME/RA optionnel [36]MédiasGET /api/v1/media/{*path}sert un asset (marquee, logo, overlay…)pattern “assets API” type MarquesasServer [11]MédiasPOST /api/v1/media/importimporte/centralise (XML/LIP/LAY/pools scrap/command.dat…)source canonique médiaRulesGET /api/v1/rules/activerulesets actifs (LIP/LAY) selon contexteRulesPOST /api/v1/rules/compilecompiler/valider LIP/LAY → IRInputsPOST /api/v1/ingest/inputun client hardware pousse button press/releasealimente le rule engine (LIP)OutputsGET /api/v1/outputs/mamedernier snapshot outputsvia provider TCP 8000 [3]Hi‑scoresGET /api/v1/hiscores/{gameId}scores normalisésvia hi2txt (persisté) [19]Hi‑scoresPOST /api/v1/hiscores/refreshrefresh forcéutile hub/contestCommandesPOST /api/v1/commands/launchlancer un jeu (local)doit être sécurisé (scope)IntentPOST /api/v1/intent/pushView“pousser une vue de jeu” (marquee/layout/fiche)support TTL/prioHubPOST /api/v1/hub/registernode → hub (opt‑in)HubGET /api/v1/hub/nodesliste nodes + état
+    
+    
+    Contrat WebSocket
+    
+    Transport
+    Endpoint : ws://127.0.0.1:12345/ws
+    Côté ASP.NET Core, WebSocket est le mécanisme recommandé pour un canal bidirectionnel persistant (use cases dashboard/temps réel). [37]
+    
+    
+    Enveloppe d’événement (proposition)
+    {  &quot;type&quot;: &quot;mame.output.changed&quot;,  &quot;ts&quot;: &quot;2026-03-01T12:34:56.789Z&quot;,  &quot;nodeId&quot;: &quot;cab-01&quot;,  &quot;correlationId&quot;: &quot;…&quot;,  &quot;payload&quot;: { }}
+    
+    
+    Types d’événements prioritaires (MVP)
+    TypeSourceExempleui.game.selectedPOST /ingest/es ou watcher ESEvent.argselection ES [38]ui.game.started / ui.game.endedscripts game-start/game-endtransitions jeu [39]mame.output.changedprovider TCP port 8000genout5=1 [3]rules.actionrule engine (LIP/LAY)led.setColorsintent.updatedorchestrator“pushed view” TTLhiscore.updatedfilewatch + hi2txtnouveau top3 [29]
+    
+    
+    
+    
+    Stratégies RetroAchievements et hi‑scores (avec limites “score courant”)
+    
+    RetroAchievements : modes passif vs avancé
+    Mode passif (MVP)- Pas de clé utilisateur obligatoire. - Observation locale : logs RetroArch (à activer) + logs émulateurs standalones (Aynshe mentionne es_launch_stdout.log et logs PCSX2/DuckStation/Dolphin/PPSSPP). [40]- Objectif : “RA présent/pas présent”, hardcore flag, jeu RA probable.
+    Mode avancé (V1)- Stockage de la Web API Key RA et identifiant. RA recommande de traiter la clé comme un mot de passe. [21]- Chiffrement sous Windows via DPAPI (ProtectedData) côté node pour sécuriser les secrets. [41]- Mapping ROM → RA Game : utiliser endpoint de hashes (MD5). [22]- Cache local + throttling (éviter trop d’appels, surtout en mode hub).
+    
+    
+    Hi‑scores : intégration hi2txt et normalisation
+    Ce que hi2txt sait faire (fiable aujourd’hui)- Décoder des hi-scores persistés depuis nvram ou .hi + hiscore.dat, et expliquer comment localiser ces fichiers. [42]- Le projet hi2txt-xml est explicitement pensé pour permettre à des logiciels tiers de produire des leaderboards et d’exploiter les scores. [20]- LEDBlinky matérialise un usage proche du besoin : top score/initiales au démarrage, et tokens ~highscore~, ~highscoretop3~, ~highscoreall~. [8]
+    Refresh strategies recommandées - Déclenchement principal : sur ui.game.ended (fin de partie) + watchdog sur hi/ &amp; nvram/ (FileSystemWatcher + debounce). [43]- En mode hub/contest : endpoint hub “refresh all nodes” + événement WS hiscore.updated pour recalcul scoreboard.
+    “Score courant” pendant la partie : état des lieux - Les outputs MAME (-output network) concernent les “output notifiers” (lampes, LED start, etc.), pas une lecture générique du score mémoire. [7]- hi2txt travaille sur des fichiers persistés (nvram/.hi) et pas sur le score RAM “live”. [42]
+    ➡️ Proposition réaliste : - MVP/V1 : scoreboard basé sur hi2txt (persisté, robuste, compatible contests).- V2 : module optionnel “live score” par émulateur via plugins/Lua/memory watch (fortement variable selon jeu/émulateur). Le cahier des charges doit explicitement considérer ce point comme R&amp;D.
+    
+    
+    
+    Architecture C# recommandée, centralisation médias et mode multi‑bornes
+    
+    Architecture logique (mermaid)
+    flowchart LR  subgraph Node[&quot;Borne (Node) - fonctionne standalone&quot;]    ES[&quot;EmulationStation/RetroBat\n(scripts events)&quot;] --&gt;|POST /ingest/es| API[&quot;RetroBat Local API\nASP.NET Core :12345&quot;]    MAME[&quot;MAME -output network :8000&quot;] --&gt;|TCP key=value| API    RA[&quot;RetroArch/Emulators logs&quot;] --&gt;|File parse| API    HI[&quot;hi/ &amp; nvram/&quot;] --&gt;|watch + hi2txt| API    API --&gt;|WS events + Intent| MarqueeClient[&quot;Marquee Client\n(MPV/DMD)&quot;]    API --&gt;|WS events + Intent| LedClient[&quot;LED/Panel Client\n(boutons/molding)&quot;]    API --&gt;|WS events + Intent| ScoreClient[&quot;Scoreboard Client\n(écran annexe)&quot;]  end  subgraph Hub[&quot;ArcadeHub (optionnel)&quot;]    HubAPI[&quot;Hub API\n(agrégation, contests)&quot;]  end  API &lt;--&gt;|opt-in register + pull/push| HubAPI
+    Les patterns “outputs over LAN + discovery UDP” sont un bon modèle pour le mode hub (sans le rendre obligatoire). [2]
+    
+    
+    Projets .NET (solution recommandée)
+    RetroBat.Api (ASP.NET Core) : endpoints REST/WS + Swagger UI (Swashbuckle). [44]
+    RetroBat.Domain : modèles canoniques (Context, Game, RuleSet IR, Intent, MediaRef…).
+    RetroBat.Providers.* :
+    Providers.EmulationStation (ingest HTTP + watchers),
+    Providers.MameOutputs (TCP 8000),
+    Providers.MameListXml (cache listxml),
+    Providers.Hi2Txt (runner + parser),
+    Providers.RetroAchievements (passif/avancé). [45]
+    RetroBat.MediaStore : index + cache + importers (XML/LIP/LAY/pools scrap/command.dat).
+    RetroBat.Hub (optionnel) : agrégation LAN, scoreboard global, orchestration contests.
+    
+    
+    Centralisation média : “API comme source unique”
+    Tu veux centraliser : - dossiers XML/LIP (panels),- dossiers de scrap (marquees arcs, ScreenScraper/…), - fichiers clés (command.dat &amp; autres),- et produire des endpoints uniformes (Media API) pour tous les services.
+    Le cahier des charges doit donc intégrer un MediaStore avec : - import (copie + hash + index), - versionning (par jeu/système/layout), - conventions de résolution (fallback : game → system → default), - API de consultation (list, get, checksum), - et événements (media.updated).
+    Ton READMESETUP décrit déjà des mécanismes de scrap/pool (scrap.pool, scrapfailed.pool) et des patterns d’assets ; la migration naturelle est de déplacer ces pools dans le MediaStore et d’exposer leur état via API. [46]
+    
+    
+    Mode multi‑bornes : standalone, node, hub, master/client
+    Objectif : une borne doit rester autonome si le hub est absent.
+    Proposition de rôles : - standalone (défaut) : aucune dépendance réseau, tout local. - node : participe à un hub (opt‑in), publie son state, accepte des intents distants selon politique. - hub : agrège états, publie scoreboard global, orchestre contests. - master (optionnel) : un node peut être “master local” pour un îlot (ex : 2 écrans/2 devices), même sans hub.
+    Politique de priorité Intent (à définir explicitement) - Local (inputs physiques + navigation utilisateur) priorité haute, sauf mode contest. - Hub peut envoyer un Intent “contest” avec TTL ; l’arbitre choisit IntentHub si priority &gt; local ET scope autorisé.
+    Discovery - Liste statique (config) en MVP. - V2 : discovery UDP inspirée OutputBlaster (broadcast sur LAN). [2]
+    
+    
+    Sécurité
+    Bind 127.0.0.1 par défaut ; passage LAN explicite (config).
+    Auth simple en LAN : token API + scopes (read, control, admin, hub).
+    Secrets (RA key, tokens hub) chiffrés DPAPI sur Windows (ProtectedData). [41]
+    
+    
+    
+    Roadmap de livraison et risques
+    
+    Roadmap (mermaid)
+    timeline  title RetroBat Local API - Roadmap  MVP : State canonique + WS + ingest ES + MAME outputs + Media API basique  V1  : Rule Engine LIP/LAY + Hi2txt normalisation + intents pushView + ArcadeHub opt-in  V2  : Live score R&amp;D + discovery auto LAN + UI web avancée + plugins clients refondus
+    
+    
+    MVP (valeur immédiate)
+    Serveur ASP.NET Core : REST + WS + Swagger UI. [1]
+    POST /ingest/es + scripts ES (compat avec la grammaire events.ini existante). [33]
+    Provider MAME outputs TCP (port 8000) + publication WS. [3]
+    MediaStore minimal : servir marquee/logo/overlay existants (GET /media/*).
+    Hi-scores (persisté) : watchers + exécution hi2txt + endpoint GET /hiscores/{gameId}. [19]
+    
+    
+    V1 (consolidation “API = source unique”)
+    Importers centralisés : XML/LIP/LAY/pools scrap/command.dat, index + événements. [46]
+    Rule engine : compilation LIP/LAY → IR + exécution “intent actions” vers clients.
+    Intent stack : pushView (TTL/prio) + scènes multi‑écrans.
+    ArcadeHub : register nodes + scoreboard global + push intents.
+    
+    
+    V2 (R&amp;D + expansion)
+    “Score courant” live (variable, dépend émulateur/jeu).
+    Discovery LAN (UDP/mDNS) + robustesse réseau. [2]
+    Refactor complet des clients (nouveaux Marquee/LedPanel clients API).
+    
+    
+    Risques et limitations
+    Variabilité émulateurs : logs/outputs/hiscore diffèrent ; il faut une approche provider‑based et tolérante. [47]
+    Hi-scores : tous les jeux ne supportent pas le saving ; hi2txt dépend de hiscore.dat / plugin / nvram. [48]
+    Live score : non garanti, à cadrer en V2 R&amp;D (sinon promesse intenable).
+    BIOS : contraintes légales/licences ; l’API doit seulement diagnostiquer (hash/nom/emplacement) en s’appuyant sur docs/dat (No‑Intro/Redump/Libretro). [49]
+    
+    
+    
+    Recommandations concrètes pour démarrer le développement C
+    
+    Endpoints prioritaires à implémenter en premier
+    1) /api/v1/health, /api/v1/version2) /api/v1/ingest/es + scripts ES “game-selected/game-start/game-end” (compat events.ini) [33]3) WS /ws + publication ui.*4) Provider MameOutputs (TCP 8000) + mame.output.changed [3]5) MediaStore “GET /media/*” + index simple6) Hi2txt provider + GET /hiscores/{gameId} (persisté) [19]
+    
+    
+    Interfaces C# clés (contrats)
+    IProvider : Start/Stop + Health + PushEvents
+    IEventBus : publish/subscribe typés (Channel ou MediatR)
+    IRuleCompiler : compile LIP/LAY → IR
+    IRuleEngine : apply(trigger, context) → actions
+    IIntentStore : push/pop intents (TTL/prio/source)
+    IMediaStore : resolve(GameRef, AssetKind) → MediaRef
+    INodeClient / IHubClient : échanges node↔hub
+    
+    
+    Swagger UI
+    Swashbuckle fournit l’intégration Swagger UI pour tester routes et schémas directement depuis l’application. [31]
+    
+    Ce cahier des charges intègre explicitement la puissance de tes LIP (événements/macro) et de tes LAY (marquee réactif aux outputs), en les requalifiant comme un moteur de règles canonique au cœur de l’API. Il consolide aussi l’approche “state + assets” (MarquesasServer), “remote control” (Playnite Web), “outputs/action dispatch” (LEDBlinky, MAME outputs), et “multi‑borne opt‑in” (OutputBlaster discovery pattern), tout en garantissant que chaque borne reste standalone par défaut. [50]
+    
+    
+    
+    
+    
+    
+    [1] [31] [44] https://learn.microsoft.com/fr-fr/aspnet/core/tutorials/getting-started-with-swashbuckle?view=aspnetcore-8.0
+    https://learn.microsoft.com/fr-fr/aspnet/core/tutorials/getting-started-with-swashbuckle?view=aspnetcore-8.0
+    [2] https://github.com/Boomslangnz/OutputBlaster/releases
+    https://github.com/Boomslangnz/OutputBlaster/releases
+    [3] [7] [17] [26] [36] [45] https://docs.mamedev.org/commandline/commandline-all.html
+    https://docs.mamedev.org/commandline/commandline-all.html
+    [4] [12] [28] [32] [33] [46] https://raw.githubusercontent.com/Nelfe80/RetroBat-Marquee-Manager/master/READMESETUP.md
+    https://raw.githubusercontent.com/Nelfe80/RetroBat-Marquee-Manager/master/READMESETUP.md
+    [5] [11] [50] https://github.com/fpdavis/MarquesasServer
+    https://github.com/fpdavis/MarquesasServer
+    [6] https://github.com/andrew-codes/playnite-web
+    https://github.com/andrew-codes/playnite-web
+    [8] https://www.ledblinky.net/downloads/Install%20and%20Config.pdf
+    https://www.ledblinky.net/downloads/Install%20and%20Config.pdf
+    [9] [10] [21] [30] https://api-docs.retroachievements.org/getting-started.html
+    https://api-docs.retroachievements.org/getting-started.html
+    [13] [39] https://github.com/mrsilver76/retrobat-runner
+    https://github.com/mrsilver76/retrobat-runner
+    [14] [38] https://github.com/Nelfe80/RetroBat-LedPanel-Manager
+    https://github.com/Nelfe80/RetroBat-LedPanel-Manager
+    [15] [27] [35] https://raw.githubusercontent.com/Aloshi/EmulationStation/master/GAMELISTS.md
+    https://raw.githubusercontent.com/Aloshi/EmulationStation/master/GAMELISTS.md
+    [16] [34] https://raw.githubusercontent.com/Nelfe80/RetroBat-LedPanel-Manager/master/LPEvents.py
+    https://raw.githubusercontent.com/Nelfe80/RetroBat-LedPanel-Manager/master/LPEvents.py
+    [18] https://raw.githubusercontent.com/Nelfe80/RetroBat-Marquee-Manager/master/MAMEListenerWS.py
+    https://raw.githubusercontent.com/Nelfe80/RetroBat-Marquee-Manager/master/MAMEListenerWS.py
+    [19] [29] [42] [48] https://greatstoneex.github.io/hi2txt-doc/doc/help.html
+    https://greatstoneex.github.io/hi2txt-doc/doc/help.html
+    [20] https://github.com/GreatStoneEx/hi2txt-xml
+    https://github.com/GreatStoneEx/hi2txt-xml
+    [22] https://api-docs.retroachievements.org/v1/get-game-hashes.html
+    https://api-docs.retroachievements.org/v1/get-game-hashes.html
+    [23] https://raw.githubusercontent.com/Nelfe80/RetroBat-Marquee-Manager/master/ESRetroAchievements.py
+    https://raw.githubusercontent.com/Nelfe80/RetroBat-Marquee-Manager/master/ESRetroAchievements.py
+    [24] https://wiki.recalbox.com/en/advanced-usage/scripts-on-emulationstation-events
+    https://wiki.recalbox.com/en/advanced-usage/scripts-on-emulationstation-events
+    [25] [43] https://learn.microsoft.com/fr-fr/dotnet/api/system.io.filesystemwatcher?view=net-8.0
+    https://learn.microsoft.com/fr-fr/dotnet/api/system.io.filesystemwatcher?view=net-8.0
+    [37] https://learn.microsoft.com/fr-fr/aspnet/core/fundamentals/websockets?view=aspnetcore-10.0
+    https://learn.microsoft.com/fr-fr/aspnet/core/fundamentals/websockets?view=aspnetcore-10.0
+    [40] [47] https://raw.githubusercontent.com/Aynshe/RetroBatMarqueeManager/master/README.md
+    https://raw.githubusercontent.com/Aynshe/RetroBatMarqueeManager/master/README.md
+    [41] https://learn.microsoft.com/fr-fr/dotnet/api/system.security.cryptography.protecteddata?view=windowsdesktop-9.0
+    https://learn.microsoft.com/fr-fr/dotnet/api/system.security.cryptography.protecteddata?view=windowsdesktop-9.0
+    [49] https://docs.libretro.com/library/bios/
+    https://docs.libretro.com/library/bios/
+    
+    
+      
+        
+                
+        
+        
+              
+      
+    
+  
+
+
