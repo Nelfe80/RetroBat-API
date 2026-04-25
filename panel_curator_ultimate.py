@@ -20,6 +20,7 @@ from profiles_db import (
     MAME_SYSTEM_JOYCODES as DB_MAME_SYSTEM_JOYCODES,
     RMP_SLOT_BUTTONS_BY_LAYOUT as DB_RMP_SLOT_BUTTONS_BY_LAYOUT,
     RMP_SYSTEM_BUTTON_MAP as DB_RMP_SYSTEM_BUTTON_MAP,
+    PROFILES_LIBRARY as DB_PROFILES_LIBRARY,
 )
 
 
@@ -65,16 +66,26 @@ def load_app_ini():
             "export_kpanels_systems_dir": os.path.join("kpanels", "systems"),
             "export_mame_ctrlr_dir": os.path.join("..", "..", "saves", "mame", "ctrlr"),
             "export_retroarch_remaps_dir": os.path.join("..", "..", "emulators", "retroarch", "config", "remaps"),
+            "export_retrobat_inputmapping_mame_dir": os.path.join("..", "..", "user", "inputmapping", "mame"),
             "export_generated_mame_copy_dir": os.path.join("resources", "controls", "mame"),
             "export_generated_retroarch_copy_dir": os.path.join("resources", "controls", "retroarch", "mame"),
+            "export_generated_retroarch_fbneo_copy_dir": os.path.join("resources", "controls", "retroarch", "fbneo"),
+            "export_generated_retrobat_xml_copy_dir": os.path.join("resources", "controls", "retrobat", "mame"),
             "export_retroarch_log_file": os.path.join("..", "..", "emulationstation", ".emulationstation", "es_launch_stdout.log"),
         },
         "export": {
             "retroarch_rmp_core_dir": "MAME",
+            "retroarch_fbneo_rmp_core_dir": "FinalBurn Neo",
         },
         "launch": {
             "retroarch_extra_args": "--verbose",
             "retroarch_content_template": "{rom_path}",
+        },
+        "ledpanel": {
+            "port": "",
+            "baudrate": "115200",
+            "timeout_ms": "350",
+            "auto_detect": "true",
         },
     })
     if os.path.exists(APP_INI_PATH):
@@ -108,7 +119,9 @@ COLORS_INI = cfg_path("source_colors_ini", "colors_ini", os.path.join("resources
 MAME_CFG_DIR = cfg_path("source_mame_cfg_dir", "mame_cfg_dir")
 MAME_CTRLR_DIR = cfg_path("export_mame_ctrlr_dir", "mame_ctrlr_dir")
 RETROARCH_REMAPS_DIR = cfg_path("export_retroarch_remaps_dir", "retroarch_remaps_dir")
+RETROBAT_INPUTMAPPING_MAME_DIR = cfg_path("export_retrobat_inputmapping_mame_dir", fallback=os.path.join("..", "..", "user", "inputmapping", "mame"))
 RETROARCH_RMP_CORE_DIR = APP_CONFIG.get("export", "retroarch_rmp_core_dir", fallback="MAME")
+RETROARCH_FBNEO_RMP_CORE_DIR = APP_CONFIG.get("export", "retroarch_fbneo_rmp_core_dir", fallback="FinalBurn Neo")
 MAME_OUTPUTS_DIR = cfg_path("source_mame_outputs_dir", "mame_outputs_dir", os.path.join("resources", "outputs", "mame"))
 SYSTEMS_PANEL_DIR = cfg_path("source_systems_panel_dir", "systems_panel_dir", os.path.join("resources", "panels", "systems"))
 ARCADE_LIP_DIR = cfg_path("source_arcade_lip_dir", "arcade_lip_dir", os.path.join("resources", "panels", "mame"))
@@ -119,16 +132,216 @@ OUTPUT_DIR = cfg_path("export_kpanels_mame_dir", "output_dir", os.path.join("kpa
 SYSTEM_OUTPUT_DIR = cfg_path("export_kpanels_systems_dir", "system_output_dir", os.path.join("kpanels", "systems"))
 GENERATED_MAME_COPY_DIR = cfg_path("export_generated_mame_copy_dir", "generated_mame_copy_dir", os.path.join("resources", "controls", "mame"))
 GENERATED_RETROARCH_COPY_DIR = cfg_path("export_generated_retroarch_copy_dir", "generated_retroarch_copy_dir", os.path.join("resources", "controls", "retroarch", "mame"))
+GENERATED_RETROARCH_FBNEO_COPY_DIR = cfg_path("export_generated_retroarch_fbneo_copy_dir", "generated_retroarch_fbneo_copy_dir", os.path.join("resources", "controls", "retroarch", "fbneo"))
+GENERATED_RETROBAT_XML_COPY_DIR = cfg_path("export_generated_retrobat_xml_copy_dir", fallback=os.path.join("resources", "controls", "retrobat", "mame"))
 RETROARCH_LOG_FILE = cfg_path("export_retroarch_log_file")
 RETROARCH_EXTRA_ARGS = cfg_text("launch", "retroarch_extra_args", "--verbose")
 RETROARCH_CONTENT_TEMPLATE = cfg_text("launch", "retroarch_content_template", "{rom_path}")
+LEDPANEL_PORT = cfg_text("ledpanel", "port", "")
+LEDPANEL_BAUDRATE = APP_CONFIG.getint("ledpanel", "baudrate", fallback=115200)
+LEDPANEL_TIMEOUT_MS = APP_CONFIG.getint("ledpanel", "timeout_ms", fallback=350)
+LEDPANEL_AUTO_DETECT = APP_CONFIG.getboolean("ledpanel", "auto_detect", fallback=True)
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(SYSTEM_OUTPUT_DIR, exist_ok=True)
 os.makedirs(GENERATED_MAME_COPY_DIR, exist_ok=True)
 os.makedirs(GENERATED_RETROARCH_COPY_DIR, exist_ok=True)
+os.makedirs(GENERATED_RETROARCH_FBNEO_COPY_DIR, exist_ok=True)
+os.makedirs(GENERATED_RETROBAT_XML_COPY_DIR, exist_ok=True)
 
 ROM_EXTS = {".zip", ".7z", ".chd", ".cue", ".bin", ".iso", ".rom"}
+
+LEDPANEL_COLOR_MAP = {
+    "red": "RED",
+    "blue": "BLUE",
+    "cyan": "CYAN",
+    "lime": "LIME",
+    "green": "GREEN",
+    "yellow": "YELLOW",
+    "orange": "ORANGE",
+    "white": "WHITE",
+    "black": "BLACK",
+    "pink": "PINK",
+    "violet": "VIOLET",
+    "purple": "PURPLE",
+    "gray": "GRAY",
+    "grey": "GRAY",
+}
+
+
+def ledpanel_color_name(name, default="WHITE"):
+    key = str(name or "").strip().lower()
+    if key in LEDPANEL_COLOR_MAP:
+        return LEDPANEL_COLOR_MAP[key]
+    canonical = canonical_color_name(name, default)
+    return LEDPANEL_COLOR_MAP.get(str(canonical or default).strip().lower(), LEDPANEL_COLOR_MAP.get(default.lower(), "WHITE"))
+
+
+def powershell_single_quote(text):
+    return str(text).replace("'", "''")
+
+
+class LedPanelBridge:
+    def __init__(self, port="", baudrate=115200, timeout_ms=350, auto_detect=True):
+        self.port = (port or "").strip()
+        self.baudrate = int(baudrate or 115200)
+        self.timeout_ms = max(int(timeout_ms or 350), 150)
+        self.auto_detect = bool(auto_detect)
+        self.connected = False
+        self.last_port = ""
+        self.last_error = ""
+
+    def _powershell_script(self, commands=None):
+        port_literal = powershell_single_quote(self.port)
+        timeout_ms = self.timeout_ms
+        baudrate = self.baudrate
+        auto_detect = "$true" if self.auto_detect else "$false"
+        command_block = ""
+        if commands:
+            quoted = ",".join(f"'{powershell_single_quote(cmd)}'" for cmd in commands if cmd)
+            command_block = f"$commands = @({quoted})"
+        else:
+            command_block = "$commands = @()"
+
+        return f"""
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$preferredPort = '{port_literal}'
+$baudRate = {baudrate}
+$timeoutMs = {timeout_ms}
+$autoDetect = {auto_detect}
+{command_block}
+
+function Test-LedPanelPort([string]$portName, [string[]]$commands) {{
+    $serial = $null
+    try {{
+        $serial = New-Object System.IO.Ports.SerialPort $portName, $baudRate, ([System.IO.Ports.Parity]::None), 8, ([System.IO.Ports.StopBits]::One)
+        $serial.NewLine = "`n"
+        $serial.ReadTimeout = $timeoutMs
+        $serial.WriteTimeout = $timeoutMs
+        $serial.DtrEnable = $false
+        $serial.RtsEnable = $false
+        $serial.Open()
+        Start-Sleep -Milliseconds 120
+        $serial.DiscardInBuffer()
+        $serial.DiscardOutBuffer()
+        $serial.WriteLine('PING')
+        Start-Sleep -Milliseconds 80
+        $buffer = ''
+        $deadline = [Environment]::TickCount + $timeoutMs
+        while ([Environment]::TickCount -lt $deadline) {{
+            try {{
+                $buffer += $serial.ReadExisting()
+            }} catch {{}}
+            if ($buffer -match 'PONG') {{
+                break
+            }}
+            Start-Sleep -Milliseconds 20
+        }}
+        if ($buffer -notmatch 'PONG') {{
+            throw "No PONG response"
+        }}
+        foreach ($cmd in $commands) {{
+            if ([string]::IsNullOrWhiteSpace($cmd)) {{
+                continue
+            }}
+            $serial.WriteLine($cmd)
+            Start-Sleep -Milliseconds 15
+        }}
+        return @{{
+            ok = $true
+            port = $portName
+            message = 'connected'
+        }}
+    }} catch {{
+        return @{{
+            ok = $false
+            port = $portName
+            message = $_.Exception.Message
+        }}
+    }} finally {{
+        if ($serial) {{
+            try {{ $serial.Close() }} catch {{}}
+            try {{ $serial.Dispose() }} catch {{}}
+        }}
+    }}
+}}
+
+$ports = @()
+if ($preferredPort) {{
+    $ports += $preferredPort
+}}
+if ($autoDetect) {{
+    foreach ($p in [System.IO.Ports.SerialPort]::GetPortNames() | Sort-Object) {{
+        if ($ports -notcontains $p) {{
+            $ports += $p
+        }}
+    }}
+}}
+if (-not $ports) {{
+    throw 'No serial port configured or detected.'
+}}
+
+$lastFailure = $null
+foreach ($port in $ports) {{
+    $result = Test-LedPanelPort -portName $port -commands $commands
+    if ($result.ok) {{
+        Write-Output ('OK|' + $result.port + '|' + $result.message)
+        exit 0
+    }}
+    $lastFailure = $result
+}}
+
+if ($lastFailure) {{
+    throw ('Unable to reach LED panel on ' + $lastFailure.port + ': ' + $lastFailure.message)
+}}
+throw 'Unable to reach LED panel.'
+"""
+
+    def _run(self, commands=None):
+        try:
+            completed = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    self._powershell_script(commands=commands),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=max(5, int((self.timeout_ms * 4) / 1000)),
+                check=False,
+            )
+        except Exception as exc:
+            self.connected = False
+            self.last_error = str(exc)
+            return False, "", self.last_error
+
+        stdout = (completed.stdout or "").strip()
+        stderr = (completed.stderr or "").strip()
+        if completed.returncode == 0 and stdout.startswith("OK|"):
+            parts = stdout.split("|", 2)
+            self.connected = True
+            self.last_port = parts[1] if len(parts) > 1 else ""
+            self.last_error = ""
+            return True, self.last_port, parts[2] if len(parts) > 2 else "connected"
+
+        self.connected = False
+        self.last_error = stderr or stdout or f"exit code {completed.returncode}"
+        return False, "", self.last_error
+
+    def probe(self):
+        return self._run(commands=None)
+
+    def send_slots(self, slot_map):
+        commands = ["CLEAR"]
+        for slot in sorted(slot_map, key=lambda value: int(str(value)) if str(value).isdigit() else str(value)):
+            color = ledpanel_color_name(slot_map[slot], default="WHITE")
+            commands.append(f"SLOT {slot} {color}")
+        return self._run(commands=commands)
 
 
 # ============================================================
@@ -162,6 +375,7 @@ SYSTEM_SLOT_MAP = {
 
 RMP_SLOT_BUTTONS_BY_LAYOUT = DB_RMP_SLOT_BUTTONS_BY_LAYOUT
 RMP_SYSTEM_BUTTON_MAP = DB_RMP_SYSTEM_BUTTON_MAP
+PROFILES_LIBRARY = DB_PROFILES_LIBRARY
 
 
 def slot_source_retropad_id(slot):
@@ -334,6 +548,20 @@ GRID_COORDS = {
         6: (275, 162),
         8: (380, 162),
     },
+}
+
+RETROBAT_XML_LAYOUT_VARIANTS = {
+    "default": ["JOY_west", "JOY_south", "JOY_east", "JOY_north", "JOY_l1", "JOY_r1", "JOY_l2trigger", "JOY_r2trigger"],
+    "modern8": ["JOY_west", "JOY_north", "JOY_r1", "JOY_south", "JOY_east", "JOY_r2trigger", "JOY_l1", "JOY_l2trigger"],
+    "6alternative": ["JOY_west", "JOY_north", "JOY_l1", "JOY_south", "JOY_east", "JOY_r1"],
+    "8alternative": ["JOY_south", "JOY_east", "JOY_west", "JOY_north", "JOY_l1", "JOY_r1", "JOY_l2trigger", "JOY_r2trigger"],
+}
+
+RETROBAT_XML_JOYSTICK_MAP = {
+    "left": "JOY_left OR JOY_lsleft",
+    "right": "JOY_right OR JOY_lsright",
+    "up": "JOY_up OR JOY_lsup",
+    "down": "JOY_down OR JOY_lsdown",
 }
 
 COLOR_MAP = {
@@ -1880,6 +2108,216 @@ def parse_optional_int(value):
         return None
 
 
+def normalize_profile_lookup_key(value):
+    return re.sub(r"[^A-Z0-9]+", "", str(value or "").upper())
+
+
+PROFILE_KEY_INDEX = {
+    normalize_profile_lookup_key(key): key
+    for key in PROFILES_LIBRARY.keys()
+}
+
+SYSTEM_PROFILE_DEFAULTS = {
+    "AMIGACD32": "AMIGACD32",
+    "AMSTRADCPC": "AMSTRAD",
+    "APPLE2": "APPLE_2",
+    "ATARI2600": "ATARI2600",
+    "ATARI5200": "ATARI5200",
+    "ATARI7800": "ATARI7800",
+    "BANDAIWONDERSWAN": "BANDAIWONDERSWAN",
+    "BBCMICRO": "BBCMICRO",
+    "C64": "COMMODORE",
+    "GAMECUBE": "GAMECUBE_DEFAULT",
+    "MASTERSYSTEM": "MASTER_SYSTEM",
+    "MEGADRIVE": "MEGADRIVE_6B",
+    "N64": "N64_DEFAULT",
+    "PCENGINE": "PC_ENGINE",
+    "PCENGINECD": "PC_ENGINE",
+    "PSX": "PSX_DEFAULT",
+    "SATURN": "SATURN_DEFAULT",
+    "SNES": "SNES_DEFAULT",
+    "WSWAN": "WSWAN",
+    "WSWANC": "WSWANC",
+    "XBOX": "XBOX_DEFAULT",
+    "ZXSPECTRUM": "SINCLAIR",
+}
+
+SYSTEM_LAYOUT_PROFILE_ALIASES = {
+    ("GAMECUBE", "FIGHTINGSTICKCUBE"): "GAMECUBE_FIGHTING_STICK",
+    ("N64", "ARCADESHARK6B"): "N64_ARCADE_SHARK",
+    ("N64", "ARCADESHARK8B"): "N64_ARCADE_SHARK",
+    ("N64", "ARCADESHARKYELLOWMODE"): "N64_ARCADE_SHARK",
+    ("PSX", "HORI8B"): "PSX_HORI_8B",
+    ("SATURN", "DEFAULT"): "SATURN_DEFAULT",
+    ("SNES", "SCOREMASTER"): "SNES_SCORE_MASTER",
+    ("SNES", "SUPERADVANTAGE"): "SNES_SUPER_ADVANTAGE",
+    ("XBOX", "FIGHTINGSTICKEX"): "XBOX_FIGHTING_STICK_EX",
+}
+
+RETROPAD_ID_BY_CONTROLLER = {}
+for _slot_key, _slot_entry in SLOT_MAP.items():
+    rb_name = str(_slot_entry.get("retrobat_button", "")).strip().upper()
+    retropad_id = _slot_entry.get("retropad_id")
+    if rb_name and retropad_id is not None and rb_name not in RETROPAD_ID_BY_CONTROLLER:
+        RETROPAD_ID_BY_CONTROLLER[rb_name] = retropad_id
+for _sys_key, _sys_entry in SYSTEM_SLOT_MAP.items():
+    rb_name = str(_sys_entry.get("retrobat_button", "")).strip().upper()
+    retropad_id = _sys_entry.get("retropad_id")
+    if rb_name and retropad_id is not None and rb_name not in RETROPAD_ID_BY_CONTROLLER:
+        RETROPAD_ID_BY_CONTROLLER[rb_name] = retropad_id
+
+
+def resolve_system_profile_key(system_name, layout_type="", layout_name=""):
+    system_norm = normalize_profile_lookup_key(system_name)
+    layout_norm = normalize_profile_lookup_key(layout_name)
+    direct_layout_key = SYSTEM_LAYOUT_PROFILE_ALIASES.get((system_norm, layout_norm))
+    if direct_layout_key:
+        return direct_layout_key
+
+    candidate = PROFILE_KEY_INDEX.get(system_norm)
+    if candidate:
+        return candidate
+
+    default_candidate = SYSTEM_PROFILE_DEFAULTS.get(system_norm)
+    if default_candidate:
+        return default_candidate
+
+    if layout_norm:
+        profile_candidates = [
+            key for key in PROFILES_LIBRARY.keys()
+            if normalize_profile_lookup_key(key).startswith(system_norm)
+        ]
+        for profile_key in profile_candidates:
+            profile_norm = normalize_profile_lookup_key(profile_key)
+            if layout_norm in profile_norm or profile_norm.endswith(layout_norm):
+                return profile_key
+    return None
+
+
+def build_profile_lookup_maps(profile_key):
+    profile = PROFILES_LIBRARY.get(profile_key) or {}
+    slots = profile.get("slots", {})
+    by_slot = {}
+    by_label = {}
+    for slot_key, slot_data in slots.items():
+        if not isinstance(slot_data, dict):
+            continue
+        by_slot[str(slot_key).upper()] = slot_data
+        label = str(slot_data.get("label", "")).strip()
+        retropad_id = slot_data.get("retropad")
+        if label and retropad_id is not None:
+            by_label[normalize_profile_lookup_key(label)] = retropad_id
+    return by_slot, by_label
+
+
+def clean_export_dict(data):
+    if isinstance(data, dict):
+        out = {}
+        for key, value in data.items():
+            cleaned = clean_export_dict(value)
+            if cleaned is None:
+                continue
+            if cleaned == "" and key not in {"function", "game_button", "controller", "color"}:
+                continue
+            out[key] = cleaned
+        return out
+    if isinstance(data, list):
+        return [clean_export_dict(item) for item in data]
+    return data
+
+
+def infer_button_retropad_id(item, profile_by_slot, profile_by_label):
+    retropad_id = item.get("retropad_id")
+    if retropad_id is not None:
+        return retropad_id
+
+    button_id = str(item.get("button_id") or "").upper()
+    if button_id in profile_by_slot:
+        profile_retropad = profile_by_slot[button_id].get("retropad")
+        if profile_retropad is not None:
+            return profile_retropad
+
+    for candidate in (
+        item.get("function"),
+        item.get("game_button"),
+        item.get("controller"),
+    ):
+        key = normalize_profile_lookup_key(candidate)
+        if key in profile_by_label:
+            return profile_by_label[key]
+
+    controller_key = str(item.get("controller", "")).strip().upper()
+    return RETROPAD_ID_BY_CONTROLLER.get(controller_key)
+
+
+def infer_button_function(item, profile_by_slot):
+    current = str(item.get("function", "")).strip()
+    if current:
+        return current
+
+    button_id = str(item.get("button_id") or "").upper()
+    slot_profile = profile_by_slot.get(button_id, {})
+    profile_label = str(slot_profile.get("label", "")).strip()
+    if profile_label:
+        return profile_label
+
+    game_button = str(item.get("game_button", "")).strip()
+    if game_button and game_button.upper() not in {"NONE", "START", "COIN", "SELECT"}:
+        return game_button
+
+    controller = str(item.get("controller", "")).strip()
+    if controller and controller.upper() not in {"START", "SELECT"} and str(item.get("color", "")).strip().lower() != "black":
+        return controller
+
+    return "None"
+
+
+def enrich_system_layout(system_name, layout_type, layout_name, layout_data):
+    profile_key = resolve_system_profile_key(system_name, layout_type, layout_name)
+    profile_by_slot, profile_by_label = build_profile_lookup_maps(profile_key)
+
+    layout_data["rmp_slots"] = dict(RMP_SLOT_BUTTONS_BY_LAYOUT.get(layout_type) or {})
+
+    for button_id, item in layout_data.get("buttons", {}).items():
+        item["button_id"] = button_id
+        item["retropad_id"] = infer_button_retropad_id(item, profile_by_slot, profile_by_label)
+        item["function"] = infer_button_function(item, profile_by_slot)
+        if str(button_id).isdigit():
+            item["rmp_button"] = (RMP_SLOT_BUTTONS_BY_LAYOUT.get(layout_type) or {}).get(str(button_id))
+        elif str(button_id).upper() == "START":
+            item["rmp_button"] = RMP_SYSTEM_BUTTON_MAP.get("start")
+        elif str(button_id).upper() in {"COIN", "SELECT"}:
+            item["rmp_button"] = RMP_SYSTEM_BUTTON_MAP.get("coin")
+        item.pop("button_id", None)
+
+    return clean_export_dict(layout_data)
+
+
+def build_system_panel_payload():
+    slots = {}
+    for slot_key, entry in SLOT_MAP.items():
+        payload = dict(entry)
+        payload["rmp_button_by_layout"] = {
+            layout_name: mapping.get(str(slot_key))
+            for layout_name, mapping in RMP_SLOT_BUTTONS_BY_LAYOUT.items()
+            if mapping.get(str(slot_key))
+        }
+        slots[slot_key] = clean_export_dict(payload)
+
+    system_slots = {
+        key: clean_export_dict(dict(value))
+        for key, value in SYSTEM_SLOT_MAP.items()
+    }
+
+    return {
+        "convention": PANEL_CONVENTION,
+        "slots": slots,
+        "system_slots": system_slots,
+        "rmp_slots_by_layout": RMP_SLOT_BUTTONS_BY_LAYOUT,
+        "rmp_system_buttons": RMP_SYSTEM_BUTTON_MAP,
+    }
+
+
 def layout_key(layout_type, layout_name):
     if layout_name:
         return f"{layout_type}:{layout_name}"
@@ -1917,25 +2355,22 @@ def parse_system_template_xml(path):
                 item["panel_slot"] = int(button_id)
             buttons[button_id] = item
 
-        layouts[key] = {
+        layout_payload = {
             "type": layout_type,
             "name": layout_name or None,
             "panel_buttons": parse_optional_int(layout.attrib.get("panelButtons")),
-            "retropad_device": layout.attrib.get("retropad_device") or None,
-            "retropad_analog_dpad_mode": layout.attrib.get("retropad_analog_dpad_mode") or None,
+            "retropad_device": parse_optional_int(layout.attrib.get("retropad_device")),
+            "retropad_analog_dpad_mode": parse_optional_int(layout.attrib.get("retropad_analog_dpad_mode")),
             "joystick": dict(joystick.attrib) if joystick is not None else {},
             "buttons": buttons,
         }
+        layouts[key] = enrich_system_layout(system, layout_type, layout_name, layout_payload)
 
     return {
         "schema": "api_expose.panel.v1",
         "scope": "system",
         "system": system,
-        "panel": {
-            "convention": PANEL_CONVENTION,
-            "slots": SLOT_MAP,
-            "system_slots": SYSTEM_SLOT_MAP,
-        },
+        "panel": build_system_panel_payload(),
         "system_template": {
             "layouts": layouts,
         },
@@ -2687,11 +3122,12 @@ class Joystick8Card(tk.Frame):
 # ============================================================
 
 class PlayerEditor(ttk.Frame):
-    def __init__(self, parent, player_data, on_apply_p1=None, on_layout_select=None):
+    def __init__(self, parent, player_data, on_apply_p1=None, on_layout_select=None, on_state_change=None):
         super().__init__(parent)
         self.player_data = player_data
         self.on_apply_p1 = on_apply_p1
         self.on_layout_select = on_layout_select
+        self.on_state_change = on_state_change
         self.selected_button = None
         self.selected_system_input = None
         self.selected_system_output = None
@@ -2807,7 +3243,7 @@ class PlayerEditor(ttk.Frame):
         outputs_scroll_host = ttk.Frame(devices_box)
         outputs_scroll_host.pack(fill="x", padx=4, pady=4)
 
-        self.system_output_canvas = tk.Canvas(outputs_scroll_host, height=240, highlightthickness=0)
+        self.system_output_canvas = tk.Canvas(outputs_scroll_host, height=145, highlightthickness=0)
         self.system_output_canvas.pack(side="left", fill="x", expand=True)
         output_scroll_bar = ttk.Scrollbar(outputs_scroll_host, orient="vertical", command=self.system_output_canvas.yview)
         output_scroll_bar.pack(side="right", fill="y")
@@ -2826,19 +3262,19 @@ class PlayerEditor(ttk.Frame):
         buttons_tab = ttk.Frame(logic_tabs)
         logic_tabs.add(buttons_tab, text="Logical Buttons")
 
-        self.buttons_rows_frame = self.create_scrollable_rows(buttons_tab, height=190)
+        self.buttons_rows_frame = self.create_scrollable_rows(buttons_tab, height=150)
 
         self.joystick_rows_frame = None
         if self.has_joystick_inputs():
             joystick_tab = ttk.Frame(logic_tabs)
             logic_tabs.add(joystick_tab, text="Logical Joystick")
-            self.joystick_rows_frame = self.create_scrollable_rows(joystick_tab, height=190)
+            self.joystick_rows_frame = self.create_scrollable_rows(joystick_tab, height=150)
 
         self.axes_rows_frame = None
         if self.has_axes():
             axes_tab = ttk.Frame(logic_tabs)
             logic_tabs.add(axes_tab, text="Logical Axes")
-            self.axes_rows_frame = self.create_scrollable_rows(axes_tab, height=190)
+            self.axes_rows_frame = self.create_scrollable_rows(axes_tab, height=150)
 
         panels_box = ttk.LabelFrame(self, text="Visual Panels")
         panels_box.pack(fill="both", expand=True, padx=6, pady=6)
@@ -2870,7 +3306,7 @@ class PlayerEditor(ttk.Frame):
         if self.axes_rows_frame is not None:
             self._rebuild_axis_rows()
 
-    def create_scrollable_rows(self, parent, height=190):
+    def create_scrollable_rows(self, parent, height=150):
         host = ttk.Frame(parent)
         host.pack(fill="x", padx=4, pady=(2, 4))
         canvas = tk.Canvas(host, height=height, highlightthickness=0)
@@ -3834,6 +4270,8 @@ class PlayerEditor(ttk.Frame):
         self.refresh_system_output_selection()
         self.refresh_joystick_selection()
         self.refresh_axis_selection()
+        if self.on_state_change:
+            self.on_state_change(self)
         self.update_delete_duplicate_state()
         instance = f' {button["instance_id"]}' if button.get("instance_id") else ""
         self.selected_label_var.set(
@@ -4816,9 +5254,18 @@ class CuratorApp:
         self.player_editors = []
         self.common_editor = None
         self.export_layout_var = tk.StringVar(value="4-Button")
+        self.ledpanel = LedPanelBridge(
+            port=LEDPANEL_PORT,
+            baudrate=LEDPANEL_BAUDRATE,
+            timeout_ms=LEDPANEL_TIMEOUT_MS,
+            auto_detect=LEDPANEL_AUTO_DETECT,
+        )
+        self.ledpanel_status_var = tk.StringVar(value="LED PANEL: offline")
+        self._ledpanel_sync_job = None
 
         self._build_ui()
         self.load_current()
+        self.root.after(300, self.refresh_ledpanel_status)
 
     def _build_ui(self):
         self.root.geometry("1920x1080")
@@ -4917,7 +5364,7 @@ class CuratorApp:
         self.rom_var.set(rom)
         self.game_var.set(self.current_data["game_name"])
         if hasattr(self, "top_game_var"):
-            self.top_game_var.set(self.current_data["game_name"])
+            self.top_game_var.set("PANEL CURATOR")
         self.status_var.set(f"{self.index + 1} / {len(self.roms)}")
 
         self.load_image(rom)
@@ -4948,10 +5395,17 @@ class CuratorApp:
 
         self.clear_notebook()
         for pdata in self.current_data["players_data"]:
-            editor = PlayerEditor(self.notebook, pdata, on_apply_p1=self.copy_p1_to_others, on_layout_select=self.on_visual_panel_selected)
+            editor = PlayerEditor(
+                self.notebook,
+                pdata,
+                on_apply_p1=self.copy_p1_to_others,
+                on_layout_select=self.on_visual_panel_selected,
+                on_state_change=self.on_editor_state_changed,
+            )
             editor.set_active_layout(self.export_layout_var.get())
             self.player_editors.append(editor)
             self.notebook.add(editor, text=f'Player {pdata["player"]}')
+        self.schedule_ledpanel_sync()
 
     def apply_common_button_vars(self, payload):
         self.current_data["common_button_vars"] = payload
@@ -4968,16 +5422,24 @@ class CuratorApp:
         current_tab = self.notebook.index(self.notebook.select()) if self.notebook.tabs() else 0
         self.clear_notebook()
         for pdata in self.current_data["players_data"]:
-            editor = PlayerEditor(self.notebook, pdata, on_apply_p1=self.copy_p1_to_others, on_layout_select=self.on_visual_panel_selected)
+            editor = PlayerEditor(
+                self.notebook,
+                pdata,
+                on_apply_p1=self.copy_p1_to_others,
+                on_layout_select=self.on_visual_panel_selected,
+                on_state_change=self.on_editor_state_changed,
+            )
             editor.set_active_layout(self.export_layout_var.get())
             self.player_editors.append(editor)
             self.notebook.add(editor, text=f'Player {pdata["player"]}')
         if self.notebook.tabs():
             self.notebook.select(min(current_tab, len(self.notebook.tabs()) - 1))
+        self.schedule_ledpanel_sync()
 
     def on_visual_panel_selected(self, layout_name):
         if layout_name in LAYOUTS:
             self.export_layout_var.set(layout_name)
+            self.schedule_ledpanel_sync()
 
     def on_export_layout_changed(self, event=None):
         layout_name = self.export_layout_var.get()
@@ -4985,6 +5447,7 @@ class CuratorApp:
             return
         for editor in self.player_editors:
             editor.set_active_layout(layout_name)
+        self.schedule_ledpanel_sync()
 
     def copy_p1_to_others(self, source_editor):
         if source_editor.player_data["player"] != 1:
@@ -5078,6 +5541,66 @@ class CuratorApp:
                         tgt_axis["slots_by_polarity"][polarity][layout_name] = src_axis.get("slots_by_polarity", {}).get(polarity, {}).get(layout_name)
 
             editor.refresh()
+        self.schedule_ledpanel_sync()
+
+    def on_editor_state_changed(self, editor=None):
+        self.schedule_ledpanel_sync()
+
+    def current_player_editor(self):
+        if not self.player_editors:
+            return None
+        if not hasattr(self, "notebook") or not self.notebook.tabs():
+            return self.player_editors[0]
+        try:
+            current_tab = self.notebook.select()
+            current_index = self.notebook.index(current_tab)
+        except Exception:
+            current_index = 0
+        if 0 <= current_index < len(self.player_editors):
+            return self.player_editors[current_index]
+        return self.player_editors[0]
+
+    def build_ledpanel_slot_colors(self):
+        editor = self.current_player_editor()
+        if not editor:
+            return {}
+        layout_name = editor.active_layout if editor.active_layout in LAYOUTS else self.export_layout_var.get()
+        assigned = editor.assigned_map_for_layout(layout_name)
+        return {
+            str(slot): ledpanel_color_name(data.get("color", "White"), default="WHITE")
+            for slot, data in assigned.items()
+            if slot is not None
+        }
+
+    def update_ledpanel_indicator(self, connected, port="", detail=""):
+        color = "#16a34a" if connected else "#dc2626"
+        text = "LP"
+        if port:
+            text += f" ({port})"
+        if not connected:
+            text = "LP"
+        self.ledpanel_status_var.set(text)
+        if hasattr(self, "ledpanel_indicator"):
+            self.ledpanel_indicator.itemconfigure(self.ledpanel_indicator_dot, fill=color, outline=color)
+
+    def schedule_ledpanel_sync(self, delay_ms=160):
+        if self._ledpanel_sync_job:
+            try:
+                self.root.after_cancel(self._ledpanel_sync_job)
+            except Exception:
+                pass
+        self._ledpanel_sync_job = self.root.after(delay_ms, self.sync_ledpanel_now)
+
+    def sync_ledpanel_now(self):
+        self._ledpanel_sync_job = None
+        slot_colors = self.build_ledpanel_slot_colors()
+        connected, port, detail = self.ledpanel.send_slots(slot_colors)
+        self.update_ledpanel_indicator(connected, port=port, detail=detail)
+
+    def refresh_ledpanel_status(self):
+        connected, port, detail = self.ledpanel.probe()
+        self.update_ledpanel_indicator(connected, port=port, detail=detail)
+        self.root.after(5000, self.refresh_ledpanel_status)
 
     def slot_values_for_export(self, slot_value):
         if slot_value is None:
@@ -5397,6 +5920,21 @@ class CuratorApp:
         mame_xml_indent(root)
         return ET.ElementTree(root), len(input_node.findall("port"))
 
+    def save_mame_cfg_export(self):
+        tree, port_count = self.build_mame_cfg_tree()
+        if port_count == 0:
+            return None
+
+        rom = self.current_data["system"]
+        path = os.path.join(MAME_CTRLR_DIR, f"{rom}.cfg")
+        os.makedirs(MAME_CTRLR_DIR, exist_ok=True)
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+
+        os.makedirs(GENERATED_MAME_COPY_DIR, exist_ok=True)
+        copy_path = os.path.join(GENERATED_MAME_COPY_DIR, f"{rom}.cfg")
+        shutil.copy2(path, copy_path)
+        return {"path": path, "copy_path": copy_path, "port_count": port_count}
+
     def generate_mame_cfg(self):
         tree, port_count = self.build_mame_cfg_tree()
         if port_count == 0:
@@ -5475,36 +6013,237 @@ class CuratorApp:
         except Exception as exc:
             messagebox.showerror("RetroArch", f"Unable to launch RetroArch:\n{exc}")
 
-    def generate_retroarch_rmp(self):
+    def generate_retroarch_rmp_to(self, title, core_dir, copy_dir, launch_after=False):
         text, conflicts = self.build_retroarch_rmp_text()
         if not text:
-            messagebox.showwarning("RetroArch RMP", "No mapped RetroArch input found for the active layout.")
+            messagebox.showwarning(title, "No mapped RetroArch input found for the active layout.")
             return
 
         rom = self.current_data["system"]
-        target_dir = os.path.join(RETROARCH_REMAPS_DIR, RETROARCH_RMP_CORE_DIR)
+        target_dir = os.path.join(RETROARCH_REMAPS_DIR, core_dir)
         path = os.path.join(target_dir, f"{rom}.rmp")
         if os.path.exists(path):
-            if not messagebox.askyesno("RetroArch RMP", f"Overwrite existing RetroArch remap?\n\n{path}"):
+            if not messagebox.askyesno(title, f"Overwrite existing RetroArch remap?\n\n{path}"):
                 return
 
         os.makedirs(target_dir, exist_ok=True)
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
-        os.makedirs(GENERATED_RETROARCH_COPY_DIR, exist_ok=True)
-        copy_path = os.path.join(GENERATED_RETROARCH_COPY_DIR, f"{rom}.rmp")
+        os.makedirs(copy_dir, exist_ok=True)
+        copy_path = os.path.join(copy_dir, f"{rom}.rmp")
         shutil.copy2(path, copy_path)
 
         detail = f"RMP generated:\n{path}\n\nCopy saved to:\n{copy_path}"
         if conflicts:
             preview = "\n".join(conflicts[:8])
             more = "" if len(conflicts) <= 8 else f"\n... and {len(conflicts) - 8} more."
-            detail += f"\n\nSome remaps could not be represented more than once in RetroArch RMP:\n{preview}{more}"
-        if messagebox.askyesno("RetroArch RMP", detail + "\n\nLaunch RetroArch now for testing?"):
+            detail += f"\n\nSome remaps could not be represented more than once in {title}:\n{preview}{more}"
+        if launch_after and messagebox.askyesno(title, detail + "\n\nLaunch RetroArch now for testing?"):
+            self.launch_retroarch_current()
+            return
+        messagebox.showinfo(title, detail)
+
+    def generate_retroarch_rmp(self):
+        text, conflicts = self.build_retroarch_rmp_text()
+        if not text:
+            messagebox.showwarning("RMP", "No mapped RetroArch input found for the active layout.")
+            return
+
+        rom = self.current_data["system"]
+        outputs = [
+            ("MAME", RETROARCH_RMP_CORE_DIR, GENERATED_RETROARCH_COPY_DIR),
+            ("FinalBurn Neo", RETROARCH_FBNEO_RMP_CORE_DIR, GENERATED_RETROARCH_FBNEO_COPY_DIR),
+        ]
+        details = []
+
+        for label, core_dir, copy_dir in outputs:
+            target_dir = os.path.join(RETROARCH_REMAPS_DIR, core_dir)
+            path = os.path.join(target_dir, f"{rom}.rmp")
+            if os.path.exists(path):
+                if not messagebox.askyesno("RMP", f"Overwrite existing RetroArch remap for {label}?\n\n{path}"):
+                    continue
+
+            os.makedirs(target_dir, exist_ok=True)
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+
+            os.makedirs(copy_dir, exist_ok=True)
+            copy_path = os.path.join(copy_dir, f"{rom}.rmp")
+            shutil.copy2(path, copy_path)
+            details.append(f"{label}:\n{path}\nCopy:\n{copy_path}")
+
+        if not details:
+            return
+
+        detail = "RMP generated:\n\n" + "\n\n".join(details)
+        if conflicts:
+            preview = "\n".join(conflicts[:8])
+            more = "" if len(conflicts) <= 8 else f"\n... and {len(conflicts) - 8} more."
+            detail += f"\n\nSome remaps could not be represented more than once in RMP:\n{preview}{more}"
+        if messagebox.askyesno("RMP", detail + "\n\nLaunch RetroArch now for testing?"):
             self.launch_retroarch_current()
 
+    def save_retroarch_rmp_exports(self):
+        text, conflicts = self.build_retroarch_rmp_text()
+        if not text:
+            return [], conflicts
+
+        rom = self.current_data["system"]
+        outputs = [
+            ("MAME", RETROARCH_RMP_CORE_DIR, GENERATED_RETROARCH_COPY_DIR),
+            ("FinalBurn Neo", RETROARCH_FBNEO_RMP_CORE_DIR, GENERATED_RETROARCH_FBNEO_COPY_DIR),
+        ]
+        details = []
+
+        for label, core_dir, copy_dir in outputs:
+            target_dir = os.path.join(RETROARCH_REMAPS_DIR, core_dir)
+            path = os.path.join(target_dir, f"{rom}.rmp")
+            os.makedirs(target_dir, exist_ok=True)
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+
+            os.makedirs(copy_dir, exist_ok=True)
+            copy_path = os.path.join(copy_dir, f"{rom}.rmp")
+            shutil.copy2(path, copy_path)
+            details.append({"label": label, "path": path, "copy_path": copy_path})
+
+        return details, conflicts
+
+    def retrobat_xml_source_layout(self, button_count):
+        if button_count <= 2:
+            return "2-Button"
+        if button_count <= 4:
+            return "4-Button"
+        if button_count <= 6:
+            return "6-Button"
+        return "8-Button"
+
+    def retrobat_xml_player_buttons(self, editor):
+        by_index = {}
+        for button in editor.player_data["buttons"]:
+            key = str(button.get("game_button", ""))
+            if not key.isdigit():
+                continue
+            if key not in by_index and mame_port_identity(button.get("mame", {})):
+                by_index[key] = button
+        return [by_index[key] for key in sorted(by_index, key=lambda value: int(value))]
+
+    def retrobat_xml_joystick_entries(self, editor):
+        out = {}
+        for _, direction, entry in editor.iter_joystick_inputs():
+            if direction in out or direction not in RETROBAT_XML_JOYSTICK_MAP:
+                continue
+            if not mame_port_identity(entry.get("mame", {})):
+                continue
+            out[direction] = entry
+        return out
+
+    def retrobat_xml_button_slot(self, button, layout_name):
+        slot_value = button.get("slots_by_layout", {}).get(layout_name)
+        slots = self.slot_values_for_export(slot_value)
+        for slot in slots:
+            key = int(slot) if str(slot).isdigit() else slot
+            if str(key).strip():
+                return str(key)
+        ordered = LAYOUT_SLOTS.get(layout_name, [])
+        try:
+            button_index = max(int(button.get("game_button", 1)) - 1, 0)
+        except Exception:
+            button_index = 0
+        if button_index < len(ordered):
+            return str(ordered[button_index])
+        return ""
+
+    def retrobat_xml_append_button(self, layout_el, item, mapping_name, slot_name):
+        identity = mame_port_identity(item.get("mame", {}))
+        if not identity or not mapping_name:
+            return
+        tag, mtype, mask_dec, defvalue_dec = identity
+        attrs = {
+            "type": mtype,
+            "tag": tag,
+            "mask": str(mask_dec),
+            "defvalue": str(defvalue_dec),
+            "slot": str(slot_name),
+            "color": canonical_color_name(item.get("color", "Blue"), "Blue"),
+            "function": str(item.get("mame", {}).get("type") or item.get("mame", {}).get("input_id") or item.get("function") or mtype),
+        }
+        btn_el = ET.SubElement(layout_el, "button", attrs)
+        ET.SubElement(btn_el, "mapping", {"type": "standard", "name": mapping_name})
+
+    def build_retrobat_xml_tree(self):
+        root = ET.Element("game", {
+            "name": self.current_data["system"],
+            "rom": self.current_data["system"],
+        })
+        layouts_el = ET.SubElement(root, "layouts")
+
+        editor_payloads = []
+        joystick_colors = []
+        for editor in self.player_editors:
+            buttons = self.retrobat_xml_player_buttons(editor)
+            if not buttons:
+                continue
+            editor_payloads.append({
+                "editor": editor,
+                "buttons": buttons,
+                "source_layout": self.retrobat_xml_source_layout(len(buttons)),
+                "joystick_entries": self.retrobat_xml_joystick_entries(editor),
+            })
+            if editor.player_data.get("devices"):
+                joystick_colors.append(canonical_color_name(editor.player_data["devices"][0].get("color", "Black"), "Black"))
+
+        joystick_color = joystick_colors[0] if joystick_colors else "Black"
+        for variant_name, sequence in RETROBAT_XML_LAYOUT_VARIANTS.items():
+            layout_el = ET.SubElement(layouts_el, "layout", {
+                "type": variant_name,
+                "joystickcolor": joystick_color,
+            })
+            for payload in editor_payloads:
+                for direction in ("left", "right", "up", "down"):
+                    entry = payload["joystick_entries"].get(direction)
+                    if not entry:
+                        continue
+                    self.retrobat_xml_append_button(layout_el, entry, RETROBAT_XML_JOYSTICK_MAP[direction], direction.upper())
+
+                for index, button in enumerate(payload["buttons"]):
+                    if index >= len(sequence):
+                        break
+                    slot_name = self.retrobat_xml_button_slot(button, payload["source_layout"])
+                    self.retrobat_xml_append_button(layout_el, button, sequence[index], slot_name)
+
+        return ET.ElementTree(root)
+
+    def save_retrobat_xml_export(self):
+        tree = self.build_retrobat_xml_tree()
+        rom = self.current_data["system"]
+        path = os.path.join(RETROBAT_INPUTMAPPING_MAME_DIR, f"{rom}.xml")
+        os.makedirs(RETROBAT_INPUTMAPPING_MAME_DIR, exist_ok=True)
+        mame_xml_indent(tree.getroot())
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+
+        os.makedirs(GENERATED_RETROBAT_XML_COPY_DIR, exist_ok=True)
+        copy_path = os.path.join(GENERATED_RETROBAT_XML_COPY_DIR, f"{rom}.xml")
+        shutil.copy2(path, copy_path)
+        return {"path": path, "copy_path": copy_path}
+
     def generate_retrobat_xml_placeholder(self):
-        messagebox.showinfo("RetroBat XML", "RetroBat XML generation will be implemented after the MAME CFG target.")
+        tree = self.build_retrobat_xml_tree()
+        rom = self.current_data["system"]
+        target_dir = RETROBAT_INPUTMAPPING_MAME_DIR
+        path = os.path.join(target_dir, f"{rom}.xml")
+        copy_path = os.path.join(GENERATED_RETROBAT_XML_COPY_DIR, f"{rom}.xml")
+
+        if os.path.exists(path):
+            if not messagebox.askyesno("RB-XML", f"Overwrite existing RetroBat mapping XML?\n\n{path}"):
+                return
+
+        os.makedirs(target_dir, exist_ok=True)
+        mame_xml_indent(tree.getroot())
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+        os.makedirs(GENERATED_RETROBAT_XML_COPY_DIR, exist_ok=True)
+        shutil.copy2(path, copy_path)
+        messagebox.showinfo("RB-XML", f"RetroBat XML generated:\n{path}\n\nCopy saved to:\n{copy_path}")
 
     def generate_libretro_placeholder(self):
         messagebox.showinfo("Libretro", "Libretro export will be implemented after the MAME CFG target.")
@@ -5541,8 +6280,23 @@ class CuratorApp:
         path = os.path.join(OUTPUT_DIR, export["rom"] + ".json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(export, f, indent=2, ensure_ascii=False)
+        mame_result = self.save_mame_cfg_export()
+        rmp_results, rmp_conflicts = self.save_retroarch_rmp_exports()
+        retrobat_result = self.save_retrobat_xml_export()
+        self.schedule_ledpanel_sync(delay_ms=20)
         if not silent:
-            messagebox.showinfo("Save", f"File saved:\n{path}")
+            details = [f"File saved:\n{path}"]
+            if mame_result:
+                details.append(f"MAME CFG:\n{mame_result['path']}")
+            if rmp_results:
+                details.append("RMP:\n" + "\n".join(item["path"] for item in rmp_results))
+            if retrobat_result:
+                details.append(f"RB-XML:\n{retrobat_result['path']}")
+            if rmp_conflicts:
+                preview = "\n".join(rmp_conflicts[:6])
+                more = "" if len(rmp_conflicts) <= 6 else f"\n... and {len(rmp_conflicts) - 6} more."
+                details.append(f"RMP conflicts:\n{preview}{more}")
+            messagebox.showinfo("Save", "\n\n".join(details))
 
     def save_and_next(self):
         self.save_current()
@@ -5615,7 +6369,7 @@ class CuratorApp:
         top = tk.Frame(self.root, bg="#f6f8fb", height=60)
         top.grid(row=0, column=0, sticky="ew")
         top.grid_propagate(False)
-        self.top_game_var = tk.StringVar(value="")
+        self.top_game_var = tk.StringVar(value="PANEL CURATOR")
         tk.Label(top, textvariable=self.top_game_var, bg="#f6f8fb", fg="#101828", font=("Segoe UI", 18, "bold")).pack(side="left", padx=(24, 30))
         tk.Frame(top, width=1, bg="#d0d5dd", height=28).pack(side="left", padx=8)
         tk.Button(top, text="PREV", bd=0, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold"), command=self.prev_rom).pack(side="left", padx=4)
@@ -5626,16 +6380,20 @@ class CuratorApp:
         export_layout_combo = ttk.Combobox(top, textvariable=self.export_layout_var, values=LAYOUTS, width=9, state="readonly")
         export_layout_combo.pack(side="left", padx=4)
         export_layout_combo.bind("<<ComboboxSelected>>", self.on_export_layout_changed)
-        tk.Button(top, text="MAME CFG", bd=0, bg="#f6f8fb", fg="#0f766e", font=("Segoe UI", 10, "bold"), command=self.generate_mame_cfg).pack(side="left", padx=4)
-        tk.Button(top, text="RETROARCH RMP", bd=0, bg="#f6f8fb", fg="#0f766e", font=("Segoe UI", 10, "bold"), command=self.generate_retroarch_rmp).pack(side="left", padx=4)
-        tk.Button(top, text="RETROBAT XML", bd=0, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold"), command=self.generate_retrobat_xml_placeholder).pack(side="left", padx=4)
-        tk.Button(top, text="LIBRETRO", bd=0, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold"), command=self.generate_libretro_placeholder).pack(side="left", padx=4)
-        tk.Button(top, text="FBNEO", bd=0, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold"), command=self.generate_fbneo_placeholder).pack(side="left", padx=4)
+        tk.Button(top, text="MAME-CFG", bd=0, bg="#f6f8fb", fg="#0f766e", font=("Segoe UI", 10, "bold"), command=self.generate_mame_cfg).pack(side="left", padx=4)
+        tk.Button(top, text="RA-RMP", bd=0, bg="#f6f8fb", fg="#0f766e", font=("Segoe UI", 10, "bold"), command=self.generate_retroarch_rmp).pack(side="left", padx=4)
+        tk.Button(top, text="RB-XML", bd=0, bg="#f6f8fb", fg="#0f766e", font=("Segoe UI", 10, "bold"), command=self.generate_retrobat_xml_placeholder).pack(side="left", padx=4)
         tk.Button(top, text="RESET JSON", bd=0, bg="#f6f8fb", fg="#b42318", font=("Segoe UI", 10, "bold"), command=self.reset_current_json).pack(side="left", padx=4)
         tk.Button(top, text="EXPORT SYSTEMS", bd=0, bg="#f6f8fb", fg="#2459d3", font=("Segoe UI", 10, "bold"), command=self.export_systems).pack(side="left", padx=4)
 
         self.status_var = tk.StringVar()
         tk.Label(top, textvariable=self.status_var, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 10, "bold")).pack(side="right", padx=(8, 18))
+        ledpanel_box = tk.Frame(top, bg="#f6f8fb")
+        ledpanel_box.pack(side="right", padx=(8, 8))
+        self.ledpanel_indicator = tk.Canvas(ledpanel_box, width=16, height=16, bg="#f6f8fb", highlightthickness=0)
+        self.ledpanel_indicator.pack(side="left", padx=(0, 6))
+        self.ledpanel_indicator_dot = self.ledpanel_indicator.create_oval(2, 2, 14, 14, fill="#dc2626", outline="#dc2626")
+        tk.Label(ledpanel_box, textvariable=self.ledpanel_status_var, bg="#f6f8fb", fg="#667085", font=("Segoe UI", 9, "bold")).pack(side="left")
         search = tk.Frame(top, bg="#edf1f7", bd=0)
         search.pack(side="right", padx=8)
         self.search_var = tk.StringVar()
@@ -5694,6 +6452,7 @@ class CuratorApp:
 
         self.notebook = ttk.Notebook(right)
         self.notebook.grid(row=0, column=0, sticky="nsew")
+        self.notebook.bind("<<NotebookTabChanged>>", lambda e: self.schedule_ledpanel_sync())
 
     def reset_main_pane_position(self):
         if not hasattr(self, "main_pane"):
