@@ -124,6 +124,13 @@ builder.Services.AddSingleton<LiveContestOverlayService>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<LiveContestClientService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LiveContestClientService>());
+// Agent Nelfe Play : la borne va chercher les jeux acquis par le joueur.
+builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayDeviceStore>();
+builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayAgentService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayAgentService>());
+// Déchiffrement au lancement puis effacement : rien de clair ne survit à la partie.
+builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayLaunchService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayLaunchService>());
 builder.Services.AddSingleton<IStartupOverlayService>(sp => sp.GetRequiredService<StartupOverlayService>());
 builder.Services.AddSingleton<ToastOverlayService>();
 builder.Services.AddSingleton<IToastNotificationService>(sp => sp.GetRequiredService<ToastOverlayService>());
