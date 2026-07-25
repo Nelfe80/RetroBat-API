@@ -27,9 +27,20 @@ public sealed class NelfePlayAgentService : BackgroundService
     private const string PlaceholderMarker = "NELFEPLAY_ENCRYPTED_ROM_PLACEHOLDER_v1";
     private const string ContainerMagic = "NPLAY1";
 
+    /// <summary>
+    /// Le serveur nomme ses champs en snake_case : system_id, target_file_name,
+    /// content_key. « Insensible a la casse » ne suffit PAS a les reconnaitre —
+    /// cette option rapproche systemId de SystemId, jamais system_id. Les champs
+    /// restaient donc vides, et l'installation s'arretait faute de systeme et de
+    /// nom de fichier, sans que rien ne dise pourquoi.
+    ///
+    /// La politique snake_case les relie ; l'insensibilite a la casse reste,
+    /// pour que les champs deja nommes autrement continuent d'etre lus.
+    /// </summary>
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
     };
 
     private readonly NelfePlayDeviceStore _device;
