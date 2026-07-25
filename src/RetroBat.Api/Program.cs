@@ -128,6 +128,20 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<LiveContestClientS
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayDeviceStore>();
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayAgentService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayAgentService>());
+// Releve d'audience : ce qui est joue et combien de temps, jamais par qui.
+//
+// L'interrupteur est reel : une mesure qu'on ne peut pas eteindre n'est pas une
+// mesure, c'est une surveillance. Il se coupe dans appsettings sous
+// ApiExpose:NelfePlay:PlayReportingEnabled.
+RetroBat.Api.Infrastructure.NelfePlayPlayReporter.Enabled =
+    builder.Configuration.GetValue("ApiExpose:NelfePlay:PlayReportingEnabled", true);
+var nelfePlayBaseUrl = builder.Configuration.GetValue<string>("ApiExpose:NelfePlay:BaseUrl");
+if (!string.IsNullOrWhiteSpace(nelfePlayBaseUrl))
+{
+    RetroBat.Api.Infrastructure.NelfePlayAgentService.BaseUrl = nelfePlayBaseUrl;
+}
+builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayPlayReporter>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayPlayReporter>());
 // Déchiffrement au lancement puis effacement : rien de clair ne survit à la partie.
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayLaunchService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayLaunchService>());
