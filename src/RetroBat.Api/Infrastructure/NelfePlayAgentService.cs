@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -154,6 +155,23 @@ public sealed class NelfePlayAgentService : BackgroundService
         // ne le possede pas — un renommage cote salle se propage ici tout seul.
         client.DefaultRequestHeaders.Add("X-Nelfeplay-Label", MachineLabel);
         using var response = await client.GetAsync("/api/v1/agent/work", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // Le compte a revoque cette machine (perdue, revendue, ou dont il
+            // doute), ou il est suspendu : le credential ne vaut plus rien. On
+            // l'efface au lieu de reinterroger indefiniment, et l'ecran dit
+            // clairement qu'il faut re-appairer.
+            _logger.LogWarning("Nelfe Play : cette machine n'est plus autorisee, appairage efface.");
+            _device.Forget();
+            Status = new AgentStatus
+            {
+                Paired = false,
+                LastPollUtc = DateTime.UtcNow,
+                LastError = "revoked",
+            };
+            return;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             Status = Status with { LastError = "work: HTTP " + (int)response.StatusCode };
