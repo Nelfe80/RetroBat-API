@@ -198,10 +198,25 @@ public sealed class NelfePlayAgentService : BackgroundService
         var installed = 0;
         foreach (var intent in payload.Intents ?? [])
         {
-            if (await TryInstallAsync(client, intent, cancellationToken))
+            var ok = await TryInstallAsync(client, intent, cancellationToken);
+            if (ok)
             {
                 installed++;
             }
+
+            // ACQUITTEMENT, dans les deux cas.
+            //
+            // Le serveur ne REMET pas une demande d'installation, il la
+            // RESERVE : sans accuse de reception, elle revient d'elle-meme a
+            // expiration du bail. C'est ce qui la rend robuste a une machine
+            // qui s'eteint au mauvais moment — mais sans acquittement du tout,
+            // le meme paquet se retelechargeait et se reinstallait a chaque
+            // tour, indefiniment, sur une machine ou tout allait bien.
+            //
+            // L'echec s'annonce aussi : le compte doit pouvoir dire POURQUOI un
+            // jeu n'est pas arrive, et une demande qu'on retente en boucle sans
+            // jamais dire qu'elle echoue est une panne muette.
+            await ReportAsync(client, intent, ok, cancellationToken);
         }
 
         Status = new AgentStatus
@@ -217,6 +232,61 @@ public sealed class NelfePlayAgentService : BackgroundService
         if (installed > 0)
         {
             _logger.LogInformation("Nelfe Play : {Count} jeu(x) installe(s) depuis la bibliotheque du joueur.", installed);
+        }
+    }
+
+
+    /// <summary>
+    /// Dit au compte ce qu'il est advenu d'une demande d'installation.
+    ///
+    /// Un acquittement rate n'est pas grave : la demande reviendra au prochain
+    /// tour, et l'installation etant idempotente, elle se refera sans dommage.
+    /// On ne fait donc pas echouer le releve pour autant.
+    /// </summary>
+    private async Task ReportAsync(
+        HttpClient client,
+        WorkIntent intent,
+        bool installed,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(intent.Slug))
+        {
+            return;
+        }
+
+        try
+        {
+            var fields = new List<KeyValuePair<string, string>>
+            {
+                new("slug", intent.Slug),
+                new("status", installed ? "installed" : "failed")
+            };
+
+            var version = intent.Package?.Version;
+            if (!string.IsNullOrWhiteSpace(version))
+            {
+                fields.Add(new KeyValuePair<string, string>("package_version", version));
+            }
+            if (!installed)
+            {
+                fields.Add(new KeyValuePair<string, string>("message", "Installation impossible sur cette machine."));
+            }
+
+            using var form = new FormUrlEncodedContent(fields);
+            using var response = await client.PostAsync("/api/v1/agent/report", form, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogDebug(
+                    "Nelfe Play : accuse de reception refuse pour {Slug} ({Status}).",
+                    intent.Slug,
+                    (int)response.StatusCode);
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogDebug(exception, "Nelfe Play : accuse de reception impossible pour {Slug}.", intent.Slug);
         }
     }
 
