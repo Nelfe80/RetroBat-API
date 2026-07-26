@@ -71,9 +71,46 @@ builder.Services.AddControllers()
     });
 // Overlays and SDK pages (OBS Browser Source, file:// or local http origins) consume
 // this loopback-only API cross-origin; without CORS every browser fetch is blocked.
+// Origines acceptees.
+//
+// « N'importe laquelle » etait le reglage d'une API qu'on croyait cantonnee a
+// la machine. Elle ne l'est pas : tout onglet ouvert sur le poste peut la
+// joindre. On accepte donc la boucle locale — d'ou viennent les overlays et les
+// outils — la plateforme, et ce que la configuration ajoute explicitement.
+//
+// Cette liste ne protege PAS a elle seule : un navigateur envoie quand meme une
+// requete « simple » et n'en cache que la reponse. C'est la garde d'ecriture,
+// plus bas, qui fait le travail. Celle-ci evite seulement qu'un site lise ce
+// qui se passe sur la machine du joueur.
+var allowedOrigins = (builder.Configuration["Security:AllowedOrigins"] ?? string.Empty)
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+    options.AddDefaultPolicy(policy => policy
+        .SetIsOriginAllowed(origin =>
+        {
+            if (!Uri.TryCreate(origin, UriKind.Absolute, out var parsed))
+            {
+                return false;
+            }
+
+            if (parsed.IsLoopback)
+            {
+                return true;
+            }
+
+            if (parsed.Scheme == Uri.UriSchemeHttps
+                && (parsed.Host.Equals("nelfetech.com", StringComparison.OrdinalIgnoreCase)
+                    || parsed.Host.EndsWith(".nelfetech.com", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            return allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase);
+        })
+        .AllowAnyHeader()
+        .AllowAnyMethod());
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -350,6 +387,80 @@ if (cabinetApiKey.Length > 0)
         await next();
     });
 }
+
+// Le jeton local est cree AU DEMARRAGE, pas a la premiere verification : un
+// overlay qui se lance en meme temps que nous doit pouvoir le lire tout de
+// suite. Le creer paresseusement laissait le fichier absent tant que personne
+// n'avait essaye d'ecrire — c'est-a-dire, en pratique, toujours.
+app.Logger.LogInformation(
+    "Jeton d'ecriture locale pret ({Length} caracteres).",
+    LocalWriteToken.Value.Length);
+
+// ── Garde d'ECRITURE : aucun site web ne pilote cette machine ─────────────
+//
+// La garde d'origine qui suit ne couvrait que deux prefixes. Tout le reste —
+// lancer un jeu, deployer une configuration, appairer un compte — restait
+// joignable depuis n'importe quelle page. Et deux details rendaient la chose
+// pire qu'elle n'en avait l'air :
+//
+//   - une liste de chemins interdits pourrit : chaque nouvelle route arrive
+//     AUTORISEE par defaut, et personne ne s'en apercoit ;
+//   - la garde ne s'appliquait que si l'en-tete Origin etait present. Or une
+//     image ou un formulaire n'en envoient pas. Un simple
+//     <img src="http://127.0.0.1:12345/api/v1/es/controller/goto?..."> passait.
+//
+// On interdit donc par VERBE : tout ce qui modifie est refuse aux navigateurs,
+// et il faut ajouter une route a la liste pour l'OUVRIR, non pour la fermer.
+//
+// Le navigateur se reconnait a Sec-Fetch-Site, que tous envoient depuis 2020 —
+// y compris sur les images et les formulaires, la ou Origin manque. Un client
+// natif (Marquee, Led, le hub) ne l'envoie pas et passe comme avant.
+//
+// Un overlay LOCAL qui doit ecrire presente le jeton du fichier local : une
+// page distante ne peut ni le lire ni le deviner.
+app.Use(async (context, next) =>
+{
+    var method = context.Request.Method;
+    var writes = HttpMethods.IsPost(method) || HttpMethods.IsPut(method)
+        || HttpMethods.IsPatch(method) || HttpMethods.IsDelete(method);
+
+    // Le préflight doit passer : c'est lui qui demande l'autorisation, et le
+    // refuser ferait échouer des requêtes qu'on aurait acceptées.
+    if (!writes || !context.Request.Path.StartsWithSegments("/api"))
+    {
+        await next();
+        return;
+    }
+
+    var fetchSite = context.Request.Headers["Sec-Fetch-Site"].ToString();
+    if (fetchSite.Length == 0)
+    {
+        // Pas un navigateur : client natif, script, hub. Les autres gardes
+        // (cle API hors loopback) s'appliquent toujours.
+        await next();
+        return;
+    }
+
+    // Une page servie par APIExpose lui-meme reste chez elle.
+    if (string.Equals(fetchSite, "same-origin", StringComparison.OrdinalIgnoreCase))
+    {
+        await next();
+        return;
+    }
+
+    if (LocalWriteToken.Matches(context.Request.Headers[LocalWriteToken.HeaderName].FirstOrDefault()))
+    {
+        await next();
+        return;
+    }
+
+    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+    await context.Response.WriteAsJsonAsync(new
+    {
+        error = "Écriture refusée depuis un navigateur : jeton local requis.",
+        header = LocalWriteToken.HeaderName
+    });
+});
 
 // Garde d'origine : les commandes locales (lancement de jeux, RetroArch,
 // overlay) ne sont JAMAIS pilotables depuis un site web. Une requete
