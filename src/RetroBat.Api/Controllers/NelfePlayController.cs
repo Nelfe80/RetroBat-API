@@ -40,45 +40,12 @@ public sealed class NelfePlayController : ControllerBase
             entitlements = status.Entitlements,
             lastPollUtc = status.LastPollUtc,
             lastInstalled = status.LastInstalled,
+            // Sans ce chiffre, « 0 installe » se lit comme un echec alors qu'il
+            // veut presque toujours dire « rien a faire ». Zero installe ET zero
+            // en attente est un systeme au repos, pas un systeme en panne.
+            pendingIntents = status.PendingIntents,
             lastError = status.LastError,
         });
-    }
-
-    /// <summary>
-    /// Appaire la machine avec le code affiche sur nelfeplay.com. La cle
-    /// publique de l'appareil part avec la demande ; sa cle privee reste dans
-    /// le coffre de Windows.
-    /// </summary>
-    /// <response code="200">Appairage reussi.</response>
-    /// <response code="400">Code absent ou mal forme.</response>
-    /// <response code="409">Code refuse ou expire.</response>
-    [HttpPost("pair")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Pair([FromBody] PairRequest request, CancellationToken cancellationToken)
-    {
-        var code = (request?.Code ?? string.Empty).Trim();
-        if (code.Length != 8)
-        {
-            return BadRequest(new { message = "Code d'appairage attendu (8 caracteres)." });
-        }
-
-        // Nom par defaut : celui que cette machine porte deja (borne nommee via
-        // HubManager en salle, nom de la machine Windows chez un particulier).
-        if (!string.IsNullOrWhiteSpace(request?.Label))
-        {
-            _agent.SetMachineLabel(request!.Label);
-        }
-
-        var label = _agent.MachineLabel;
-        var paired = await _agent.PairAsync(code, label, cancellationToken);
-        if (!paired)
-        {
-            return Conflict(new { message = "Code refuse ou expire. Generez-en un nouveau sur nelfeplay.com." });
-        }
-
-        return Ok(new { paired = true, deviceId = _device.DeviceId });
     }
 
     /// <summary>Force un releve immediat des jeux a installer.</summary>
@@ -120,8 +87,6 @@ public sealed class NelfePlayController : ControllerBase
         _device.Forget();
         return Ok(new { paired = false });
     }
-
-    public sealed record PairRequest(string? Code, string? Label);
 
     public sealed record LabelRequest(string? Label);
 }
