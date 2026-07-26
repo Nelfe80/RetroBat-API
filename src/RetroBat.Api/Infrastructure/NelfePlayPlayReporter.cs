@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RetroBat.Domain.Events;
+using RetroBat.Domain.Models;
 using RetroBat.Domain.Interfaces;
 
 namespace RetroBat.Api.Infrastructure;
@@ -68,6 +69,7 @@ public sealed class NelfePlayPlayReporter : BackgroundService
     };
 
     private readonly IEventBus _eventBus;
+    private readonly ApiContext _context;
     private readonly IHttpClientFactory _httpFactory;
     private readonly NelfePlayDeviceStore _devices;
     private readonly ILogger<NelfePlayPlayReporter>? _logger;
@@ -83,11 +85,13 @@ public sealed class NelfePlayPlayReporter : BackgroundService
 
     public NelfePlayPlayReporter(
         IEventBus eventBus,
+        ApiContext context,
         IHttpClientFactory httpFactory,
         NelfePlayDeviceStore devices,
         ILogger<NelfePlayPlayReporter>? logger = null)
     {
         _eventBus = eventBus;
+        _context = context;
         _httpFactory = httpFactory;
         _devices = devices;
         _logger = logger;
@@ -144,10 +148,26 @@ public sealed class NelfePlayPlayReporter : BackgroundService
 
     private void BeginPlay(EventEnvelope envelope)
     {
-        var game = ResolveGame(envelope.Payload);
-        var systemId = GetString(game, "SystemId");
-        var gameName = GetString(game, "GameName");
-        var gamePath = GetString(game, "GamePath");
+        // Le jeu se lit dans le CONTEXTE, pas dans la charge de l'evenement.
+        //
+        // J'avais suppose une charge JSON portant SystemId, GameName et
+        // GamePath. Elle n'existe pas : le bus publie un objet anonyme
+        // { EventName, RawArgs, Context }, et le jeu vit dans Context.Running.
+        // Mon extraction exigeait un JsonElement, recevait un objet .NET, et
+        // rendait null a chaque fois — aucune partie n'etait donc enregistree,
+        // sans qu'aucune erreur ne le signale.
+        //
+        // On lit maintenant le contexte typé, ou l'objet ne peut pas mentir sur
+        // sa forme : une faute de nom deviendrait une erreur de compilation.
+        var running = ResolveRunning(envelope.Payload) ?? _context.Ui.Running;
+        if (running is null)
+        {
+            return;
+        }
+
+        var systemId = running.SystemId;
+        var gameName = running.GameName;
+        var gamePath = running.GamePath;
 
         if (string.IsNullOrWhiteSpace(systemId) && string.IsNullOrWhiteSpace(gameName))
         {
@@ -434,37 +454,26 @@ public sealed class NelfePlayPlayReporter : BackgroundService
         }
     }
 
-    private static object? ResolveGame(object? payload)
+    /// <summary>
+    /// Le jeu en cours, tel que la charge de l'evenement le transporte.
+    ///
+    /// La charge est un objet ANONYME — { EventName, RawArgs, Context } — donc
+    /// impossible a typer depuis ici : on va chercher sa propriete Context par
+    /// reflexion, une fois, et on retombe sur le contexte partage si sa forme
+    /// change un jour. Le repli n'est pas de la prudence decorative : c'est ce
+    /// qui evite qu'un renommage cote frontend refasse taire le releve sans
+    /// prevenir.
+    /// </summary>
+    private static GameReference? ResolveRunning(object? payload)
     {
         if (payload is null)
         {
             return null;
         }
 
-        if (payload is JsonElement element && element.ValueKind == JsonValueKind.Object)
-        {
-            return element.TryGetProperty("Game", out var game) ? game : element;
-        }
+        var context = payload.GetType().GetProperty("Context")?.GetValue(payload);
 
-        return payload;
-    }
-
-    private static string? GetString(object? source, string property)
-    {
-        if (source is not JsonElement element || element.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        foreach (var name in new[] { property, JsonNamingPolicy.CamelCase.ConvertName(property) })
-        {
-            if (element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
-            {
-                return value.GetString();
-            }
-        }
-
-        return null;
+        return context is GameState state ? state.Running : null;
     }
 
     private sealed record Play(string? SystemId, string? GameName, string? GamePath, Stopwatch Clock);
