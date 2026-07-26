@@ -945,26 +945,10 @@ public class MediaPrefetchService : IMediaPrefetchService
         return Path.GetFullPath(Path.Combine(systemRoot, normalized));
     }
 
+    // Content comparison now lives in MediaFileContentComparer (shared with the live
+    // gamelist delta so a regional-alias path change with identical bytes never refreshes).
     private static bool HaveSameContent(string firstPath, string secondPath)
-    {
-        try
-        {
-            var firstInfo = new FileInfo(firstPath);
-            var secondInfo = new FileInfo(secondPath);
-            if (!firstInfo.Exists || !secondInfo.Exists || firstInfo.Length != secondInfo.Length)
-            {
-                return false;
-            }
-
-            using var firstStream = File.Open(firstPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var secondStream = File.Open(secondPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            return SHA256.HashData(firstStream).SequenceEqual(SHA256.HashData(secondStream));
-        }
-        catch
-        {
-            return false;
-        }
-    }
+        => MediaFileContentComparer.AreEquivalent(firstPath, secondPath);
 
     private static bool HasVisibleSlotResolvedAfterSelection(MediaProjectionPlan plan, string wheelStyle)
     {

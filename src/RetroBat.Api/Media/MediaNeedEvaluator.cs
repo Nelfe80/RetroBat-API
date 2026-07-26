@@ -8,18 +8,40 @@ public class MediaNeedEvaluator
 {
     private readonly MediaSystemRules _systemRules;
     private readonly EmulationStationSettingsService _settingsService;
+    private readonly RomMetadataResolver _romMetadataResolver;
 
-    public MediaNeedEvaluator(MediaSystemRules systemRules, EmulationStationSettingsService settingsService)
+    private static readonly char[] IdentitySeparators = [',', '/', ';', '+', ' '];
+
+    public MediaNeedEvaluator(
+        MediaSystemRules systemRules,
+        EmulationStationSettingsService settingsService,
+        RomMetadataResolver romMetadataResolver)
     {
         _systemRules = systemRules;
         _settingsService = settingsService;
+        _romMetadataResolver = romMetadataResolver;
     }
 
     public MediaProjectionPlan BuildPlan(MediaPrefetchRequest request, string normalizedSystemId, string gameSlug, string frontendSystemId)
     {
         var scrapingSettings = _settingsService.GetScrapingSettings();
+
+        // Single source of truth for the ROM's lang/region identity: the name tags +
+        // compact referential first, the gamelist metadata only as a fallback. Never
+        // synthesise a region when it is genuinely unknown (leaves the list empty so
+        // downstream keeps the existing value instead of stamping "wr").
+        var identity = _romMetadataResolver.Resolve(normalizedSystemId, request.GamePath, request.GameName);
+        var romRegions = identity.Regions.Count > 0
+            ? identity.Regions.ToList()
+            : SplitIdentity(request.Details?.Region);
+        var romLanguages = identity.Languages.Count > 0
+            ? identity.Languages.ToList()
+            : SplitIdentity(request.Details?.Lang);
+
         var plan = new MediaProjectionPlan
         {
+            RomRegions = romRegions,
+            RomLanguages = romLanguages,
             SystemId = normalizedSystemId,
             FrontendSystemId = frontendSystemId,
             GameSlug = gameSlug,
@@ -74,6 +96,22 @@ public class MediaNeedEvaluator
         }
 
         return plan;
+    }
+
+    /// <summary>Splits a gamelist region/lang string ("USA, Europe") into distinct
+    /// tokens. Fallback only — the compact referential is the primary source.</summary>
+    private static List<string> SplitIdentity(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return new List<string>();
+        }
+
+        return value
+            .Split(IdentitySeparators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(token => token.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private void AddNeed(
