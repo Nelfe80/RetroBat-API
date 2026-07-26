@@ -32,6 +32,19 @@ public sealed class NelfePlayLaunchService : BackgroundService
         PropertyNameCaseInsensitive = true,
     };
 
+    /// <summary>
+    /// La charge SIGNEE vient du serveur, qui nomme en snake_case (device_id,
+    /// session_id, expires_at). Le fichier de licence local, lui, est ecrit par
+    /// l'agent en PascalCase. Deux conventions, deux jeux d'options : les
+    /// melanger ferait lire des champs vides d'un cote ou de l'autre — et ici,
+    /// un champ vide c'est une contrainte qui ne s'applique plus.
+    /// </summary>
+    private static readonly JsonSerializerOptions SignedPayloadJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+    };
+
     private readonly IEventBus _eventBus;
     private readonly NelfePlayDeviceStore _device;
     private readonly ILogger<NelfePlayLaunchService> _logger;
@@ -251,12 +264,138 @@ public sealed class NelfePlayLaunchService : BackgroundService
     }
 
     /// <summary>
-    /// Une licence n'est utilisable que si elle est encore valable, destinee a
-    /// CETTE machine, et authentique. Une licence sans expiration ni signature
-    /// (installation durable d'un jeu possede) reste acceptee : c'est le mode
-    /// session qui exige ces garanties.
+    /// Une licence n'est utilisable que si elle est authentique, encore
+    /// valable, et destinee a CETTE machine.
+    ///
+    /// Deux failles se cachaient ici, et elles se completaient.
+    ///
+    /// LA PREMIERE : une licence sans signature etait acceptee, au motif qu'une
+    /// installation durable n'en porte pas. Il suffisait donc d'effacer deux
+    /// champs d'un fichier JSON pour transformer une licence de session — qui
+    /// expire — en licence perpetuelle.
+    ///
+    /// LA SECONDE, plus discrete : la signature couvre la charge signee, mais
+    /// c'etaient les champs EN CLAIR qu'on faisait respecter. On pouvait donc
+    /// garder une signature parfaitement valable et reecrire l'expiration a
+    /// cote. Verifier une signature sans lire ce qu'elle couvre ne verifie
+    /// rien.
+    ///
+    /// Desormais : la charge signee fait foi, et une signature est EXIGEE des
+    /// lors que la machine detient une cle publique de verification — c'est-a-
+    /// dire des qu'elle a ete appairee. Une machine qui n'en a pas ne peut rien
+    /// verifier, et l'installation sans signature y reste possible : c'est le
+    /// cas d'un serveur qui ne signe pas encore.
     /// </summary>
     private bool IsLicenseUsable(LocalLicense license, out string refusal)
+    {
+        refusal = string.Empty;
+
+        var publicKey = _device.LicensePublicKey;
+        var hasSignature = license.Signature is { Length: > 0 }
+            && license.SignedPayload is { Length: > 0 };
+
+        if (publicKey is { Length: > 0 })
+        {
+            if (!hasSignature)
+            {
+                // C'est ici que l'effacement des deux champs ne paie plus.
+                refusal = "licence non signee";
+                return false;
+            }
+        }
+        else if (!hasSignature)
+        {
+            // Rien a verifier, et rien avec quoi verifier : on ne peut pas
+            // exiger mieux sans empecher toute installation.
+            return IsWithinPlainConstraints(license, out refusal);
+        }
+
+        if (publicKey is not { Length: > 0 })
+        {
+            refusal = "cle publique de verification absente";
+            return false;
+        }
+
+        SignedLicense? signed;
+        try
+        {
+            using var rsa = RSA.Create();
+            rsa.ImportFromPem(publicKey);
+            var payloadBytes = Convert.FromBase64String(license.SignedPayload!);
+            var verified = rsa.VerifyData(
+                payloadBytes,
+                Convert.FromBase64String(license.Signature!),
+                HashAlgorithmName.SHA256,
+                RSASignaturePadding.Pkcs1);
+            if (!verified)
+            {
+                refusal = "signature invalide";
+                return false;
+            }
+
+            // On lit CE QUI A ETE SIGNE, jamais ce qui l'accompagne.
+            signed = JsonSerializer.Deserialize<SignedLicense>(payloadBytes, SignedPayloadJsonOptions);
+        }
+        catch (Exception exception)
+            when (exception is CryptographicException or FormatException or ArgumentException or JsonException)
+        {
+            refusal = "signature invérifiable";
+            return false;
+        }
+
+        if (signed is null)
+        {
+            refusal = "charge signee illisible";
+            return false;
+        }
+
+        if (signed.ExpiresAt is not { Length: > 0 } expiry
+            || !DateTimeOffset.TryParse(expiry, out var expiresAt))
+        {
+            // Une licence signee SANS expiration n'existe pas : le serveur en
+            // pose toujours une. Son absence signale une charge fabriquee.
+            refusal = "expiration absente de la charge signee";
+            return false;
+        }
+
+        if (expiresAt <= DateTimeOffset.UtcNow)
+        {
+            refusal = "licence expiree";
+            return false;
+        }
+
+        if (_device.DeviceId is { Length: > 0 } thisDevice
+            && !string.Equals(signed.DeviceId ?? string.Empty, thisDevice, StringComparison.OrdinalIgnoreCase))
+        {
+            refusal = "licence destinee a une autre machine";
+            return false;
+        }
+
+        // Les champs en clair servent au fonctionnement (nom de fichier, IV,
+        // taille) ; ceux qui ENGAGENT doivent correspondre a la charge signee,
+        // sinon le fichier ment sur ce qu'il autorise.
+        if (license.ExpiresAt is { Length: > 0 } plainExpiry
+            && !string.Equals(plainExpiry, expiry, StringComparison.Ordinal))
+        {
+            refusal = "expiration en clair differente de la charge signee";
+            return false;
+        }
+
+        if (license.SessionId is { Length: > 0 } plainSession
+            && !string.Equals(plainSession, signed.SessionId ?? string.Empty, StringComparison.Ordinal))
+        {
+            refusal = "session en clair differente de la charge signee";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Le cas degrade : aucune signature nulle part. On applique alors les
+    /// champs en clair, faute de mieux — et en sachant qu'ils ne prouvent rien.
+    /// </summary>
+    private bool IsWithinPlainConstraints(LocalLicense license, out string refusal)
     {
         refusal = string.Empty;
 
@@ -283,42 +422,16 @@ public sealed class NelfePlayLaunchService : BackgroundService
             return false;
         }
 
-        // Sans signature, rien a verifier ; avec signature, elle doit tenir.
-        if (license.Signature is not { Length: > 0 } signature
-            || license.SignedPayload is not { Length: > 0 } signedPayload)
-        {
-            return true;
-        }
-
-        var publicKey = _device.LicensePublicKey;
-        if (publicKey is not { Length: > 0 })
-        {
-            refusal = "cle publique de verification absente";
-            return false;
-        }
-
-        try
-        {
-            using var rsa = RSA.Create();
-            rsa.ImportFromPem(publicKey);
-            var verified = rsa.VerifyData(
-                Convert.FromBase64String(signedPayload),
-                Convert.FromBase64String(signature),
-                HashAlgorithmName.SHA256,
-                RSASignaturePadding.Pkcs1);
-            if (!verified)
-            {
-                refusal = "signature invalide";
-                return false;
-            }
-        }
-        catch (Exception exception) when (exception is CryptographicException or FormatException or ArgumentException)
-        {
-            refusal = "signature invérifiable";
-            return false;
-        }
-
         return true;
+    }
+
+    /// <summary>Ce que la signature couvre reellement, cote serveur.</summary>
+    private sealed class SignedLicense
+    {
+        public string? DeviceId { get; set; }
+        public string? SessionId { get; set; }
+        public string? Game { get; set; }
+        public string? ExpiresAt { get; set; }
     }
 
     private byte[]? DecryptPackage(string packagePath, byte[] contentKey, LocalLicense license)
