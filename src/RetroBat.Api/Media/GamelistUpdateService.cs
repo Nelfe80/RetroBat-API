@@ -1405,6 +1405,19 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         }
 
         var gameElement = BuildLiveGameElement(plan, cancellationToken);
+        // Neutralize path-only differences (regional media alias with identical bytes)
+        // BEFORE any delta / signature / diagnostic decision, so a screentitle-wor.png
+        // that is byte-identical to screentitle.png never triggers a /addgames.
+        var equivalentMediaAliases = NeutralizeEquivalentMediaAliases(plan, gameElement, cancellationToken);
+        if (equivalentMediaAliases.Count > 0)
+        {
+            _logger?.LogDebug(
+                "Live refresh: {Count} media alias(es) neutralized (identical bytes) for system={SystemId}, game={GameSlug}: {Aliases}.",
+                equivalentMediaAliases.Count,
+                plan.FrontendSystemId,
+                plan.GameSlug,
+                string.Join(", ", equivalentMediaAliases));
+        }
         if (_runtimeState.ShouldSuppressLiveAddGames(plan.FrontendSystemId, plan.GameSlug, out var suppressReason))
         {
             MarkLiveGamelistDirty(plan);
@@ -1968,7 +1981,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         {
             LiveGameUpdateNotificationKind.RemoteScrape => ResolveRemoteScrapeLiveUpdateMessage(plan, gameElement, cancellationToken),
             LiveGameUpdateNotificationKind.RemoteVideoScrape => ResolveRemoteVideoScrapeLiveUpdateMessage(plan),
-            LiveGameUpdateNotificationKind.LocalProjection => ResolveLocalProjectionSuccessfulMessage(plan, gameElement),
+            LiveGameUpdateNotificationKind.LocalProjection => ResolveLocalProjectionSuccessfulMessage(plan, gameElement, cancellationToken),
             _ => string.Empty
         };
     }
@@ -2078,11 +2091,15 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
             ("game", gameName));
     }
 
-    private string ResolveLocalProjectionSuccessfulMessage(MediaProjectionPlan plan, XElement gameElement)
+    private string ResolveLocalProjectionSuccessfulMessage(MediaProjectionPlan plan, XElement gameElement, CancellationToken cancellationToken)
     {
         var language = _settingsService.GetScrapingSettings().Language;
         var gameName = ResolveNotifyGameName(plan);
-        var updatedLabels = ResolveMediaRefreshLabels(plan, gameElement)
+        // A real /addgames on the current card must never be label-less: announce the
+        // media whose CONTENT really changed AND the embedded metadata that actually
+        // differs — including region and lang (UMK3 → "boîte 2D, région").
+        var updatedLabels = ResolveLiveRefreshLabels(plan, gameElement, cancellationToken)
+            .Concat(ResolveMediaRefreshLabels(plan, gameElement))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(4)
             .ToArray();
@@ -3725,13 +3742,15 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
 
         foreach (var tagName in LiveVisibleMediaTags())
         {
-            if (HasElementValueDelta(gameElement, existingGameNode, tagName))
+            // content-aware: a lang/region alias with identical bytes is not a render
+            // change; a genuinely different image is
+            if (HasVisibleMediaContentDelta(gameElement, existingGameNode, tagName, systemRoot))
             {
                 return true;
             }
         }
 
-        if (allowCurrentVideoRefresh && HasElementValueDelta(gameElement, existingGameNode, "video"))
+        if (allowCurrentVideoRefresh && HasVisibleMediaContentDelta(gameElement, existingGameNode, "video", systemRoot))
         {
             return true;
         }
@@ -3760,6 +3779,77 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         var nextValue = nextElement.Value.Trim();
         var existingValue = existingNode.Element(tagName)?.Value?.Trim() ?? string.Empty;
         return !string.Equals(NormalizeForCompare(nextValue), NormalizeForCompare(existingValue), StringComparison.Ordinal);
+    }
+
+    /// <summary>Content-aware element delta: a path difference only counts when the two
+    /// files on disk actually differ. A regional alias resolving to identical bytes is
+    /// not a visible change and must not trigger /addgames.</summary>
+    private static bool HasVisibleMediaContentDelta(XElement nextNode, XElement existingNode, string tagName, string systemRoot)
+    {
+        var nextElement = nextNode.Element(tagName);
+        if (nextElement == null)
+        {
+            return false;
+        }
+
+        var nextValue = nextElement.Value.Trim();
+        var existingValue = existingNode.Element(tagName)?.Value?.Trim() ?? string.Empty;
+        if (string.Equals(NormalizeForCompare(nextValue), NormalizeForCompare(existingValue), StringComparison.Ordinal))
+        {
+            return false; // same path
+        }
+
+        // paths differ: a real render change only if the bytes differ
+        var previousDiskPath = ResolveEsRelativePath(systemRoot, existingValue);
+        var nextDiskPath = ResolveEsRelativePath(systemRoot, nextValue);
+        return !MediaFileContentComparer.AreEquivalent(previousDiskPath, nextDiskPath);
+    }
+
+    /// <summary>Adopts the previous media path whenever the new one is only a regional
+    /// alias with byte-identical content, so the delta / signature / render checks and
+    /// the announced payload all see no phantom change. Returns the neutralized tags.</summary>
+    private static List<string> NeutralizeEquivalentMediaAliases(
+        MediaProjectionPlan plan,
+        XElement gameElement,
+        CancellationToken cancellationToken)
+    {
+        var equivalentAliases = new List<string>();
+        var systemRoot = Path.Combine(RetroBatPaths.RomsRoot, plan.FrontendSystemId);
+        var relativeGamePath = ToGameRelativePath(plan.GamePath, systemRoot);
+        var existingGameNode = TryLoadExistingGameNode(plan.GamelistPath, relativeGamePath, cancellationToken);
+        if (existingGameNode == null)
+        {
+            return equivalentAliases;
+        }
+
+        foreach (var tagName in LiveVisibleMediaTags())
+        {
+            var nextElement = gameElement.Element(tagName);
+            var previousElement = existingGameNode.Element(tagName);
+            if (nextElement == null || previousElement == null)
+            {
+                continue;
+            }
+
+            var nextValue = nextElement.Value.Trim();
+            var previousValue = previousElement.Value.Trim();
+            var pathsAreDifferent = !string.Equals(
+                NormalizeForCompare(nextValue), NormalizeForCompare(previousValue), StringComparison.Ordinal);
+            if (!pathsAreDifferent)
+            {
+                continue;
+            }
+
+            var previousDiskPath = ResolveEsRelativePath(systemRoot, previousValue);
+            var nextDiskPath = ResolveEsRelativePath(systemRoot, nextValue);
+            if (MediaFileContentComparer.AreEquivalent(previousDiskPath, nextDiskPath))
+            {
+                nextElement.Value = previousElement.Value; // keep the initial path
+                equivalentAliases.Add(tagName);
+            }
+        }
+
+        return equivalentAliases;
     }
 
     private static bool HasLocalizedMetadataRefreshDelta(
@@ -7699,11 +7789,25 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         return true;
     }
 
+    // lang/region are the ROM's IDENTITY, resolved once by the ROM metadata resolver
+    // and applied only by ApplyPlanRomIdentityMetadata. The localized text bundle must
+    // never touch them — a screentitle-wor.png must not stamp the ROM as region "wr".
+    private static bool IsRomIdentityTag(string tagName)
+    {
+        return tagName.Equals("lang", StringComparison.OrdinalIgnoreCase) ||
+               tagName.Equals("region", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void ApplyBundleMetadata(XElement gameNode, LocalizedTextBundle? bundle, string requestedLanguage, bool includeRating = true)
     {
         var targetLanguage = ResolveTargetLanguage(bundle, requestedLanguage, gameNode);
         foreach (var tagName in MetadataTagNames())
         {
+            if (IsRomIdentityTag(tagName))
+            {
+                continue;
+            }
+
             if (!includeRating && string.Equals(tagName, "rating", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -7730,6 +7834,11 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         var updated = false;
         foreach (var tagName in MetadataTagNames())
         {
+            if (IsRomIdentityTag(tagName))
+            {
+                continue;
+            }
+
             updated |= IsLocalizedHumanTextField(tagName)
                 ? TrySetLocalizedSelectionElement(gameNode, tagName, bundle, targetLanguage)
                 : TrySetSelectionElement(gameNode, tagName, ResolveBundleField(bundle, tagName, targetLanguage));
@@ -7767,6 +7876,10 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
             .ToList();
         if (romRegions.Count == 0)
         {
+            // unknown region: stamp "wr" (world) and OVERWRITE whatever is there.
+            // User decision — a neutral world flag is better than keeping a false
+            // region (e.g. a stray "France"). The media-alias fixes (steps 2/4/5)
+            // mean this is a one-time legitimate correction, never a refresh loop.
             return "wr";
         }
 
@@ -7790,6 +7903,9 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
             .ToList();
         if (romLanguages.Count == 0)
         {
+            // unknown language: derive one from the region. Region is never empty now
+            // (it falls back to "wr"), so this yields a coherent default instead of
+            // leaving a stale/false language in place.
             return ResolveEsDisplayLanguageFromRegion(region);
         }
 
