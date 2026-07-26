@@ -226,6 +226,7 @@ public sealed class NelfePlayAgentService : BackgroundService
             Entitlements = payload.Entitlements?.Count ?? 0,
             LastPollUtc = DateTime.UtcNow,
             LastInstalled = installed,
+            PendingIntents = (payload.Intents?.Count ?? 0) - installed,
             LastError = null,
         };
 
@@ -290,60 +291,6 @@ public sealed class NelfePlayAgentService : BackgroundService
         }
     }
 
-    /// <summary>
-    /// Echange le code affiche sur nelfeplay.com contre le credential durable
-    /// de l'appareil. La cle publique part avec la demande ; la cle privee ne
-    /// quitte jamais la machine.
-    /// </summary>
-    public async Task<bool> PairAsync(string code, string label, CancellationToken cancellationToken)
-    {
-        using var client = CreateClient(credential: null);
-        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["code"] = code.Trim().ToUpperInvariant(),
-            ["label"] = label,
-            ["public_key"] = _device.ExportPublicKeyPem(),
-            ["key_algorithm"] = NelfePlayDeviceStore.KeyAlgorithm,
-        });
-
-        using var response = await client.PostAsync("/api/v1/agent/pair", form, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning("Nelfe Play : appairage refuse (HTTP {Status}).", (int)response.StatusCode);
-            return false;
-        }
-
-        var paired = await response.Content.ReadFromJsonAsync<PairResponse>(JsonOptions, cancellationToken);
-        if (paired?.Credential is not { Length: > 0 } credential)
-        {
-            return false;
-        }
-
-        _device.SavePairing(paired.DeviceId ?? string.Empty, credential);
-
-        // On epingle la cle publique de Nelfe Play : c'est elle qui permettra
-        // de refuser une licence expiree, destinee a une autre machine, ou
-        // retouchee. Sans elle, une licence ne serait qu'une cle.
-        try
-        {
-            using var keyResponse = await client.GetAsync("/api/v1/agent/license-key", cancellationToken);
-            if (keyResponse.IsSuccessStatusCode)
-            {
-                var key = await keyResponse.Content.ReadFromJsonAsync<LicenseKeyResponse>(JsonOptions, cancellationToken);
-                if (key?.PublicKey is { Length: > 0 } pem)
-                {
-                    _device.SaveLicensePublicKey(pem);
-                }
-            }
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-        {
-            _logger.LogWarning(exception, "Nelfe Play : cle publique de licence non recuperee.");
-        }
-
-        await PollAsync(cancellationToken);
-        return true;
-    }
 
     private async Task<bool> TryInstallAsync(HttpClient client, WorkIntent intent, CancellationToken cancellationToken)
     {
@@ -487,6 +434,10 @@ public sealed class NelfePlayAgentService : BackgroundService
             "The real ROM stays encrypted until launch, then is wiped.",
             "system=" + systemId,
             "slug=" + intent.Slug,
+            // L'edition suit jusqu'ici : une demo doit pouvoir se distinguer du
+            // jeu complet dans la liste du joueur, sans quoi il croit posseder
+            // ce qu'il n'a fait qu'essayer.
+            "edition=" + (string.IsNullOrWhiteSpace(intent.Edition) ? "game" : intent.Edition),
             "md5=" + header.RomMd5,
             "group=" + header.CanonicalGroup,
             string.Empty);
@@ -542,6 +493,17 @@ public sealed class NelfePlayAgentService : BackgroundService
         public int Entitlements { get; init; }
         public DateTime? LastPollUtc { get; init; }
         public int LastInstalled { get; init; }
+
+        /// <summary>
+        /// Ce qui reste a faire apres ce releve.
+        ///
+        /// Sans ce chiffre, « 0 installe » se lit comme un echec alors qu'il
+        /// veut presque toujours dire « rien a faire » — jeu deja pose, ou
+        /// demande deja reservee. Zero installe ET zero en attente est un
+        /// systeme au repos, pas un systeme en panne.
+        /// </summary>
+        public int PendingIntents { get; init; }
+
         public string? LastError { get; init; }
     }
 
@@ -573,6 +535,10 @@ public sealed class NelfePlayAgentService : BackgroundService
         public string Slug { get; set; } = string.Empty;
         public string SystemId { get; set; } = string.Empty;
         public string InstallMode { get; set; } = string.Empty;
+
+        /// <summary>« game » ou « demo ». Ce que le joueur a demande.</summary>
+        public string Edition { get; set; } = "game";
+
         public WorkPackage? Package { get; set; }
         public WorkLicense? License { get; set; }
     }
