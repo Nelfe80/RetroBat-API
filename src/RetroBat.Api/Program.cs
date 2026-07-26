@@ -177,6 +177,9 @@ if (!string.IsNullOrWhiteSpace(nelfePlayBaseUrl))
 {
     RetroBat.Api.Infrastructure.NelfePlayAgentService.BaseUrl = nelfePlayBaseUrl;
 }
+// Connexion d'une machine a un compte, sans code a recopier : la machine
+// demande, une personne connectee accorde.
+builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayLinkService>();
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayPlayReporter>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayPlayReporter>());
 // Déchiffrement au lancement puis effacement : rien de clair ne survit à la partie.
