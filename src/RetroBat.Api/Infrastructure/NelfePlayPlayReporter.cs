@@ -54,6 +54,18 @@ public sealed class NelfePlayPlayReporter : BackgroundService
     /// d'un titre qu'on joue.</summary>
     private const int MinimumSeconds = 20;
 
+    /// <summary>
+    /// En deca de cette duree, le jeu ne s'est pas lance : il a rendu la main
+    /// avant meme d'afficher quoi que ce soit. C'est le seul echec qu'une
+    /// machine puisse constater seule, et il vaut d'etre dit — un titre qui ne
+    /// demarre pas sur une configuration doit se voir sur la fiche.
+    ///
+    /// Entre ce seuil et <see cref="MinimumSeconds"/>, on ne conclut RIEN :
+    /// un joueur peut avoir quitte de lui-meme, et transformer son changement
+    /// d'avis en « incompatible » salirait le passeport d'un jeu qui marche.
+    /// </summary>
+    private const int FailedLaunchSeconds = 5;
+
     /// <summary>La file d'attente hors ligne ne grandit pas indefiniment : une
     /// machine coupee du reseau pendant des mois ne doit pas remplir son disque
     /// avec des parties que personne n'attend plus.</summary>
@@ -76,6 +88,7 @@ public sealed class NelfePlayPlayReporter : BackgroundService
 
     private readonly object _sync = new();
     private readonly Queue<PlayRecord> _pending = new();
+    private readonly Queue<EnvironmentRecord> _pendingEnvironments = new();
     private IDisposable? _subscription;
     private Play? _current;
     private string? _anonymousCredential;
@@ -179,7 +192,18 @@ public sealed class NelfePlayPlayReporter : BackgroundService
             // Une nouvelle partie ferme la precedente : Emulationstation ne
             // signale pas toujours la fin quand l'emulateur meurt seul.
             EndPlayLocked();
-            _current = new Play(systemId, gameName, gamePath, Stopwatch.StartNew());
+            // L'emulateur est lu ICI et relu a la fin : au demarrage, le
+            // journal de lancement n'est pas toujours analyse, et a la fin le
+            // contexte a parfois deja oublie la partie. Prendre les deux
+            // occasions evite de perdre l'information par simple mauvais
+            // timing.
+            _current = new Play(
+                systemId,
+                gameName,
+                gamePath,
+                running.Launch?.Emulator,
+                running.Launch?.Core,
+                Stopwatch.StartNew());
         }
     }
 
@@ -201,6 +225,9 @@ public sealed class NelfePlayPlayReporter : BackgroundService
         }
 
         var seconds = (int)play.Clock.Elapsed.TotalSeconds;
+
+        QueueEnvironmentLocked(play, seconds);
+
         if (seconds < MinimumSeconds)
         {
             return;
@@ -227,9 +254,11 @@ public sealed class NelfePlayPlayReporter : BackgroundService
         }
 
         PlayRecord[] batch;
+        var hasEnvironments = false;
         lock (_sync)
         {
-            if (_pending.Count == 0)
+            hasEnvironments = _pendingEnvironments.Count > 0;
+            if (_pending.Count == 0 && !hasEnvironments)
             {
                 return;
             }
@@ -238,6 +267,16 @@ public sealed class NelfePlayPlayReporter : BackgroundService
 
         var credential = await ResolveCredentialAsync(cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrEmpty(credential))
+        {
+            return;
+        }
+
+        // Les environnements partent AVANT les parties : ils sont rares, ils
+        // n'ont pas de sel a preserver, et une file de parties qui n'avance pas
+        // ne doit pas retarder ce que le passeport attend.
+        await FlushEnvironmentsAsync(credential, cancellationToken).ConfigureAwait(false);
+
+        if (batch.Length == 0)
         {
             return;
         }
@@ -268,6 +307,187 @@ public sealed class NelfePlayPlayReporter : BackgroundService
         }
 
         _logger?.LogDebug("Reported {Count} play(s) to NelfePlay", sent);
+    }
+
+    /// <summary>
+    /// Ce que cette partie apprend sur la compatibilite du titre.
+    ///
+    /// Seuls les jeux INSTALLES depuis Nelfe Play sont concernes : nous n'avons
+    /// rien a dire de la compatibilite d'une ROM que le joueur a apportee
+    /// lui-meme, et le serveur n'aurait aucune fiche ou la ranger.
+    ///
+    /// Une partie normale vaut « ca se lance ». Un abandon immediat vaut « ca
+    /// ne se lance pas ». Entre les deux, on se tait : l'ambiguite ne se
+    /// resout pas en choisissant la reponse qui arrange.
+    /// </summary>
+    private void QueueEnvironmentLocked(Play play, int seconds)
+    {
+        if (seconds >= FailedLaunchSeconds && seconds < MinimumSeconds)
+        {
+            return;
+        }
+
+        var slug = ResolveNelfePlaySlug(play.SystemId, play.GamePath);
+        if (string.IsNullOrEmpty(slug))
+        {
+            return;
+        }
+
+        var launch = _context.Ui.Running?.Launch;
+        var emulator = FirstNonEmpty(play.Emulator, launch?.Emulator);
+        var core = FirstNonEmpty(play.Core, launch?.Core);
+
+        if (_pendingEnvironments.Count >= MaxPending)
+        {
+            _pendingEnvironments.Dequeue();
+        }
+
+        _pendingEnvironments.Enqueue(new EnvironmentRecord(slug, emulator, core, seconds >= MinimumSeconds));
+    }
+
+    /// <summary>
+    /// Le titre Nelfe Play correspondant a ce fichier, s'il y en a un.
+    ///
+    /// La licence locale posee a l'installation porte le nom du fichier vise et
+    /// son systeme ; le dossier qui la contient porte le slug. C'est donc elle
+    /// qui fait le lien, et personne n'a besoin d'un registre de plus.
+    /// </summary>
+    private static string ResolveNelfePlaySlug(string? systemId, string? gamePath)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(gamePath))
+            {
+                return string.Empty;
+            }
+
+            var root = Path.Combine(AppContext.BaseDirectory, "state", "nelfeplay", "packages");
+            if (!Directory.Exists(root))
+            {
+                return string.Empty;
+            }
+
+            var fileName = Path.GetFileName(gamePath);
+            foreach (var directory in Directory.EnumerateDirectories(root))
+            {
+                var path = Path.Combine(directory, "license.json");
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+
+                using var document = JsonDocument.Parse(File.ReadAllText(path));
+                var root_ = document.RootElement;
+                var target = root_.TryGetProperty("TargetFileName", out var t) ? t.GetString() : null;
+                var system = root_.TryGetProperty("SystemId", out var s) ? s.GetString() : null;
+
+                if (string.Equals(target, fileName, StringComparison.OrdinalIgnoreCase)
+                    && (string.IsNullOrEmpty(systemId)
+                        || string.Equals(system, systemId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return Path.GetFileName(directory);
+                }
+            }
+
+            return string.Empty;
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string FirstNonEmpty(string? first, string? second)
+        => !string.IsNullOrWhiteSpace(first) ? first.Trim()
+            : !string.IsNullOrWhiteSpace(second) ? second.Trim()
+            : string.Empty;
+
+    /// <summary>
+    /// Envoie ce que la machine a constate de ses environnements.
+    ///
+    /// Le releve part avec les VERSIONS de la machine : RetroBat, RetroArch,
+    /// EmulationStation, Windows. Le materiel accompagne le releve mais ne le
+    /// definit pas — cote serveur, c'est la pile logicielle seule qui regroupe
+    /// les machines, faute de quoi aucune configuration n'atteindrait jamais
+    /// les trois exemplaires qui confirment un resultat.
+    /// </summary>
+    private async Task<bool> PostEnvironmentAsync(
+        string credential,
+        EnvironmentRecord record,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var machine = NelfePlayEnvironment.Current;
+
+            using var client = CreateClient();
+            client.DefaultRequestHeaders.Add("X-NelfePlay-Device", credential);
+
+            using var form = new FormUrlEncodedContent(new List<KeyValuePair<string, string>>
+            {
+                new("slug", record.Slug),
+                new("launched", record.Launched ? "1" : "0"),
+                new("emulator", record.Emulator),
+                new("core", record.Core),
+                new("retrobat", machine.RetroBat),
+                new("retroarch", machine.RetroArch),
+                new("emulationstation", machine.EmulationStation),
+                new("windows", machine.Windows),
+                new("cpu", machine.Cpu),
+                new("gpu", machine.Gpu),
+                new("ram_mb", machine.RamMb.ToString())
+            });
+
+            using var response = await client
+                .PostAsync("/api/v1/agent/environment", form, cancellationToken)
+                .ConfigureAwait(false);
+
+            // 400 : ce releve ne sera jamais accepte (titre inconnu du serveur,
+            // pile vide). Le garder bloquerait la file derriere lui pour
+            // toujours — on le jette en le declarant traite.
+            return response.IsSuccessStatusCode || (int)response.StatusCode == 400;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "Environment report failed");
+            return false;
+        }
+    }
+
+    private async Task FlushEnvironmentsAsync(string credential, CancellationToken cancellationToken)
+    {
+        EnvironmentRecord[] batch;
+        lock (_sync)
+        {
+            if (_pendingEnvironments.Count == 0)
+            {
+                return;
+            }
+            batch = _pendingEnvironments.ToArray();
+        }
+
+        var sent = 0;
+        foreach (var record in batch)
+        {
+            if (!await PostEnvironmentAsync(credential, record, cancellationToken).ConfigureAwait(false))
+            {
+                break;
+            }
+            sent++;
+        }
+
+        if (sent == 0)
+        {
+            return;
+        }
+
+        lock (_sync)
+        {
+            for (var i = 0; i < sent && _pendingEnvironments.Count > 0; i++)
+            {
+                _pendingEnvironments.Dequeue();
+            }
+        }
     }
 
     private async Task<bool> PostAsync(string credential, PlayRecord record, CancellationToken cancellationToken)
@@ -476,7 +696,17 @@ public sealed class NelfePlayPlayReporter : BackgroundService
         return context is GameState state ? state.Running : null;
     }
 
-    private sealed record Play(string? SystemId, string? GameName, string? GamePath, Stopwatch Clock);
+    private sealed record Play(
+        string? SystemId,
+        string? GameName,
+        string? GamePath,
+        string? Emulator,
+        string? Core,
+        Stopwatch Clock);
 
     private sealed record PlayRecord(string? SystemId, string? GameName, string? Md5, int Seconds);
+
+    /// <summary>Ce qu'une machine a constate d'un titre Nelfe Play : sur quelle
+    /// pile logicielle, et si le lancement a abouti.</summary>
+    private sealed record EnvironmentRecord(string Slug, string Emulator, string Core, bool Launched);
 }
