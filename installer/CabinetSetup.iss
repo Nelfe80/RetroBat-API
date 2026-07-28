@@ -23,7 +23,7 @@ DirExistsWarning=no
 AppendDefaultDirName=no
 PrivilegesRequired=lowest
 OutputDir=..\dist
-OutputBaseFilename=APIExpose-Cabinet-Setup-{#AppVersion}
+OutputBaseFilename=APIExpose-Cabinet-Setup
 Compression=lzma2
 SolidCompression=yes
 DisableProgramGroupPage=yes
@@ -38,8 +38,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 french.SelectDirDesc=Choisissez le dossier plugins\APIExpose de VOTRE RetroBat (ex. D:\RetroBat\plugins\APIExpose).
 
 [Files]
-Source: "..\RetroBat.Api.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\install-es-start-hook.bat"; DestDir: "{app}"; Flags: ignoreversion
+; APIExpose COMPLET (= contenu de full.7z) : moteur + .installer (hooks ES) +
+; resources (packs gamelist « Data Pack » + lighting) + wrapper + tools utilisés
+; (ffmpeg, imagemagick, translateLocally, mem-curator). JAMAIS media (bibliothèque
+; média locale, construite sur la borne), ni src/docs/wiki/state/.env/secrets/
+; sources de curation. Excludes calqués sur release.ps1 (+ appsettings à part).
+Source: "..\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; \
+    Excludes: "\src\*,\docs\*,\wiki\*,\media\*,\state\*,\artifacts\*,\dist\*,\installer\*,\.git\*,\.github\*,\.log\*,\.temp\*,\.cache\*,\.archive\*,\.versioning\*,\site\*,\package-installer\*,\projects-source\*,\resources\outputs\*,\resources\panels\*,\resources\controls\retroarch\mame\*,\resources\ra\*,\resources\history\history.db,\resources\colors\colors.ini,\resources\command\command.dat,\tools\mem-curator\*,\.env,\events.ini,\appsettings.json,\mkdocs.yml,\build.bat,\release.ps1,\CabinetSetup.iss,\publish-tmp\*,\panel_curator*,\profiles_db*,*.log,*.pdb,*.g.cs,__pycache__\*,*.pyc"
 ; La configuration de la borne n'est JAMAIS écrasée (clé API, options overlay)
 Source: "..\appsettings.json"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
 
