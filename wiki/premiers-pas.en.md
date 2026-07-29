@@ -1,6 +1,6 @@
 # Getting started
 
-Installing APIExpose requires **no installer**: download, extract, activate.
+Installing APIExpose is a single **installer**: download, run, activate.
 
 ## Before you begin
 
@@ -10,18 +10,17 @@ Installing APIExpose requires **no installer**: download, extract, activate.
 
 ## Installation
 
-1. Download **`APIExpose-x.y.z-full.7z`** from the [releases page](https://github.com/Nelfe80/RetroBat-APIExpose/releases) — it contains the program, the tools (ffmpeg, ImageMagick, translateLocally) and the full Data Pack.
-2. Extract the archive into your `RetroBat\plugins\` folder — you get:
+1. Download **[`APIExpose-Cabinet-Setup.exe`](https://github.com/Nelfe80/RetroBat-APIExpose/releases/latest/download/APIExpose-Cabinet-Setup.exe)** from the releases page — it contains the program, the tools (ffmpeg, ImageMagick, translateLocally) and the full Data Pack.
+2. Run the installer: it installs the plugin into `RetroBat\plugins\` and registers the EmulationStation start hook — you get:
 
     ```text
     RetroBat\plugins\APIExpose\
     ```
 
-3. Close RetroBat if it is running, then double-click **`install-es-start-hook.bat`**. A window confirms the hook installation.
-4. Start RetroBat as usual: APIExpose starts automatically, runs its startup work, then lets EmulationStation continue.
+3. Start RetroBat as usual: APIExpose starts automatically, runs its startup work, then lets EmulationStation continue.
 
 !!! note "What does the hook do?"
-    It only installs this script on the EmulationStation side, without modifying `updatestores.bat` or anything else in RetroBat:
+    The installer only registers this script on the EmulationStation side, without modifying `updatestores.bat` or anything else in RetroBat:
 
     ```text
     emulationstation\.emulationstation\scripts\start\APIExpose-start-wait.bat
