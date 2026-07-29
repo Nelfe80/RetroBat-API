@@ -43,6 +43,9 @@ $ex = @(
     "-x!$name\tools\mem-curator\baseline_*.json", "-x!$name\tools\mem-curator\staging*",
     "-x!$name\state",
     "-x!$name\docs", "-x!$name\src", "-x!$name\artifacts",
+    # dist = installeur Inno compile (des centaines de Mo) ; installer = sources .iss.
+    # Ni l'un ni l'autre ne va dans le pack runtime (sinon l'update.7z explose).
+    "-x!$name\dist", "-x!$name\installer",
     "-x!$name\wiki", "-x!$name\mkdocs.yml", "-x!$name\site",
     "-x!$name\build.bat", "-x!$name\release.ps1",
     '-xr!__pycache__', '-xr!*.log', '-xr!.vs'
@@ -61,7 +64,7 @@ Write-Host 'Construction update.7z...'
 
 # Controle anti-fuite : l'archive ne doit contenir ni .env, ni media, ni sources.
 $listing = & $sz l $full
-$leaks = $listing | Select-String '\.env|\\media\\|\\src\\|\\docs\\|package-installer|projects-source|\.git|panel_curator|profiles_db'
+$leaks = $listing | Select-String '\.env|\\media\\|\\src\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db'
 if ($leaks) { throw "FUITE DETECTEE dans l'archive : $($leaks[0])" }
 Write-Host 'Controle anti-fuite : OK'
 
