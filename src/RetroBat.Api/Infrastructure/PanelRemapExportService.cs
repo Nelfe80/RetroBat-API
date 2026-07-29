@@ -192,20 +192,36 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
         // The ES "CONTROL PANEL" selector (per system, per game) picks a named
         // system_template layout: e.g. snes.apiexpose_panel_snes = "6-Button:Score Master".
         var selectedLayout = ResolvePanelLayoutSelection(systemId, Path.GetFileName(gamePath));
-        var slots = new List<DynpanelSlot>(ReadTemplateLayoutSlots(dynpanel.Value, selectedLayout, buttonsPerPlayerSetting, CabinetButtons, out var layoutUsed));
-        if (slots.Count == 0)
+        var layoutUsed = "";
+        var dyn = dynpanel.Value;
+
+        // per-player slots: same layout/functions, but the physical→identity comes
+        // from THAT player's cabinet cartography (panels wired differently per Pico)
+        List<DynpanelSlot> SlotsForPlayer(int player)
         {
-            slots.AddRange(ReadDynpanelSlots(dynpanel.Value));
-            layoutUsed = "convention";
+            var carto = CabinetButtonsFor(player);
+            var s = new List<DynpanelSlot>(ReadTemplateLayoutSlots(dyn, selectedLayout, buttonsPerPlayerSetting, carto, out var used));
+            if (s.Count == 0)
+            {
+                s.AddRange(ReadDynpanelSlots(dyn));
+                used = "convention";
+            }
+
+            ParkUnusedIdentities(s, carto);
+            if (player == 1)
+            {
+                layoutUsed = used;
+            }
+
+            return s;
         }
 
-        if (slots.Count == 0)
+        var p1Slots = SlotsForPlayer(1);
+        if (p1Slots.Count == 0)
         {
             Trace($"skipped {systemId}: dynpanel has no slot mapping");
             return;
         }
-
-        ParkUnusedIdentities(slots);
 
         var coreFolder = ResolveRemapFolder(core);
         if (coreFolder is null)
@@ -216,7 +232,7 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
 
         var playerCount = Math.Clamp(ReadIntSetting("global.apiexpose.control_manager.player_count", 2), 1, 8);
         var targetDir = Path.Combine(RetroBatPaths.RetroBatRoot, "emulators", "retroarch", "config", "remaps", coreFolder);
-        var body = BuildRmp(slots, playerCount);
+        var body = BuildRmp(playerCount, player => player == 1 ? p1Slots : SlotsForPlayer(player));
 
         // RetroArch precedence: game > content-directory > core. The system panel is
         // expressed as a CONTENT-DIRECTORY remap (named after the roms folder), which
@@ -248,11 +264,13 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
     /// a 6-button layout): park them on R3, dead for every template layout.
     /// A dark LED must be a dead button.
     /// </summary>
-    private void ParkUnusedIdentities(List<DynpanelSlot> slots)
+    private void ParkUnusedIdentities(List<DynpanelSlot> slots) => ParkUnusedIdentities(slots, CabinetButtons);
+
+    private void ParkUnusedIdentities(List<DynpanelSlot> slots, IReadOnlyDictionary<int, string> cabinet)
     {
         var usedIdentities = slots.Select(s => s.LibretroButton).ToHashSet(StringComparer.Ordinal);
         var parkedCount = 0;
-        foreach (var identity in CabinetButtons.Values.Distinct())
+        foreach (var identity in cabinet.Values.Distinct())
         {
             if (!usedIdentities.Contains(identity))
             {
@@ -345,19 +363,33 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
 
         var buttonsPerPlayer = ReadIntSetting("global.apiexpose.control_manager.buttons_per_player", 6);
         var selectedLayout = ResolvePanelLayoutSelection(systemId, "");
-        var slots = new List<DynpanelSlot>(ReadTemplateLayoutSlots(dynpanel.Value, selectedLayout, buttonsPerPlayer, CabinetButtons, out var layoutUsed));
-        if (slots.Count == 0)
+        var layoutUsed = "";
+        var dyn = dynpanel.Value;
+
+        List<DynpanelSlot> SlotsForPlayer(int player)
         {
-            slots.AddRange(ReadDynpanelSlots(dynpanel.Value));
-            layoutUsed = "convention";
+            var carto = CabinetButtonsFor(player);
+            var s = new List<DynpanelSlot>(ReadTemplateLayoutSlots(dyn, selectedLayout, buttonsPerPlayer, carto, out var used));
+            if (s.Count == 0)
+            {
+                s.AddRange(ReadDynpanelSlots(dyn));
+                used = "convention";
+            }
+
+            ParkUnusedIdentities(s, carto);
+            if (player == 1)
+            {
+                layoutUsed = used;
+            }
+
+            return s;
         }
 
-        if (slots.Count == 0)
+        var p1Slots = SlotsForPlayer(1);
+        if (p1Slots.Count == 0)
         {
             return new RemapDeployItem(systemId, "skipped", "dynpanel has no slot mapping");
         }
-
-        ParkUnusedIdentities(slots);
 
         var coreFolder = ResolveRemapFolder(core);
         if (coreFolder is null)
@@ -367,7 +399,7 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
 
         var playerCount = Math.Clamp(ReadIntSetting("global.apiexpose.control_manager.player_count", 2), 1, 8);
         var targetDir = Path.Combine(RetroBatPaths.RetroBatRoot, "emulators", "retroarch", "config", "remaps", coreFolder);
-        var body = BuildRmp(slots, playerCount);
+        var body = BuildRmp(playerCount, player => player == 1 ? p1Slots : SlotsForPlayer(player));
         var contentDirName = ReadSystemRomsFolder(systemId) ?? systemId;
         var status = WriteGuarded(Path.Combine(targetDir, contentDirName + ".rmp"), body, systemId, contentDirName, $"deploy scope=content-dir layout={layoutUsed}");
         return new RemapDeployItem(systemId, status, $"layout={layoutUsed} file={coreFolder}\\{contentDirName}.rmp");
@@ -531,26 +563,66 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
     /// (ApiExpose:PanelRemapExport:CabinetButtons): if a RetroBat update changes the
     /// controller chain again, adjust the map — no rebuild.
     /// </summary>
-    private IReadOnlyDictionary<int, string> CabinetButtons
-    {
-        get
-        {
-            if (_cabinetButtonsCache is not null)
-            {
-                return _cabinetButtonsCache;
-            }
+    /// <summary>Player 1 / single-panel cabinet, used to build the slot set.</summary>
+    private IReadOnlyDictionary<int, string> CabinetButtons => CabinetButtonsFor(1);
 
-            var configured = new Dictionary<int, string>();
-            foreach (var child in _configuration.GetSection("ApiExpose:PanelRemapExport:CabinetButtons").GetChildren())
+    private readonly Dictionary<int, IReadOnlyDictionary<int, string>> _cabinetByPlayerCache = new();
+
+    /// <summary>
+    /// Cabinet cartography of ONE player's panel: each physical button → RetroPad
+    /// identity. Panels can be wired differently per player, so player 2's encoder
+    /// gets its own map. Resolution: CabinetButtonsByPlayer:{player} → the legacy
+    /// global CabinetButtons → the measured default. The guided cartography step
+    /// (LedManager Setup) writes CabinetButtonsByPlayer per Pico.
+    /// </summary>
+    private IReadOnlyDictionary<int, string> CabinetButtonsFor(int player)
+    {
+        if (_cabinetByPlayerCache.TryGetValue(player, out var cached))
+        {
+            return cached;
+        }
+
+        static Dictionary<int, string> Read(IConfiguration cfg, string path)
+        {
+            var map = new Dictionary<int, string>();
+            foreach (var child in cfg.GetSection(path).GetChildren())
             {
                 if (int.TryParse(child.Key, out var number) && number > 0 && !string.IsNullOrWhiteSpace(child.Value))
                 {
-                    configured[number] = child.Value.Trim().ToLowerInvariant();
+                    map[number] = child.Value.Trim().ToLowerInvariant();
                 }
             }
 
-            return _cabinetButtonsCache = configured.Count > 0 ? configured : DefaultCabinetButtons;
+            return map;
         }
+
+        // read the per-player map from the appsettings FILE directly: a freshly
+        // written cartography must be used immediately, and IConfiguration's reload
+        // of appsettings.json is asynchronous (stale right after the write).
+        var perPlayer = new Dictionary<int, string>();
+        foreach (var (physical, identity) in CabinetCartographyStore.Read(player))
+        {
+            if (int.TryParse(physical, out var n) && n > 0 && !string.IsNullOrWhiteSpace(identity))
+            {
+                perPlayer[n] = identity.Trim().ToLowerInvariant();
+            }
+        }
+
+        var resolved = perPlayer.Count > 0
+            ? perPlayer
+            : Read(_configuration, "ApiExpose:PanelRemapExport:CabinetButtons") is { Count: > 0 } global
+                ? global
+                : (Dictionary<int, string>)DefaultCabinetButtons;
+
+        _cabinetByPlayerCache[player] = resolved;
+        return resolved;
+    }
+
+    /// <summary>Clears the per-player cabinet cache after the cartography changes.</summary>
+    public void InvalidateCabinetCache()
+    {
+        _cabinetButtonsCache = null;
+        _cabinetByPlayerCache.Clear();
     }
 
     /// <summary>Reads the CONTROL PANEL selector: game override first, then system, empty = AUTO.</summary>
@@ -796,14 +868,19 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
         }
     }
 
-    private static string BuildRmp(IReadOnlyList<DynpanelSlot> slots, int playerCount)
+    /// <summary>
+    /// Builds the rmp, one player block at a time. Each player's slots are resolved
+    /// from THAT player's cabinet cartography, so a cabinet whose panels are wired
+    /// differently per player (different Picos / encoders) still remaps correctly.
+    /// </summary>
+    private static string BuildRmp(int playerCount, Func<int, IReadOnlyList<DynpanelSlot>> slotsForPlayer)
     {
         var sb = new StringBuilder();
         for (var player = 1; player <= playerCount; player++)
         {
             sb.AppendLine($"input_libretro_device_p{player} = \"1\"");
             sb.AppendLine($"input_player{player}_analog_dpad_mode = \"0\"");
-            foreach (var slot in slots)
+            foreach (var slot in slotsForPlayer(player))
             {
                 sb.AppendLine($"input_player{player}_btn_{slot.LibretroButton} = \"{slot.RetropadId}\"");
             }
@@ -811,6 +888,10 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
 
         return sb.ToString();
     }
+
+    /// <summary>Same wiring for every player (single-panel cabinets, FBNeo path).</summary>
+    private static string BuildRmp(IReadOnlyList<DynpanelSlot> slots, int playerCount)
+        => BuildRmp(playerCount, _ => slots);
 
     private string WriteGuarded(string targetPath, string body, string systemId, string game, string reason)
     {

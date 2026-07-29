@@ -324,14 +324,14 @@ public class PanelsController : ControllerBase
     [HttpPost("controls/mamecfg/deploy")]
     [ProducesResponseType(typeof(MameCfgDeployService.Report), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public IActionResult DeployMameCfg([FromQuery] string? rom = null, [FromQuery] int offset = 0, [FromQuery] int limit = 0)
+    public IActionResult DeployMameCfg([FromQuery] string? rom = null, [FromQuery] int offset = 0, [FromQuery] int limit = 0, [FromQuery] bool replaceInputs = false)
     {
         if (_mameCfgDeploy.IsMameRunning())
         {
             return Conflict(new { message = "MAME is running: close it before deploying (it rewrites cfg files at exit)." });
         }
 
-        return Ok(_mameCfgDeploy.Deploy(rom, offset, limit));
+        return Ok(_mameCfgDeploy.Deploy(rom, offset, limit, replaceInputs));
     }
 
     /// <summary>
@@ -369,6 +369,51 @@ public class PanelsController : ControllerBase
     [ProducesResponseType(typeof(FbneoRmpDeployService.Report), StatusCodes.Status200OK)]
     public IActionResult DeployFbneoRmp([FromQuery] string? rom = null, [FromQuery] int offset = 0, [FromQuery] int limit = 0)
         => Ok(_fbneoRmpDeploy.Deploy(rom, offset, limit));
+
+    /// <summary>
+    /// Saves one player's guided-measured cabinet cartography (physical button →
+    /// RetroPad identity) into appsettings.json, invalidates the rmp/cfg caches and
+    /// returns the PREVIOUS map so the caller can offer a one-click reverse. Does
+    /// not regenerate — the caller drives regeneration with progress afterwards.
+    /// </summary>
+    /// <response code="200">Saved; returns previous map for reverse.</response>
+    /// <response code="400">Unknown identity or bad player.</response>
+    [HttpPost("controls/cartography")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public IActionResult SaveCartography([FromQuery] int player, [FromBody] Dictionary<string, string> map)
+    {
+        if (player is < 1 or > 8)
+        {
+            return BadRequest(new { message = "player must be 1..8." });
+        }
+
+        foreach (var (physical, identity) in map)
+        {
+            if (!int.TryParse(physical, out var n) || n < 1)
+            {
+                return BadRequest(new { message = $"physical key '{physical}' is not a positive number." });
+            }
+
+            if (!CabinetCartographyStore.ValidIdentities.Contains(identity))
+            {
+                return BadRequest(new { message = $"identity '{identity}' is not a RetroPad identity." });
+            }
+        }
+
+        var previous = CabinetCartographyStore.Read(player);
+        CabinetCartographyStore.Write(player, map);
+        _remapExport.InvalidateCabinetCache();
+        _mameCfgDeploy.InvalidateCabinetCache();
+
+        return Ok(new { player, saved = map.Count, previous });
+    }
+
+    /// <summary>The cartography currently stored for a player (empty = falls back to defaults).</summary>
+    [HttpGet("controls/cartography")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult GetCartography([FromQuery] int player)
+        => Ok(new { player, map = CabinetCartographyStore.Read(player) });
 
     /// <summary>
     /// Current wiring of a game's deployed MAME cfg, expressed in physical panel
