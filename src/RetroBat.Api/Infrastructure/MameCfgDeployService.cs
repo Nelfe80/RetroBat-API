@@ -50,50 +50,96 @@ public sealed class MameCfgDeployService
     /// buttons really emit over DirectInput (e.g. B6 emits BUTTON8 on the
     /// standard wiring, not BUTTON6).
     /// </summary>
-    private IReadOnlyDictionary<int, int> JoycodeByPhysical
-    {
-        get
-        {
-            if (_joycodeByPhysicalCache is not null)
-            {
-                return _joycodeByPhysicalCache;
-            }
+    /// <summary>Player 1 cabinet, for the inverse-wiring readback and P1 patches.</summary>
+    private IReadOnlyDictionary<int, int> JoycodeByPhysical => JoycodeByPhysicalFor(1);
 
-            var map = new Dictionary<int, int>();
-            foreach (var child in _configuration.GetSection("ApiExpose:PanelRemapExport:CabinetButtons").GetChildren())
+    private readonly Dictionary<int, IReadOnlyDictionary<int, int>> _joycodeByPlayerCache = new();
+
+    /// <summary>
+    /// physical button N → DirectInput JOYCODE button number, for ONE player's
+    /// panel. Cabinets can wire their P1 and P2 panels/encoders differently, so
+    /// JOYCODE_2 tokens are translated with player 2's cartography
+    /// (CabinetButtonsByPlayer:2), falling back to the global map then the default.
+    /// </summary>
+    private IReadOnlyDictionary<int, int> JoycodeByPhysicalFor(int player)
+    {
+        if (_joycodeByPlayerCache.TryGetValue(player, out var cached))
+        {
+            return cached;
+        }
+
+        Dictionary<int, int> Build(string path)
+        {
+            var m = new Dictionary<int, int>();
+            foreach (var child in _configuration.GetSection(path).GetChildren())
             {
                 if (int.TryParse(child.Key, out var physical) && physical > 0
                     && child.Value is { } identity && StandardRawByIdentity.TryGetValue(identity.Trim(), out var raw))
                 {
-                    map[physical] = raw + 1;
+                    m[physical] = raw + 1;
                 }
             }
 
-            if (map.Count == 0)
-            {
-                // measured default cabinet: 1:b 2:a 3:y 4:x 5:l2 6:r2 7:l 8:r
-                map = new Dictionary<int, int> { [1] = 1, [2] = 2, [3] = 4, [4] = 3, [5] = 7, [6] = 8, [7] = 5, [8] = 6 };
-            }
-
-            return _joycodeByPhysicalCache = map;
+            return m;
         }
+
+        // read the per-player map from the appsettings FILE directly, so a freshly
+        // written cartography is used at once (IConfiguration reload is async/stale)
+        var map = new Dictionary<int, int>();
+        foreach (var (physical, identity) in CabinetCartographyStore.Read(player))
+        {
+            if (int.TryParse(physical, out var n) && n > 0
+                && StandardRawByIdentity.TryGetValue(identity.Trim(), out var raw))
+            {
+                map[n] = raw + 1;
+            }
+        }
+
+        if (map.Count == 0)
+        {
+            map = Build("ApiExpose:PanelRemapExport:CabinetButtons");
+        }
+
+        if (map.Count == 0)
+        {
+            // measured default cabinet: 1:b 2:a 3:y 4:x 5:l2 6:r2 7:l 8:r
+            map = new Dictionary<int, int> { [1] = 1, [2] = 2, [3] = 4, [4] = 3, [5] = 7, [6] = 8, [7] = 5, [8] = 6 };
+        }
+
+        _joycodeByPlayerCache[player] = map;
+        return map;
+    }
+
+    /// <summary>Clears the per-player cabinet cache after the cartography changes.</summary>
+    public void InvalidateCabinetCache()
+    {
+        _joycodeByPhysicalCache = null;
+        _joycodeByPlayerCache.Clear();
     }
 
     /// <summary>Rewrites the pack's JOYCODE_x_BUTTONn tokens (n = physical slot,
-    /// identity-authored) into the button numbers the cabinet really emits.</summary>
+    /// identity-authored) into the button numbers the cabinet really emits — using
+    /// the cartography of the player the JOYCODE index refers to.</summary>
     private string TranslateJoycodes(string sequence)
     {
         return Regex.Replace(sequence, @"JOYCODE_(\d+)_BUTTON(\d+)", match =>
         {
+            var joyIndex = int.TryParse(match.Groups[1].Value, out var ji) && ji >= 1 ? ji : 1;
             var physical = int.Parse(match.Groups[2].Value);
-            return JoycodeByPhysical.TryGetValue(physical, out var button)
+            return JoycodeByPhysicalFor(joyIndex).TryGetValue(physical, out var button)
                 ? $"JOYCODE_{match.Groups[1].Value}_BUTTON{button}"
                 : match.Value;
         });
     }
 
-    /// <summary>Applies TranslateJoycodes to every input sequence of a pack document.</summary>
-    private void TranslatePackDocument(XDocument pack)
+    /// <summary>
+    /// Applies the cabinet translation to every input sequence of a pack document.
+    /// Face/shoulder buttons (P{p}_BUTTON{k}) are PLACED from the game's dynpanel —
+    /// the same authority the RetroArch rmp uses — so MAME matches the LEDs and
+    /// RetroArch instead of the pack's own (X/Y-swapped) slot authoring. Every other
+    /// port keeps the pack's slot, translated through the cartography as before.
+    /// </summary>
+    private void TranslatePackDocument(XDocument pack, string? rom = null)
     {
         var input = pack.Root?.Element("system")?.Element("input");
         if (input is null)
@@ -101,10 +147,96 @@ public sealed class MameCfgDeployService
             return;
         }
 
-        foreach (var seq in input.Elements("port").Select(p => p.Element("newseq")).Where(s => s is not null))
+        var dynSlots = rom is null ? null : DynpanelButtonSlots(rom);
+
+        foreach (var port in input.Elements("port"))
         {
-            seq!.Value = TranslateJoycodes(seq.Value);
+            var seq = port.Element("newseq");
+            if (seq is null)
+            {
+                continue;
+            }
+
+            var type = (string?)port.Attribute("type") ?? "";
+            var buttonMatch = Regex.Match(type, @"^P(\d+)_BUTTON(\d+)$");
+            if (dynSlots is not null && buttonMatch.Success
+                && int.TryParse(buttonMatch.Groups[1].Value, out var player)
+                && int.TryParse(buttonMatch.Groups[2].Value, out var button)
+                && dynSlots.TryGetValue((player, button), out var slot)
+                && JoycodeByPhysicalFor(player).TryGetValue(slot, out var joycodeButton))
+            {
+                // dynpanel-placed: rewrite this port's joystick token to the slot the
+                // LED lights, keeping any keyboard/other tokens intact
+                seq.Value = Regex.Replace(seq.Value, $@"JOYCODE_{player}_BUTTON\d+", $"JOYCODE_{player}_BUTTON{joycodeButton}");
+                continue;
+            }
+
+            seq.Value = TranslateJoycodes(seq.Value);
         }
+    }
+
+    /// <summary>
+    /// Reads the game dynpanel (resources/dynpanels/games/{rom}.json) into a
+    /// (player, MAME game-button k) → panel_slot map. This is the placement the LEDs
+    /// and the rmp use; the MAME cfg is realigned onto it. Returns empty when the game
+    /// has no dynpanel (its pack placement is then left untouched).
+    /// </summary>
+    private static IReadOnlyDictionary<(int Player, int Button), int> DynpanelButtonSlots(string rom)
+    {
+        var map = new Dictionary<(int, int), int>();
+        var dir = Path.Combine(RetroBatPaths.PluginRoot, "resources", "dynpanels", "games");
+        var path = Directory.Exists(dir)
+            ? Directory.EnumerateFiles(dir, rom + ".json", SearchOption.AllDirectories).FirstOrDefault()
+            : null;
+        if (path is null)
+        {
+            return map;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            if (!doc.RootElement.TryGetProperty("players", out var players))
+            {
+                return map;
+            }
+
+            foreach (var playerEntry in players.EnumerateObject())
+            {
+                if (!int.TryParse(playerEntry.Name, out var player)
+                    || !playerEntry.Value.TryGetProperty("layouts", out var layouts))
+                {
+                    continue;
+                }
+
+                // prefer the 8-Button layout, else the first — the slot for a given
+                // game button is the same across layouts for the X/Y realignment
+                var layout = layouts.TryGetProperty("8-Button", out var eight)
+                    ? eight
+                    : layouts.EnumerateObject().Select(p => p.Value).FirstOrDefault();
+                if (layout.ValueKind != System.Text.Json.JsonValueKind.Object
+                    || !layout.TryGetProperty("buttons", out var buttons))
+                {
+                    continue;
+                }
+
+                foreach (var button in buttons.EnumerateObject())
+                {
+                    if (int.TryParse(button.Name, out var k)
+                        && button.Value.TryGetProperty("panel_slot", out var ps)
+                        && ps.TryGetInt32(out var slot))
+                    {
+                        map[(player, k)] = slot;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // malformed dynpanel: leave the pack placement untouched
+        }
+
+        return map;
     }
 
     /// <summary>
@@ -275,7 +407,7 @@ public sealed class MameCfgDeployService
         if (File.Exists(packPath))
         {
             var pack = XDocument.Load(packPath);
-            TranslatePackDocument(pack);
+            TranslatePackDocument(pack, rom);
             ApplyInputPatches(pack, LoadInputPatches(rom));
             Harvest(pack, overwrite: false);
         }
@@ -355,7 +487,7 @@ public sealed class MameCfgDeployService
     /// Deploys one rom's cfg, or the pack when rom is null — optionally a slice of
     /// it (offset/limit) so a client can chunk the run and show real progress.
     /// </summary>
-    public Report Deploy(string? rom = null, int offset = 0, int limit = 0)
+    public Report Deploy(string? rom = null, int offset = 0, int limit = 0, bool replaceInputs = false)
     {
         lock (_deployLock)
         {
@@ -380,13 +512,13 @@ public sealed class MameCfgDeployService
             var items = new List<Item>();
             foreach (var entry in roms)
             {
-                items.Add(DeployRom(entry));
+                items.Add(DeployRom(entry, replaceInputs));
             }
 
             return new Report(
                 items.Count,
                 items.Count(i => i.Status == "written"),
-                items.Count(i => i.Status == "merged"),
+                items.Count(i => i.Status is "merged" or "rewired"),
                 items.Count(i => i.Status == "up-to-date"),
                 items.Count(i => i.Status is "failed" or "missing"),
                 items.Where(i => i.Status != "up-to-date").ToList(),
@@ -410,7 +542,7 @@ public sealed class MameCfgDeployService
             .ToArray();
     }
 
-    private Item DeployRom(string rom)
+    private Item DeployRom(string rom, bool replaceInputs = false)
     {
         var packPath = Path.Combine(PackDir, rom + ".cfg");
         if (!File.Exists(packPath))
@@ -427,7 +559,7 @@ public sealed class MameCfgDeployService
             {
                 Directory.CreateDirectory(TargetDir);
                 var fresh = XDocument.Load(packPath);
-                TranslatePackDocument(fresh);
+                TranslatePackDocument(fresh, rom);
                 ApplyInputPatches(fresh, inputPatches);
                 fresh.Save(targetPath);
                 return new Item(rom, "written", "deployed from pack");
@@ -435,10 +567,10 @@ public sealed class MameCfgDeployService
 
             var pack = XDocument.Load(packPath);
             var packRaw = XDocument.Load(packPath);
-            TranslatePackDocument(pack);
+            TranslatePackDocument(pack, rom);
             var forcedTypes = ApplyInputPatches(pack, inputPatches);
             var target = XDocument.Load(targetPath);
-            var changes = MergeInputPorts(pack, packRaw, target, forcedTypes);
+            var changes = MergeInputPorts(pack, packRaw, target, forcedTypes, replaceInputs);
             if (changes == 0)
             {
                 return new Item(rom, "up-to-date", "");
@@ -446,7 +578,7 @@ public sealed class MameCfgDeployService
 
             File.Copy(targetPath, targetPath + ".bak", overwrite: true);
             target.Save(targetPath);
-            return new Item(rom, "merged", $"{changes} port(s)");
+            return new Item(rom, replaceInputs ? "rewired" : "merged", $"{changes} port(s)");
         }
         catch (Exception ex)
         {
@@ -565,7 +697,7 @@ public sealed class MameCfgDeployService
         return forced;
     }
 
-    private static int MergeInputPorts(XDocument pack, XDocument packRaw, XDocument target, HashSet<string>? forcedTypes = null)
+    private static int MergeInputPorts(XDocument pack, XDocument packRaw, XDocument target, HashSet<string>? forcedTypes = null, bool replaceInputs = false)
     {
         var packInput = pack.Root?.Element("system")?.Element("input");
         var packRawInput = packRaw.Root?.Element("system")?.Element("input");
@@ -659,6 +791,15 @@ public sealed class MameCfgDeployService
 
             if (existingTokens.Any(t => t.StartsWith("JOYCODE_", StringComparison.OrdinalIgnoreCase)))
             {
+                // A cartography change must reach panel-bound ports the normal merge
+                // preserves: replace their joystick sequence with the freshly
+                // translated pack form (keyboard-only ports below are untouched).
+                if (replaceInputs && !TokensEqual(existingTokens, translatedTokens))
+                {
+                    existingSeq.Value = string.Join(" OR ", translatedTokens);
+                    changes++;
+                }
+
                 continue;
             }
 
