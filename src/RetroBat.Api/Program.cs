@@ -182,6 +182,10 @@ if (!string.IsNullOrWhiteSpace(nelfePlayBaseUrl))
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayLinkService>();
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayPlayReporter>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayPlayReporter>());
+// Scoring certifié — enrôlement de la clé d'appareil, ticket de session, capture
+// attestation + score (soumission du passeport = étape 3c).
+builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayScoringReporter>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayScoringReporter>());
 // Déchiffrement au lancement puis effacement : rien de clair ne survit à la partie.
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayLaunchService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayLaunchService>());
