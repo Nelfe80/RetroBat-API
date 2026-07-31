@@ -28,3 +28,7 @@ Les appels distants nécessitent des identifiants valides et ScreenScraper doit 
 ## Où sont les logs ?
 
 Dans le dossier `.log\` du plugin, organisés par fonctionnalité (imports de packs, menus ES, payloads). C'est la première chose à joindre à une demande d'aide sur GitHub.
+
+## Toujours bloqué ?
+
+Ouvrez un ticket sur le [suivi des problèmes d'APIExpose](https://github.com/Nelfe80/RetroBat-APIExpose/issues) en joignant les logs du dossier `.log\`.
