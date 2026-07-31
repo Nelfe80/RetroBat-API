@@ -115,6 +115,9 @@ public class RetroArchRuntimeSignal
     public string Color { get; set; } = string.Empty;
     /// <example>1</example>
     public int? Player { get; set; }
+    /// <summary>N° de frame du wrapper à l'émission (scoring : corrélation checkpoint↔score).</summary>
+    /// <example>6900</example>
+    public long? Frame { get; set; }
     public string RawLine { get; set; } = string.Empty;
     /// <example>2026-04-28T21:00:00.123Z</example>
     public DateTime Ts { get; set; } = DateTime.UtcNow;
