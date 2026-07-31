@@ -1,6 +1,6 @@
 # Welcome
 
-**APIExpose** is the engine that gives your RetroBat installation superpowers: automatic media, localized gamelists, ROM packs, smart scraping, collections, arcade data and a real-time local API that feeds the [MarqueeManager](https://nelfe80.github.io/RetroBat-Marquee-Manager/) and [LedManager](https://nelfe80.github.io/RetroBat-Led-Manager/) plugins.
+**APIExpose** is the engine that gives your RetroBat installation superpowers: automatic media, localized gamelists, ROM packs, smart scraping, collections, arcade data and a real-time local API that feeds the [MarqueeManager](https://nelfe80.github.io/RetroBat-Marquee-Manager/en/) and [LedManager](https://nelfe80.github.io/RetroBat-Led-Manager/en/) plugins.
 
 ![APIExpose for RetroBat](assets/accueil.jpg)
 

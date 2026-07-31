@@ -28,3 +28,7 @@ Remote calls need valid credentials and ScreenScraper must be reachable. Check t
 ## Where are the logs?
 
 In the plugin's `.log\` folder, organized by feature (pack imports, ES menus, payloads). It is the first thing to attach to a help request on GitHub.
+
+## Still stuck?
+
+Open a ticket on the [APIExpose issue tracker](https://github.com/Nelfe80/RetroBat-APIExpose/issues), attaching the logs from the `.log\` folder.
