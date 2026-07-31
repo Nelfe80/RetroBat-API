@@ -281,6 +281,15 @@ public class RetroArchWrapperProvider : IProvider
             return;
         }
 
+        // Procès-verbal de fin de partie (checkpoints + timing + intégrité).
+        const string sessionMarker = "[LISTENER SESSION] ";
+        var sessionAt = line.IndexOf(sessionMarker, StringComparison.Ordinal);
+        if (sessionAt >= 0)
+        {
+            await PublishListenerSessionAsync(line[(sessionAt + sessionMarker.Length)..].Trim());
+            return;
+        }
+
         var definition = ResolveDefinition();
         var parsed = ParseRuntimeSignal(line);
 
@@ -395,6 +404,33 @@ public class RetroArchWrapperProvider : IProvider
         catch (JsonException ex)
         {
             _logger?.LogDebug(ex, "Scoring : attestation JSON illisible : {Json}", json);
+        }
+    }
+
+    // Publie le procès-verbal de session (fin de partie) sur le bus. Le JSON brut est
+    // transporté tel quel ; le service de scoring l'agrège dans le passeport.
+    private async Task PublishListenerSessionAsync(string json)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(json); // valide le JSON avant publication
+            var definition = ResolveDefinition();
+            await _eventBus.PublishAsync(new EventEnvelope
+            {
+                Type = "scoring.listener.session",
+                Payload = new
+                {
+                    Source = "retroarch.wrapper.pipe",
+                    definition.SystemId,
+                    definition.Rom,
+                    Session = json,
+                }
+            });
+            _logger?.LogDebug("Scoring : session listener publiée ({Len} octets)", json.Length);
+        }
+        catch (JsonException ex)
+        {
+            _logger?.LogDebug(ex, "Scoring : session JSON illisible : {Json}", json);
         }
     }
 
