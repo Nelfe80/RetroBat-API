@@ -34,7 +34,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private readonly object _sync = new();
 
     private string? _enrolledKeyId;
-    private string? _listenerSha256, _coreSha256, _memSha256, _wrapperVersion;
+    private string? _listenerSha256, _coreSha256, _memSha256, _contentSha256, _wrapperVersion;
     private JsonElement? _ticket;
     private long _lastFrame;
     private long? _finalTotal;
@@ -106,7 +106,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     {
         lock (_sync)
         {
-            _listenerSha256 = _coreSha256 = _memSha256 = _wrapperVersion = null;
+            _listenerSha256 = _coreSha256 = _memSha256 = _contentSha256 = _wrapperVersion = null;
             _ticket = null;
             _lastFrame = 0;
             _finalTotal = null;
@@ -122,6 +122,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             _listenerSha256 = GetString(root, "ListenerSha256");
             _coreSha256 = GetString(root, "CoreSha256");
             _memSha256 = GetString(root, "MemSha256");
+            _contentSha256 = GetString(root, "ContentSha256");
             _wrapperVersion = GetString(root, "WrapperVersion");
         }
     }
@@ -176,13 +177,13 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         var deviceId = _devices.DeviceId;
         if (string.IsNullOrEmpty(credential) || string.IsNullOrEmpty(deviceId)) return;
 
-        string? listenerSha, coreSha, memSha, wrapperVersion;
+        string? listenerSha, coreSha, memSha, contentSha, wrapperVersion;
         long? finalTotal;
         List<(long frame, long total)> trajectory;
         lock (_sync)
         {
             listenerSha = _listenerSha256; coreSha = _coreSha256; memSha = _memSha256;
-            wrapperVersion = _wrapperVersion; finalTotal = _finalTotal;
+            contentSha = _contentSha256; wrapperVersion = _wrapperVersion; finalTotal = _finalTotal;
             trajectory = new List<(long, long)>(_trajectory);
         }
 
@@ -217,7 +218,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         {
             passport = BuildPassport(
                 systemId, romGroup, sessionJson, ticket.Value, profile.Value,
-                deviceId!, deviceKey, listenerSha, coreSha, memSha, wrapperVersion,
+                deviceId!, deviceKey, listenerSha, coreSha, memSha, contentSha, wrapperVersion,
                 finalTotal.Value, trajectory);
             var body = passport.DeepClone()!.AsObject();
             body.Remove("signature");
@@ -235,7 +236,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private JsonObject BuildPassport(
         string systemId, string romGroup, string sessionJson, JsonElement ticket, JsonElement profile,
         string deviceId, CngDeviceKey deviceKey, string listenerSha, string? coreSha, string? memSha,
-        string? wrapperVersion, long finalTotal, List<(long frame, long total)> trajectory)
+        string? contentSha, string? wrapperVersion, long finalTotal, List<(long frame, long total)> trajectory)
     {
         var session = JsonNode.Parse(sessionJson)!.AsObject();
         long frameCount = (long?)session["frame_count"] ?? 0;
@@ -254,24 +255,27 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         string resultSource = metricProfile.ValueKind == JsonValueKind.Object && metricProfile.TryGetProperty("result_source", out var rs)
             ? (rs.GetString() ?? "final") : "final";
 
-        // Checkpoints : le squelette temporel du listener (frame + monotonic_ms) reçoit
-        // le score AGRÉGÉ correspondant à sa frame (dernier total connu ≤ frame).
+        // Checkpoints : squelette temporel du listener (frame + monotonic_ms) + le score
+        // AGRÉGÉ à cette frame (dernier total ≤ frame) porté dans `metric` (string). Le
+        // dernier checkpoint porte l'événement `game_end` (exigé par le vérifieur), et son
+        // metric doit égaler metric.value (result_source=final).
         var checkpoints = new JsonArray();
-        if (session["checkpoints"] is JsonArray cps)
+        var srcCps = session["checkpoints"] as JsonArray ?? new JsonArray();
+        for (var i = 0; i < srcCps.Count; i++)
         {
-            foreach (var cp in cps)
-            {
-                long f = (long?)cp!["frame"] ?? 0;
-                long ms = (long?)cp["monotonic_ms"] ?? 0;
-                long score = 0;
-                foreach (var (tf, tt) in trajectory) { if (tf <= f) score = tt; else break; }
-                checkpoints.Add(new JsonObject
-                {
-                    ["monotonic_ms"] = ms,
-                    ["frame"] = f,
-                    ["score"] = score.ToString(),
-                });
-            }
+            long f = (long?)srcCps[i]!["frame"] ?? 0;
+            long ms = (long?)srcCps[i]!["monotonic_ms"] ?? 0;
+            long score = 0;
+            foreach (var (tf, tt) in trajectory) { if (tf <= f) score = tt; else break; }
+            var last = i == srcCps.Count - 1;
+            var node = new JsonObject { ["monotonic_ms"] = ms, ["frame"] = f, ["metric"] = (last ? finalTotal : score).ToString() };
+            if (last) node["event"] = "game_end";
+            checkpoints.Add(node);
+        }
+        // Filet : le vérifieur exige au moins un checkpoint game_end.
+        if (checkpoints.Count == 0)
+        {
+            checkpoints.Add(new JsonObject { ["monotonic_ms"] = monotonicMs, ["frame"] = frameCount, ["metric"] = finalTotal.ToString(), ["event"] = "game_end" });
         }
         var checkpointsDigest = Crypto.Sha256Hex(Jcs.CanonicalBytes(checkpoints));
 
@@ -309,7 +313,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             ["software"] = new JsonObject { ["modules"] = modules, ["modules_digest"] = modulesDigest },
             ["artifacts"] = new JsonObject
             {
-                ["core"] = Triple(coreSha), ["content"] = Triple(null), ["mem"] = Triple(memSha),
+                ["core"] = Triple(coreSha), ["content"] = Triple(contentSha), ["mem"] = Triple(memSha),
                 ["core_options_digest"] = Crypto.Sha256Hex("core-options@default"),
                 ["bios"] = new JsonObject { ["mode"] = "none" },
             },
