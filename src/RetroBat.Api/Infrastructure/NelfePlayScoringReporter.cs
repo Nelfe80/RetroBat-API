@@ -171,11 +171,16 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         var systemId = GetString(payload, "SystemId") ?? "";
         var romGroup = GetString(payload, "Rom") ?? "";
         var sessionJson = GetString(payload, "Session");
+        Trace($"session reçue sys={systemId} rom={romGroup} sessionLen={sessionJson?.Length ?? -1}");
         if (sessionJson is null) return;
 
-        var credential = _devices.GetCredential();
-        var deviceId = _devices.DeviceId;
-        if (string.IsNullOrEmpty(credential) || string.IsNullOrEmpty(deviceId)) return;
+        // Appairé OU anonyme : le scoring accepte les deux (anonyme = score « anonyme »).
+        var credential = ResolveCredential();
+        if (string.IsNullOrEmpty(credential))
+        {
+            Trace("STOP: pas de credential (ni appairé ni anonyme)");
+            return;
+        }
 
         string? listenerSha, coreSha, memSha, contentSha, wrapperVersion;
         long? finalTotal;
@@ -189,16 +194,17 @@ public sealed class NelfePlayScoringReporter : BackgroundService
 
         // Rien à certifier sans score ni attestation : on s'arrête AVANT de consommer
         // quoi que ce soit (démo, navigation, jeu non joué).
+        Trace($"état: listener={listenerSha is not null} core={coreSha is not null} content={contentSha is not null} finalTotal={finalTotal} trajPts={trajectory.Count} inDemo={_inDemo}");
         if (listenerSha is null || finalTotal is null)
         {
-            _logger?.LogDebug("Scoring : pas de score/attestation — pas de soumission.");
+            Trace("STOP: pas de score/attestation");
             return;
         }
 
         var profile = await FetchProfileAsync(credential!, systemId, romGroup, cancellationToken).ConfigureAwait(false);
         if (profile is null)
         {
-            _logger?.LogInformation("Scoring : {Rom} non ouvert au scoring — passeport non soumis.", romGroup);
+            Trace($"STOP: profil {romGroup} non ouvert (fetch null)");
             return;
         }
 
@@ -208,9 +214,18 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         lock (_sync) { ticket = _ticket; }
         if (ticket is null)
         {
-            _logger?.LogDebug("Scoring : ticket indisponible — pas de soumission.");
+            Trace("STOP: ticket indisponible");
             return;
         }
+        // L'identité de l'appareil vient du ticket (résolue par le serveur : appairé ou
+        // anonyme) — l'agent n'a pas besoin de la connaître lui-même.
+        var deviceId = ticket.Value.TryGetProperty("device_id", out var did) ? did.GetString() : null;
+        if (string.IsNullOrEmpty(deviceId))
+        {
+            Trace("STOP: ticket sans device_id");
+            return;
+        }
+        Trace($"assemblage du passeport (device={deviceId})…");
 
         using var deviceKey = CngDeviceKey.OpenOrCreate(ScoringKeyName);
         JsonObject passport;
@@ -377,6 +392,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             using var content = new StringContent(passport.ToJsonString(), Encoding.UTF8, "application/json");
             using var response = await client.PostAsync("/api/v1/agent/scores/submissions", content, cancellationToken).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            Trace($"VERDICT HTTP {(int)response.StatusCode} — {body}");
             _logger?.LogInformation("Scoring : verdict serveur {Status} — {Body}", (int)response.StatusCode, body);
         }
         catch (Exception ex)
@@ -389,8 +405,8 @@ public sealed class NelfePlayScoringReporter : BackgroundService
 
     private async Task EnsureEnrolledAsync(CancellationToken cancellationToken)
     {
-        var credential = _devices.GetCredential();
-        if (string.IsNullOrEmpty(credential)) return;
+        var credential = ResolveCredential();
+        if (string.IsNullOrEmpty(credential)) { Trace($"enroll: pas de credential (paired={_devices.IsPaired})"); return; }
         try
         {
             using var deviceKey = CngDeviceKey.OpenOrCreate(ScoringKeyName);
@@ -399,6 +415,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             using var client = CreateClient(credential);
             using var content = new StringContent(deviceKey.PublicKeyPem, Encoding.ASCII, "application/x-pem-file");
             using var response = await client.PostAsync("/api/v1/agent/scores/enroll-key", content, cancellationToken).ConfigureAwait(false);
+            Trace($"enroll HTTP {(int)response.StatusCode} key_id={deviceKey.KeyId}");
             if (response.IsSuccessStatusCode)
             {
                 _enrolledKeyId = deviceKey.KeyId;
@@ -413,7 +430,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
 
     private async Task RequestTicketAsync(CancellationToken cancellationToken)
     {
-        var credential = _devices.GetCredential();
+        var credential = ResolveCredential();
         if (string.IsNullOrEmpty(credential)) return;
         await EnsureEnrolledAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -434,6 +451,26 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         }
     }
 
+    // Le secret à présenter : celui de l'appareil APPAIRÉ, sinon celui de l'install
+    // ANONYME (déjà enregistrée par NelfePlayPlayReporter dans anonymous.json).
+    private string? ResolveCredential()
+    {
+        var paired = _devices.GetCredential();
+        if (!string.IsNullOrEmpty(paired)) return paired;
+        try
+        {
+            var path = System.IO.Path.Combine(AppContext.BaseDirectory, "state", "nelfeplay", "anonymous.json");
+            if (System.IO.File.Exists(path))
+            {
+                using var doc = JsonDocument.Parse(System.IO.File.ReadAllText(path));
+                if (doc.RootElement.TryGetProperty("credential", out var c) && c.ValueKind == JsonValueKind.String)
+                    return c.GetString();
+            }
+        }
+        catch { }
+        return null;
+    }
+
     private HttpClient CreateClient(string credential)
     {
         var client = _httpFactory.CreateClient(nameof(NelfePlayScoringReporter));
@@ -441,6 +478,18 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         client.Timeout = TimeSpan.FromSeconds(10);
         client.DefaultRequestHeaders.Add("X-NelfePlay-Device", credential);
         return client;
+    }
+
+    // Trace de diagnostic best-effort (le log ILogger n'a pas de sink fichier ici).
+    private static void Trace(string msg)
+    {
+        try
+        {
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nelfe_scoring.log"),
+                $"{DateTime.Now:HH:mm:ss.fff} {msg}\n");
+        }
+        catch { }
     }
 
     private static JsonElement ToJson(object? payload)
