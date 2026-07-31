@@ -270,6 +270,17 @@ public class RetroArchWrapperProvider : IProvider
 
     private async Task ProcessLineAsync(string line, CancellationToken cancellationToken)
     {
+        // ── Attestation du listener (scoring certifié) ──────────────────────────
+        // Ligne additive émise UNE fois au chargement ; format distinct des signaux
+        // runtime. On la publie sur le bus pour le service de scoring et on s'arrête.
+        const string attestationMarker = "[LISTENER ATTESTATION] ";
+        var attestationAt = line.IndexOf(attestationMarker, StringComparison.Ordinal);
+        if (attestationAt >= 0)
+        {
+            await PublishAttestationAsync(line[(attestationAt + attestationMarker.Length)..].Trim());
+            return;
+        }
+
         var definition = ResolveDefinition();
         var parsed = ParseRuntimeSignal(line);
 
@@ -350,6 +361,40 @@ public class RetroArchWrapperProvider : IProvider
                     player = parsed.Player
                 }
             });
+        }
+    }
+
+    // Publie l'attestation du listener (self-mesure : SHA du wrapper, du core réel, du
+    // .MEM + nonce) sur le bus. Le service de scoring l'assemble ensuite dans le passeport.
+    private async Task PublishAttestationAsync(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            string? Get(string name) => root.TryGetProperty(name, out var v) ? v.GetString() : null;
+
+            var definition = ResolveDefinition();
+            await _eventBus.PublishAsync(new EventEnvelope
+            {
+                Type = "scoring.listener.attestation",
+                Payload = new
+                {
+                    Source = "retroarch.wrapper.pipe",
+                    definition.SystemId,
+                    definition.Rom,
+                    ListenerSha256 = Get("listener_sha256"),
+                    CoreSha256 = Get("core_sha256"),
+                    MemSha256 = Get("mem_sha256"),
+                    WrapperVersion = Get("wrapper_version"),
+                    SessionNonce = Get("session_nonce"),
+                }
+            });
+            _logger?.LogDebug("Scoring : attestation listener publiée (wrapper {Wrapper})", Get("wrapper_version"));
+        }
+        catch (JsonException ex)
+        {
+            _logger?.LogDebug(ex, "Scoring : attestation JSON illisible : {Json}", json);
         }
     }
 
