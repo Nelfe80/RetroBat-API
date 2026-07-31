@@ -38,6 +38,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private JsonElement? _ticket;
     private long _lastFrame;
     private long? _finalTotal;
+    private bool _inDemo;   // attract mode : le jeu se joue seul → on ignore le score
     private readonly List<(long frame, long total)> _trajectory = new();
 
     public static bool Enabled { get; set; } = true;
@@ -84,6 +85,9 @@ public sealed class NelfePlayScoringReporter : BackgroundService
                 case "retroarch.score":
                     CaptureFrame(ToJson(envelope.Payload));
                     break;
+                case "retroarch.state":
+                    CaptureState(ToJson(envelope.Payload));
+                    break;
                 case "score.live.changed":
                     CaptureTotal(ToJson(envelope.Payload));
                     break;
@@ -106,6 +110,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             _ticket = null;
             _lastFrame = 0;
             _finalTotal = null;
+            _inDemo = false;
             _trajectory.Clear();
         }
     }
@@ -125,7 +130,20 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     {
         if (root.TryGetProperty("Frame", out var f) && f.TryGetInt64(out var frame))
         {
-            lock (_sync) { _lastFrame = frame; }
+            lock (_sync) { if (!_inDemo) _lastFrame = frame; }
+        }
+    }
+
+    // Attract mode : le jeu se joue seul. On ne certifie que du jeu HUMAIN, donc on
+    // ignore le score pendant la démo. Convention .MEM : action GAME_PLAYING vs DEMO_*.
+    private void CaptureState(JsonElement root)
+    {
+        var action = (GetString(root, "actionType") ?? GetString(root, "ActionType") ?? "").ToUpperInvariant();
+        if (action.Length == 0) return;
+        lock (_sync)
+        {
+            if (action.Contains("DEMO")) _inDemo = true;
+            else if (action.Contains("PLAYING") || action.Contains("GAME_PLAY")) _inDemo = false;
         }
     }
 
@@ -134,6 +152,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         if (!root.TryGetProperty("Score", out var s) || !s.TryGetInt64(out var total)) return;
         lock (_sync)
         {
+            if (_inDemo) return;   // score de démo → jamais certifié
             _finalTotal = total;
             // Le total agrégé à la frame courante : la trajectoire vérifiable du score.
             if (_trajectory.Count == 0 || _trajectory[^1].total != total)
