@@ -14,7 +14,7 @@ public class RetroArchWrapperProvider : IProvider
     public const string DefaultPipeName = "RetroBatArcadePipe";
 
     private static readonly Regex RuntimeRegex = new(
-        @"^\[(?<clock>\d{2}:\d{2}:\d{2}\.\d{3})\]\s+\[ADDR:(?<addr>[^\]]+)\]\s+\[VAL:(?<raw>[^\]]+)\]\s+\[UDP_OUT\]\s+(?:TYPE:)?(?<channel>[A-Z]+)\s*:\s*(?<name>[A-Z0-9_]+)\s+\|\s+SOURCE:(?<source>.*?)\s+\|\s+VALUE:(?<value>-?\d+)(?:\s+\|\s+RATE:(?<rate>-?\d+))?(?:\s+\|\s+FRAME:(?<frame>\d+))?(?:\s+\|\s+FAMILY:(?<family>[A-Za-z0-9_.-]+))?(?:\s+\|\s+COLOR:(?<color>[A-Za-z0-9_-]+))?(?:\s+\|\s+PLAYER:(?<player>\d+))?",
+        @"^\[(?<clock>\d{2}:\d{2}:\d{2}\.\d{3})\]\s+\[ADDR:(?<addr>[^\]]+)\]\s+\[VAL:(?<raw>[^\]]+)\]\s+\[UDP_OUT\]\s+(?:TYPE:)?(?<channel>[A-Z]+)\s*:\s*(?<name>[A-Z0-9_]+)\s+\|\s+SOURCE:(?<source>.*?)\s+\|\s+VALUE:(?<value>-?\d+)(?:\s+\|\s+RATE:(?<rate>-?\d+))?(?:\s+\|\s+FAMILY:(?<family>[A-Za-z0-9_.-]+))?(?:\s+\|\s+COLOR:(?<color>[A-Za-z0-9_-]+))?(?:\s+\|\s+PLAYER:(?<player>\d+))?(?:\s+\|\s+FRAME:(?<frame>\d+))?",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly IEventBus _eventBus;
