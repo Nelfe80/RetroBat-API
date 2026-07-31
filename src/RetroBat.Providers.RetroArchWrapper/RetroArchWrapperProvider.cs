@@ -395,6 +395,7 @@ public class RetroArchWrapperProvider : IProvider
                     ListenerSha256 = Get("listener_sha256"),
                     CoreSha256 = Get("core_sha256"),
                     MemSha256 = Get("mem_sha256"),
+                    ContentSha256 = Get("content_sha256"),
                     WrapperVersion = Get("wrapper_version"),
                     SessionNonce = Get("session_nonce"),
                 }
