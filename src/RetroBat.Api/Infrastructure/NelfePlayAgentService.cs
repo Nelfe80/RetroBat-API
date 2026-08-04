@@ -223,6 +223,7 @@ public sealed class NelfePlayAgentService : BackgroundService
         {
             Paired = true,
             PlayerCode = payload.PlayerCode,
+            Pseudo = payload.Pseudo,
             Entitlements = payload.Entitlements?.Count ?? 0,
             LastPollUtc = DateTime.UtcNow,
             LastInstalled = installed,
@@ -234,6 +235,10 @@ public sealed class NelfePlayAgentService : BackgroundService
         {
             _logger.LogInformation("Nelfe Play : {Count} jeu(x) installe(s) depuis la bibliotheque du joueur.", installed);
         }
+
+        // NB : le re-versement recovery « share datas » est porté par le REPORTER de
+        // scoring (NelfePlayScoringReporter), pas ici : il fonctionne aussi pour les
+        // machines ANONYMES, alors que /agent/work est lié à un compte.
     }
 
 
@@ -490,6 +495,7 @@ public sealed class NelfePlayAgentService : BackgroundService
     {
         public bool Paired { get; init; }
         public string? PlayerCode { get; init; }
+        public string? Pseudo { get; init; }
         public int Entitlements { get; init; }
         public DateTime? LastPollUtc { get; init; }
         public int LastInstalled { get; init; }
@@ -525,8 +531,13 @@ public sealed class NelfePlayAgentService : BackgroundService
     {
         public bool Ok { get; set; }
         public string? PlayerCode { get; set; }
+        public string? Pseudo { get; set; }
         public List<JsonElement>? Entitlements { get; set; }
         public List<WorkIntent>? Intents { get; set; }
+
+        /// <summary>Recovery « share datas » : le serveur reconstruit sa base et
+        /// demande à la flotte de re-verser ses records auto-conservés.</summary>
+        public bool Contribute { get; set; }
     }
 
     private sealed class WorkIntent

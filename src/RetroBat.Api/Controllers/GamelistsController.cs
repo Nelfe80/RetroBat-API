@@ -295,7 +295,22 @@ public class GamelistsController : ControllerBase
         }
 
         var hash = (md5 ?? "").ToLowerInvariant();
-        var scorable = _canonical.HasScoreDefinition(system, rom, md5, null);
+        // Jeu SCORABLE : son identité canonique EST celle de sa définition .MEM (= le
+        // rom_group certifié). On l'impose comme gameKey pour que la couche salle
+        // (HubScore) et la couche certifiée s'alignent sur UNE seule clé — fini le
+        // « …-rev-0 » côté salle vs « … » côté certifié (« match ton jeu » et le
+        // classement salle se retrouvent, dédoublonnage RGPC fiable).
+        var scoreSlug = _canonical.ResolveScoreSlug(system, rom, md5, null);
+        var scorable = scoreSlug is not null;
+        if (scoreSlug is not null)
+        {
+            var sysNorm = system.Trim().ToLowerInvariant();
+            return Ok(new ResolveResponse(
+                system, hash, $"{sysNorm}/{scoreSlug}",
+                canonical?.Name ?? scoreSlug, canonical?.CanonicalSystem ?? sysNorm,
+                canonical?.Kind ?? "game", "mem-score", true));
+        }
+
         return Ok(canonical is null
             ? new ResolveResponse(system, hash, "", "", "", "", "none", scorable)
             : new ResolveResponse(

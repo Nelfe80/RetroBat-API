@@ -191,7 +191,7 @@ public class ApiExposeOptions
     {
         public string RegionProfile { get; set; } = string.Empty;
         public string LanguageProfile { get; set; } = string.Empty;
-        public bool RepairGamelistsOnStartup { get; set; } = true;
+        public bool RepairGamelistsOnStartup { get; set; } = false;
         public bool SyncGamelistsWithSystemLanguage { get; set; } = true;
     }
 
@@ -459,7 +459,7 @@ public class ApiExposeOptions
 
     public class StartupOverlayOptions
     {
-        public bool Enabled { get; set; } = true;
+        public bool Enabled { get; set; } = false;
         public string Message { get; set; } = "APIExpose prepare la mediatheque...";
         public string Title { get; set; } = "RetroBat APIExpose";
         public double Opacity { get; set; } = 0.92d;

@@ -44,6 +44,7 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
         DateTime? StartsAtUtc, string? QrImageUrl, string? Conditions = null);
 
     private AnnounceState _state = new(false, null, null, null, null, null);
+    private System.Threading.CancellationTokenSource? _autoHideCts;
 
     public AnnounceState GetState() => _state;
 
@@ -63,9 +64,14 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
     public async Task ApplyAsync(
         bool visible, string? gamePath, string? gameName, string? objective,
         DateTime? startsAtUtc, string? qrImageUrl, string? conditions = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, int? hideAfterSeconds = null,
+        string? resultBig = null, string? resultLine = null)
     {
         _state = new AnnounceState(visible, gamePath, gameName, objective, startsAtUtc, qrImageUrl, conditions);
+
+        // Tout nouvel appel annule un auto-hide (mode résumé) programmé auparavant.
+        _autoHideCts?.Cancel();
+        _autoHideCts = null;
 
         byte[]? qrBytes = null;
         if (visible && !string.IsNullOrWhiteSpace(qrImageUrl))
@@ -114,7 +120,8 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
                     objective ?? string.Empty,
                     conditions ?? string.Empty,
                     startsAtUtc,
-                    fanart, logo, qrBytes);
+                    fanart, logo, qrBytes,
+                    resultBig, resultLine);
                 _form.PositionCentered(ResolveTargetScreen());
                 _form.Show();
             }
@@ -128,6 +135,27 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
             }
         }));
         await completion.Task;
+
+        // Mode RÉSUMÉ : l'annonce se retire seule après N secondes (le résultat de
+        // fin de challenge s'affiche ~15 s puis disparaît, sans intervention du hub).
+        if (visible && hideAfterSeconds is > 0)
+        {
+            var cts = new System.Threading.CancellationTokenSource();
+            _autoHideCts = cts;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(hideAfterSeconds.Value), cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                await ApplyAsync(false, null, null, null, null, null, null, CancellationToken.None);
+            });
+        }
     }
 
     /// <summary>Fanart (sinon image) + marquee du jeu depuis
@@ -373,7 +401,10 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
                 if (remain.TotalSeconds <= 0)
                 {
                     text = "GO !";
-                    _ready.Text = "Appuyez sur START !";
+                    // Le jeu est lancé automatiquement au coup d'envoi (le hub pousse
+                    // le launch à zéro) : on n'invite plus à « Appuyer sur START » —
+                    // trompeur tant qu'on est dans ES / pendant le chargement.
+                    _ready.Text = "Le jeu se lance…";
                     // Filet de sécurité : l'annonce disparaît seule 20 s après
                     // le déblocage même si le hub ne la retire pas.
                     if (remain.TotalSeconds < -20)
@@ -459,14 +490,34 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
 
         public void Configure(
             string gameName, string objective, string conditions, DateTime? startsAtUtc,
-            string? fanartPath, string? logoPath, byte[]? qrBytes)
+            string? fanartPath, string? logoPath, byte[]? qrBytes,
+            string? resultBig = null, string? resultLine = null)
         {
             _startsAtUtc = startsAtUtc;
             _title.Text = gameName;
             _objective.Text = objective;
-            // Conditions de participation TOUJOURS annoncées, sous l'objectif.
-            _conditions.Text = conditions.Length > 0 ? "🔒 " + conditions : "Ouvert à tous";
-            _timer.Text = string.Empty;
+
+            // Mode RÉSULTAT (fin de challenge) : rang/médaille en GROS à la place du
+            // chrono, ligne temps/score au-dessus. Pas de countdown ni de résidu
+            // « Tenez-vous prêt ! / Le jeu se lance… ».
+            var resultMode = !string.IsNullOrEmpty(resultLine);
+            if (resultMode)
+            {
+                _timer.Text = resultBig ?? string.Empty;
+                _timer.Font = _pulseFonts[2];
+                _timer.ForeColor = Color.FromArgb(255, 210, 87);
+                _ready.Text = resultLine;
+                _conditions.Text = string.Empty;
+            }
+            else
+            {
+                _timer.Text = string.Empty;
+                // Reset explicite : sinon le label garde « Le jeu se lance… » d'un
+                // coup d'envoi précédent et l'affiche sur l'annonce/résultat suivant.
+                _ready.Text = "Tenez-vous prêt !";
+                // Conditions de participation TOUJOURS annoncées, sous l'objectif.
+                _conditions.Text = conditions.Length > 0 ? "🔒 " + conditions : "Ouvert à tous";
+            }
 
             SwapImage(ref _background, fanartPath is null ? null : Image.FromFile(fanartPath));
             var previousLogo = _logo.Image;
@@ -524,16 +575,26 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
             _title.Bounds = new Rectangle(0, (int)(h * 0.05), w, (int)(h * 0.13));
             _objective.Bounds = new Rectangle((int)(w * 0.04), (int)(h * 0.23), (int)(w * 0.92), (int)(h * 0.14));
             _conditions.Bounds = new Rectangle((int)(w * 0.05), (int)(h * 0.375), (int)(w * 0.9), (int)(h * 0.06));
-            // Bas en DEUX colonnes : QR GÉANT à gauche (on le scanne à
-            // plusieurs mètres), « Tenez-vous prêt ! » + chrono à droite —
-            // plus jamais l'un qui cache l'autre.
-            var qrSize = Math.Min((int)(h * 0.42), 440);
-            var qrLeft = (int)(w * 0.25) - qrSize / 2;
-            var qrTop = (int)(h * 0.46);
-            _qr.Bounds = new Rectangle(Math.Max(16, qrLeft), qrTop, qrSize, qrSize);
-            _qrHint.Bounds = new Rectangle(0, Math.Min(h - (int)(h * 0.05) - 4, qrTop + qrSize + 6), w / 2, (int)(h * 0.05));
-            _ready.Bounds = new Rectangle(w / 2, (int)(h * 0.45), w / 2, (int)(h * 0.09));
-            _timer.Bounds = new Rectangle(w / 2, (int)(h * 0.54), w / 2, (int)(h * 0.32));
+            if (_qr.Visible)
+            {
+                // Bas en DEUX colonnes : QR GÉANT à gauche (on le scanne à
+                // plusieurs mètres), « Tenez-vous prêt ! » + chrono à droite —
+                // plus jamais l'un qui cache l'autre.
+                var qrSize = Math.Min((int)(h * 0.42), 440);
+                var qrLeft = (int)(w * 0.25) - qrSize / 2;
+                var qrTop = (int)(h * 0.46);
+                _qr.Bounds = new Rectangle(Math.Max(16, qrLeft), qrTop, qrSize, qrSize);
+                _qrHint.Bounds = new Rectangle(0, Math.Min(h - (int)(h * 0.05) - 4, qrTop + qrSize + 6), w / 2, (int)(h * 0.05));
+                _ready.Bounds = new Rectangle(w / 2, (int)(h * 0.45), w / 2, (int)(h * 0.09));
+                _timer.Bounds = new Rectangle(w / 2, (int)(h * 0.54), w / 2, (int)(h * 0.32));
+            }
+            else
+            {
+                // Pas de QR (joueur déjà checké-in) : « prêt » + chrono CENTRÉS
+                // pleine largeur (labels alignés au centre) — plus de décalage.
+                _ready.Bounds = new Rectangle(0, (int)(h * 0.45), w, (int)(h * 0.09));
+                _timer.Bounds = new Rectangle(0, (int)(h * 0.54), w, (int)(h * 0.32));
+            }
             Invalidate();
         }
     }

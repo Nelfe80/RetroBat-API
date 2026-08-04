@@ -43,7 +43,22 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
 
     private BadgeState _state = new(false, null, null);
 
-    public BadgeState GetState() => _state;
+    public BadgeState GetState()
+    {
+        // Si la fenêtre a disparu (fermée/plantée) alors qu'on la croyait
+        // affichée, on rapporte visible:false : le hub, voyant l'écart, RE-POUSSE
+        // au poll suivant et on la RECRÉE — au lieu de rester bloqué sur un état
+        // « visible » mensonger qui n'affiche plus rien.
+        BadgeForm? form;
+        lock (_sync)
+        {
+            form = _form;
+        }
+
+        return _state.Visible && (form is null || form.IsDisposed)
+            ? _state with { Visible = false }
+            : _state;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -125,10 +140,17 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
                     return;
                 }
 
-                _form ??= new BadgeForm(
-                    _options.CurrentValue.CabinetBadgeOverlay.Opacity,
-                    _options.CurrentValue.CabinetBadgeOverlay.Title,
-                    ResolveTargetScreen);
+                // Recrée la fenêtre si elle a été FERMÉE/détruite (Alt+F4, clic
+                // fermeture) : sinon `_form` garde une référence disposed et le QR ne
+                // réapparaît jamais, même quand le hub re-pousse l'état.
+                if (_form is null || _form.IsDisposed)
+                {
+                    _form = new BadgeForm(
+                        _options.CurrentValue.CabinetBadgeOverlay.Opacity,
+                        _options.CurrentValue.CabinetBadgeOverlay.Title,
+                        ResolveTargetScreen);
+                    _currentImageUrl = null;   // la nouvelle fenêtre n'a plus l'image : forcer un re-set
+                }
                 if (playerMode)
                 {
                     _form.SetPlayer(
@@ -353,6 +375,9 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
+            // Overlay d'affichage seul : pas de fermeture accidentelle (Alt+F4 /
+            // clic) — voir OnFormClosing. ControlBox retire aussi le menu système.
+            ControlBox = false;
             TopMost = true;
             Opacity = Math.Clamp(opacity, 0.3, 1.0);
             // Fond NOIR (discret sur l'ecran de la borne) — le blanc est
@@ -429,6 +454,20 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
         }
 
         protected override bool ShowWithoutActivation => true;
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // Fermeture par l'utilisateur (Alt+F4, clic) : refusée — c'est un
+            // overlay permanent piloté par le hub. Seul l'arrêt de l'appli (le
+            // service qui ferme le thread UI) peut la fermer.
+            if (e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            base.OnFormClosing(e);
+        }
 
         public void SetImage(byte[] bytes)
         {
