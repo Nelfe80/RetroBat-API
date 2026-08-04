@@ -54,15 +54,22 @@ public sealed class LiveContestClientService : BackgroundService
     private string? _system, _slug, _resolvedRom, _lastError, _brief;
     private string _reportedPhase = "";
 
+    private readonly NelfePlayScoringSessionService _scoringSession;
+    private readonly NelfePlayAgentService _agent;
+
     public LiveContestClientService(
         IEventBus eventBus,
         LiveContestOverlayService overlay,
         IHttpClientFactory httpFactory,
+        NelfePlayScoringSessionService scoringSession,
+        NelfePlayAgentService agent,
         ILogger<LiveContestClientService> logger)
     {
         _eventBus = eventBus;
         _overlay = overlay;
         _httpFactory = httpFactory;
+        _scoringSession = scoringSession;
+        _agent = agent;
         _logger = logger;
         _enrollment = LoadEnrollment();
     }
@@ -155,6 +162,15 @@ public sealed class LiveContestClientService : BackgroundService
         _seq = 0;
         _startAtMs = 0;
         _phase = "idle";
+
+        // ÉTAGE 3 — on désarme la session STREAM du contest (désenrôlement /
+        // ré-enrôlement). On ne touche PAS une session STATION (armée par le hub) :
+        // Live Contest et check-in salle sont mutuellement exclusifs, mais on reste
+        // prudent pour ne jamais clobber le contexte salle.
+        if (_scoringSession.Get()?.World == "stream")
+        {
+            _scoringSession.Clear();
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -310,6 +326,21 @@ public sealed class LiveContestClientService : BackgroundService
             _overlay.Show(null, T("Contest incomplet", "Incomplete contest"),
                 T("Le streamer doit recréer le contest (infos de jeu manquantes).", "The streamer must recreate the contest (missing game info)."), 0);
             return;
+        }
+
+        // ÉTAGE 3 — armer la session certifiée STREAM pour ce contest : le record
+        // joué portera context.world=stream + channel + contest_id, attribué au
+        // compte RGPC LIÉ (playerCode du /link). Machine non liée → playerCode null
+        // → record stream anonyme (le contest marche quand même). La session sera
+        // effacée à la fin de la manche (submit) ou au désenrôlement.
+        var channel = Get(contest, "channel");
+        var contestId = Get(contest, "contestId");
+        if (!string.IsNullOrWhiteSpace(contestId))
+        {
+            _scoringSession.Set(_agent.Status.PlayerCode, null, null, "stream", channel, contestId);
+            _logger.LogInformation(
+                "livecontest : session STREAM armée (contest={Contest} channel={Channel} player={Player})",
+                contestId, channel, _agent.Status.PlayerCode ?? "(non lié)");
         }
 
         DisablePauseNonactive();
@@ -865,9 +896,22 @@ public sealed class LiveContestClientService : BackgroundService
     {
         try
         {
-            return File.Exists(_statePath)
-                ? JsonSerializer.Deserialize<Enrollment>(File.ReadAllText(_statePath))
-                : null;
+            if (!File.Exists(_statePath))
+            {
+                return null;
+            }
+
+            var loaded = JsonSerializer.Deserialize<Enrollment>(File.ReadAllText(_statePath));
+            // Un contest est court : on NE reprend PAS un enrôlement trop vieux au
+            // redémarrage — sinon un simple restart ré-ouvre un contest déjà fini et
+            // bloque la borne sur « Tiens-toi prêt ». Périmé (>30 min) → on l'efface.
+            if (loaded is null || DateTimeOffset.UtcNow - loaded.EnrolledAt > TimeSpan.FromMinutes(30))
+            {
+                try { File.Delete(_statePath); } catch (Exception) { }
+                return null;
+            }
+
+            return loaded;
         }
         catch (Exception)
         {

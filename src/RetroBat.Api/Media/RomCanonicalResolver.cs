@@ -340,10 +340,18 @@ public sealed class RomCanonicalResolver
     /// C'est ce drapeau qui permet a l'app joueur d'afficher « pas de record
     /// possible » AVANT de lancer, au lieu de frustrer apres la partie.</summary>
     public bool HasScoreDefinition(string systemId, string? romFileName, string? md5, string? cheevosHash)
+        => ResolveScoreSlug(systemId, romFileName, md5, cheevosHash) is not null;
+
+    /// <summary>Le SLUG de la définition .MEM (= le groupe canonique du jeu ouvert au
+    /// scoring) pour ce dump, ou null si non capturable. C'est CE slug qui doit servir
+    /// d'identité pour un jeu scorable — le MÊME que le rom_group certifié — afin que la
+    /// couche salle (HubScore) et la couche certifiée s'alignent sur une seule clé (sinon
+    /// « sonic-the-hedgehog-rev-0 » côté salle vs « sonic-the-hedgehog » côté certifié).</summary>
+    public string? ResolveScoreSlug(string systemId, string? romFileName, string? md5, string? cheevosHash)
     {
         if (string.IsNullOrWhiteSpace(systemId))
         {
-            return false;
+            return null;
         }
 
         var index = _scoreIndexes.GetOrAdd(
@@ -351,7 +359,7 @@ public sealed class RomCanonicalResolver
             key => new Lazy<ScoreIndex>(() => LoadScoreIndex(key), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         if (index.MemStems.Count == 0)
         {
-            return false;
+            return null;
         }
 
         // Les alias portent parfois une ponctuation que le nom de fichier n'a
@@ -366,13 +374,19 @@ public sealed class RomCanonicalResolver
             if (key.Length > 0 && index.AliasToSlug.TryGetValue(key, out var slug) &&
                 index.MemStems.Contains(slug))
             {
-                return true;
+                return slug;
             }
         }
 
         // Repli : le slug du fichier (avec ou sans tags) EST un .MEM.
-        return (stem.Length > 0 && index.MemStems.Contains(Slugify(stem))) ||
-               (stemNoTags.Length > 0 && index.MemStems.Contains(Slugify(stemNoTags)));
+        var slugStem = Slugify(stem);
+        if (stem.Length > 0 && index.MemStems.Contains(slugStem))
+        {
+            return slugStem;
+        }
+
+        var slugNoTags = Slugify(stemNoTags);
+        return stemNoTags.Length > 0 && index.MemStems.Contains(slugNoTags) ? slugNoTags : null;
     }
 
     private ScoreIndex LoadScoreIndex(string normalizedSystem)

@@ -39,6 +39,29 @@ public class EmulationStationWatcherProvider : IProvider
     private readonly IOptionsMonitor<EmulationStationWatcherOptions> _options;
     private readonly ILogger<EmulationStationWatcherProvider>? _logger;
     private readonly object _cacheLock = new();
+    // Systems currently being pre-warmed in the background (dedup guard), so a fast
+    // scroll through the system carousel never spawns duplicate gamelist API loads.
+    private readonly object _warmLock = new();
+    private readonly HashSet<string> _warmingSystems = new(StringComparer.OrdinalIgnoreCase);
+
+    // Dedicated worker for the heavy per-selection scrape/prefetch: one background
+    // thread draining a latest-wins channel, so the multi-second prefetch never runs
+    // on the thread pool and never starves the marquee/system publishes.
+    private readonly System.Threading.Channels.Channel<SelectionScrapeWork> _scrapeQueue =
+        System.Threading.Channels.Channel.CreateBounded<SelectionScrapeWork>(
+            new System.Threading.Channels.BoundedChannelOptions(1)
+            {
+                FullMode = System.Threading.Channels.BoundedChannelFullMode.DropOldest,
+                SingleReader = true
+            });
+    private Thread? _scrapeWorkerThread;
+    private volatile bool _scrapeWorkerStarted;
+    private readonly object _scrapeWorkerLock = new();
+
+    private sealed record SelectionScrapeWork(
+        GameReference SelectedGame, bool LocalProjectionOnGameSelected, EmulationStationWatcherOptions Options,
+        long ScrapeSequence, CancellationToken ScrapeCancellationToken, string SystemId, string Path,
+        bool DetailsEnabled, bool BypassCache, System.Diagnostics.Stopwatch Perf);
     private readonly object _eventDedupLock = new();
     private readonly object _gameSelectedScrapeLock = new();
     private FileSystemWatcher? _watcher;
@@ -649,6 +672,7 @@ public class EmulationStationWatcherProvider : IProvider
                     return;
                 }
                 _context.Ui.SelectedSystem = systemDetails ?? new SystemDetails { Name = systemId };
+                _logger?.LogInformation("game-selected STEP fetch-system done at {ElapsedMs}ms — system={SystemId}", perf.ElapsedMilliseconds, systemId);
 
                 var gameDetails = detailsEnabled ? await FetchGameDetailsAsync(systemId, path, bypassCache) : null;
                 if (!IsLatestFrontendEvent(sequence))
@@ -656,6 +680,7 @@ public class EmulationStationWatcherProvider : IProvider
                     return;
                 }
                 var gameId = gameDetails?.Id ?? gameDetails?.Md5 ?? "";
+                _logger?.LogInformation("game-selected STEP fetch-game done at {ElapsedMs}ms — system={SystemId}, path={Path}", perf.ElapsedMilliseconds, systemId, path);
 
                 _context.Ui.Selected = new GameReference
                 {
@@ -691,130 +716,18 @@ public class EmulationStationWatcherProvider : IProvider
                 }
 
                 var selectedGame = _context.Ui.Selected;
-                if (localProjectionOnGameSelected || options.QueueRemoteScrapeOnGameSelected)
+                var scrapeWork = new SelectionScrapeWork(selectedGame!, localProjectionOnGameSelected, options,
+                    scrapeSequence, scrapeCancellationToken, systemId, path, detailsEnabled, bypassCache, perf);
+                if (options.OffloadPrefetchToWorker)
                 {
-                    try
-                    {
-                        if (!await WaitForStableGameSelectedAsync(options, scrapeSequence, systemId, path, scrapeCancellationToken))
-                        {
-                            _logger?.LogDebug(
-                                "game-selected scrape skipped after debounce because selection changed: system={SystemId}, path={Path}",
-                                systemId,
-                                path);
-                            LogGameSelectedPerfIfNeeded(perf.Elapsed, systemId, path, options, detailsEnabled, bypassCache);
-                            return;
-                        }
-                    }
-                    catch (OperationCanceledException) when (!IsLatestGameSelectedScrape(scrapeSequence))
-                    {
-                        _logger?.LogDebug(
-                            "game-selected scrape skipped during debounce because selection changed: system={SystemId}, path={Path}",
-                            systemId,
-                            path);
-                        LogGameSelectedPerfIfNeeded(perf.Elapsed, systemId, path, options, detailsEnabled, bypassCache);
-                        return;
-                    }
-
-                    if (!IsLatestGameSelectedScrape(scrapeSequence))
-                    {
-                        _logger?.LogDebug(
-                            "game-selected scrape skipped after debounce because selection changed: system={SystemId}, path={Path}",
-                            systemId,
-                            path);
-                        LogGameSelectedPerfIfNeeded(perf.Elapsed, systemId, path, options, detailsEnabled, bypassCache);
-                        return;
-                    }
+                    // Fast path returns NOW; the heavy scrape/prefetch runs on the
+                    // dedicated worker (latest-wins) so it never holds a thread-pool
+                    // thread and never starves the marquee/system publishes.
+                    _logger?.LogInformation("game-selected fast-path done at {ElapsedMs}ms — scrape offloaded to worker (system={SystemId})", perf.ElapsedMilliseconds, systemId);
+                    EnqueueSelectionScrape(scrapeWork);
+                    return;
                 }
-
-                if (localProjectionOnGameSelected)
-                {
-                    if (!IsLatestGameSelectedScrape(scrapeSequence))
-                    {
-                        _logger?.LogDebug("Stale game-selected local projection skipped before disk work for system={SystemId}, path={Path}", systemId, path);
-                        LogGameSelectedPerfIfNeeded(perf.Elapsed, systemId, path, options, detailsEnabled, bypassCache);
-                        return;
-                    }
-
-                    MediaPrefetchResult prefetchResult;
-                    try
-                    {
-                        prefetchResult = await _mediaPrefetchService.PrefetchForSelectionAsync(
-                            selectedGame,
-                            allowRemoteScrape: options.QueueRemoteScrapeOnGameSelected,
-                            forceRemoteScrape: false,
-                            createUserVariantGuide: options.CreateUserVariantGuidesOnGameSelected,
-                            suppressImmediateGamelistUpdates: true,
-                            scrapeCancellationToken);
-                    }
-                    catch (OperationCanceledException) when (!IsLatestGameSelectedScrape(scrapeSequence))
-                    {
-                        _logger?.LogDebug("Stale game-selected prefetch cancelled for system={SystemId}, path={Path}", systemId, path);
-                        await DemoteStaleSelectionToBackgroundQueueAsync(selectedGame, "cancelled-prefetch");
-                        return;
-                    }
-
-                    if (!IsLatestGameSelectedScrape(scrapeSequence))
-                    {
-                        _logger?.LogDebug("Stale game-selected prefetch result ignored for system={SystemId}, path={Path}", systemId, path);
-                        await DemoteStaleSelectionToBackgroundQueueAsync(selectedGame, "stale-prefetch-result");
-                        return;
-                    }
-
-                    _logger?.LogInformation(
-                        "Local media projection prepared for game-selected: system={SystemId}, game={GameSlug}, queuedRemote={QueuedRemote}, missing={MissingCount}, arcadeLike={ArcadeLike}, folderSystem={FolderSystem}, skipCrc={SkipCrc}, biosFiltered={BiosFiltered}",
-                        prefetchResult.SystemId,
-                        prefetchResult.GameSlug,
-                        prefetchResult.QueuedRemoteScrape,
-                        prefetchResult.Needs.Count(n => n.IsMissing),
-                        prefetchResult.IsArcadeLike,
-                        prefetchResult.IsFolderBasedSystem,
-                        prefetchResult.SkipCrcComputation,
-                        prefetchResult.IsFilteredArcadeBiosCandidate);
-                }
-                else
-                {
-                    _logger?.LogDebug("Media prefetch skipped on game-selected; live priority scrape may still refresh the ES game card.");
-                    if (options.QueueRemoteScrapeOnGameSelected)
-                    {
-                        MediaPrefetchResult remoteQueueResult;
-                        try
-                        {
-                            remoteQueueResult = await _mediaPrefetchService.PrefetchForSelectionAsync(
-                                selectedGame,
-                                allowRemoteScrape: true,
-                                forceRemoteScrape: false,
-                                createUserVariantGuide: options.CreateUserVariantGuidesOnGameSelected,
-                                suppressImmediateGamelistUpdates: true,
-                                scrapeCancellationToken);
-                        }
-                        catch (OperationCanceledException) when (!IsLatestGameSelectedScrape(scrapeSequence))
-                        {
-                            _logger?.LogDebug("Stale live priority scrape cancelled for system={SystemId}, path={Path}", systemId, path);
-                            await DemoteStaleSelectionToBackgroundQueueAsync(selectedGame, "cancelled-live-priority");
-                            return;
-                        }
-
-                        if (!IsLatestGameSelectedScrape(scrapeSequence))
-                        {
-                            _logger?.LogDebug("Stale live priority scrape result ignored for system={SystemId}, path={Path}", systemId, path);
-                            await DemoteStaleSelectionToBackgroundQueueAsync(selectedGame, "stale-live-priority-result");
-                            return;
-                        }
-
-                        _logger?.LogInformation(
-                            "Live priority scrape checked for game-selected: system={SystemId}, game={GameSlug}, queuedRemote={QueuedRemote}, missing={MissingCount}, gamePathExists={GamePathExists}, gamelistMd5={GamelistMd5}",
-                            remoteQueueResult.SystemId,
-                            remoteQueueResult.GameSlug,
-                            remoteQueueResult.QueuedRemoteScrape,
-                            remoteQueueResult.Needs.Count(n => n.IsMissing),
-                            remoteQueueResult.GamePathExists,
-                            string.IsNullOrWhiteSpace(remoteQueueResult.GamelistMd5) ? "<none>" : remoteQueueResult.GamelistMd5);
-                        await RefreshSelectedGameDetailsAfterLiveScrapeAsync(systemId, path);
-                    }
-                }
-
-                CompleteLatestGameSelectedScrape(scrapeSequence);
-                LogGameSelectedPerfIfNeeded(perf.Elapsed, systemId, path, options, detailsEnabled, bypassCache);
+                await RunSelectionScrapeAsync(scrapeWork);
             }
         }
         else if (eventName == "system-selected")
@@ -849,6 +762,24 @@ public class EmulationStationWatcherProvider : IProvider
                 }
                 _context.Ui.SelectedSystem = systemDetails ?? new SystemDetails { Name = sysId };
                 _context.Ui.Selected = null;
+
+                // Pre-warm this system's games list in the background so the first
+                // game-selected doesn't pay the cold gamelist API load (up to ~4s for a
+                // large system like mame — an ES-API round-trip + JSON of thousands of
+                // games). Idempotent (cached, no-op when fresh) and de-duplicated so a
+                // fast carousel scroll never piles up loads.
+                var warmSystemId = sysId;
+                bool startWarm;
+                lock (_warmLock) { startWarm = _warmingSystems.Add(warmSystemId); }
+                if (startWarm)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try { await FetchGamesForSystemAsync(warmSystemId, bypassCache: false); }
+                        catch (Exception ex) { _logger?.LogDebug(ex, "Background gamelist warm failed: system={SystemId}", warmSystemId); }
+                        finally { lock (_warmLock) { _warmingSystems.Remove(warmSystemId); } }
+                    });
+                }
             }
             else
             {
@@ -1390,6 +1321,188 @@ public class EmulationStationWatcherProvider : IProvider
     }
     
     // Enrichissement depuis l'API locale ES (127.0.0.1:1234)
+    private void EnqueueSelectionScrape(SelectionScrapeWork work)
+    {
+        EnsureScrapeWorker();
+        _scrapeQueue.Writer.TryWrite(work);
+    }
+
+    private void EnsureScrapeWorker()
+    {
+        if (_scrapeWorkerStarted) return;
+        lock (_scrapeWorkerLock)
+        {
+            if (_scrapeWorkerStarted) return;
+            _scrapeWorkerThread = new Thread(ScrapeWorkerLoop)
+            {
+                IsBackground = true,
+                Name = "APIExpose.SelectionScrape"
+            };
+            _scrapeWorkerThread.Start();
+            _scrapeWorkerStarted = true;
+        }
+    }
+
+    private void ScrapeWorkerLoop()
+    {
+        try
+        {
+            var reader = _scrapeQueue.Reader;
+            while (reader.WaitToReadAsync().AsTask().GetAwaiter().GetResult())
+            {
+                while (reader.TryRead(out var work))
+                {
+                    try { RunSelectionScrapeAsync(work).GetAwaiter().GetResult(); }
+                    catch (Exception ex) { _logger?.LogWarning(ex, "Selection scrape worker item failed: system={SystemId}, path={Path}", work.SystemId, work.Path); }
+                }
+            }
+        }
+        catch (Exception ex) { _logger?.LogError(ex, "Selection scrape worker loop crashed"); }
+    }
+
+    // The heavy per-selection scrape/prefetch, moved verbatim off the event-processing
+    // hot path (see EnqueueSelectionScrape). Latest-wins is preserved by the channel
+    // (capacity 1, DropOldest) and by the scrape cancellation token.
+    private async Task RunSelectionScrapeAsync(SelectionScrapeWork work)
+    {
+        var selectedGame = work.SelectedGame;
+        var localProjectionOnGameSelected = work.LocalProjectionOnGameSelected;
+        var options = work.Options;
+        var scrapeSequence = work.ScrapeSequence;
+        var scrapeCancellationToken = work.ScrapeCancellationToken;
+        var systemId = work.SystemId;
+        var path = work.Path;
+        var detailsEnabled = work.DetailsEnabled;
+        var bypassCache = work.BypassCache;
+        var perf = work.Perf;
+
+        if (localProjectionOnGameSelected || options.QueueRemoteScrapeOnGameSelected)
+        {
+            try
+            {
+                if (!await WaitForStableGameSelectedAsync(options, scrapeSequence, systemId, path, scrapeCancellationToken))
+                {
+                    _logger?.LogDebug(
+                        "game-selected scrape skipped after debounce because selection changed: system={SystemId}, path={Path}",
+                        systemId,
+                        path);
+                    LogGameSelectedPerfIfNeeded(perf.Elapsed, systemId, path, options, detailsEnabled, bypassCache);
+                    return;
+                }
+            }
+            catch (OperationCanceledException) when (!IsLatestGameSelectedScrape(scrapeSequence))
+            {
+                _logger?.LogDebug(
+                    "game-selected scrape skipped during debounce because selection changed: system={SystemId}, path={Path}",
+                    systemId,
+                    path);
+                LogGameSelectedPerfIfNeeded(perf.Elapsed, systemId, path, options, detailsEnabled, bypassCache);
+                return;
+            }
+
+            if (!IsLatestGameSelectedScrape(scrapeSequence))
+            {
+                _logger?.LogDebug(
+                    "game-selected scrape skipped after debounce because selection changed: system={SystemId}, path={Path}",
+                    systemId,
+                    path);
+                LogGameSelectedPerfIfNeeded(perf.Elapsed, systemId, path, options, detailsEnabled, bypassCache);
+                return;
+            }
+        }
+
+        if (localProjectionOnGameSelected)
+        {
+            if (!IsLatestGameSelectedScrape(scrapeSequence))
+            {
+                _logger?.LogDebug("Stale game-selected local projection skipped before disk work for system={SystemId}, path={Path}", systemId, path);
+                LogGameSelectedPerfIfNeeded(perf.Elapsed, systemId, path, options, detailsEnabled, bypassCache);
+                return;
+            }
+
+            MediaPrefetchResult prefetchResult;
+            try
+            {
+                prefetchResult = await _mediaPrefetchService.PrefetchForSelectionAsync(
+                    selectedGame,
+                    allowRemoteScrape: options.QueueRemoteScrapeOnGameSelected,
+                    forceRemoteScrape: false,
+                    createUserVariantGuide: options.CreateUserVariantGuidesOnGameSelected,
+                    suppressImmediateGamelistUpdates: true,
+                    scrapeCancellationToken);
+            }
+            catch (OperationCanceledException) when (!IsLatestGameSelectedScrape(scrapeSequence))
+            {
+                _logger?.LogDebug("Stale game-selected prefetch cancelled for system={SystemId}, path={Path}", systemId, path);
+                await DemoteStaleSelectionToBackgroundQueueAsync(selectedGame, "cancelled-prefetch");
+                return;
+            }
+
+            if (!IsLatestGameSelectedScrape(scrapeSequence))
+            {
+                _logger?.LogDebug("Stale game-selected prefetch result ignored for system={SystemId}, path={Path}", systemId, path);
+                await DemoteStaleSelectionToBackgroundQueueAsync(selectedGame, "stale-prefetch-result");
+                return;
+            }
+
+            _logger?.LogInformation("game-selected STEP prefetch done at {ElapsedMs}ms — system={SystemId}, game={GameSlug}", perf.ElapsedMilliseconds, prefetchResult.SystemId, prefetchResult.GameSlug);
+            _logger?.LogInformation(
+                "Local media projection prepared for game-selected: system={SystemId}, game={GameSlug}, queuedRemote={QueuedRemote}, missing={MissingCount}, arcadeLike={ArcadeLike}, folderSystem={FolderSystem}, skipCrc={SkipCrc}, biosFiltered={BiosFiltered}",
+                prefetchResult.SystemId,
+                prefetchResult.GameSlug,
+                prefetchResult.QueuedRemoteScrape,
+                prefetchResult.Needs.Count(n => n.IsMissing),
+                prefetchResult.IsArcadeLike,
+                prefetchResult.IsFolderBasedSystem,
+                prefetchResult.SkipCrcComputation,
+                prefetchResult.IsFilteredArcadeBiosCandidate);
+        }
+        else
+        {
+            _logger?.LogDebug("Media prefetch skipped on game-selected; live priority scrape may still refresh the ES game card.");
+            if (options.QueueRemoteScrapeOnGameSelected)
+            {
+                MediaPrefetchResult remoteQueueResult;
+                try
+                {
+                    remoteQueueResult = await _mediaPrefetchService.PrefetchForSelectionAsync(
+                        selectedGame,
+                        allowRemoteScrape: true,
+                        forceRemoteScrape: false,
+                        createUserVariantGuide: options.CreateUserVariantGuidesOnGameSelected,
+                        suppressImmediateGamelistUpdates: true,
+                        scrapeCancellationToken);
+                }
+                catch (OperationCanceledException) when (!IsLatestGameSelectedScrape(scrapeSequence))
+                {
+                    _logger?.LogDebug("Stale live priority scrape cancelled for system={SystemId}, path={Path}", systemId, path);
+                    await DemoteStaleSelectionToBackgroundQueueAsync(selectedGame, "cancelled-live-priority");
+                    return;
+                }
+
+                if (!IsLatestGameSelectedScrape(scrapeSequence))
+                {
+                    _logger?.LogDebug("Stale live priority scrape result ignored for system={SystemId}, path={Path}", systemId, path);
+                    await DemoteStaleSelectionToBackgroundQueueAsync(selectedGame, "stale-live-priority-result");
+                    return;
+                }
+
+                _logger?.LogInformation(
+                    "Live priority scrape checked for game-selected: system={SystemId}, game={GameSlug}, queuedRemote={QueuedRemote}, missing={MissingCount}, gamePathExists={GamePathExists}, gamelistMd5={GamelistMd5}",
+                    remoteQueueResult.SystemId,
+                    remoteQueueResult.GameSlug,
+                    remoteQueueResult.QueuedRemoteScrape,
+                    remoteQueueResult.Needs.Count(n => n.IsMissing),
+                    remoteQueueResult.GamePathExists,
+                    string.IsNullOrWhiteSpace(remoteQueueResult.GamelistMd5) ? "<none>" : remoteQueueResult.GamelistMd5);
+                await RefreshSelectedGameDetailsAfterLiveScrapeAsync(systemId, path);
+            }
+        }
+
+        CompleteLatestGameSelectedScrape(scrapeSequence);
+        LogGameSelectedPerfIfNeeded(perf.Elapsed, systemId, path, options, detailsEnabled, bypassCache);
+    }
+
     private async Task<SystemDetails?> FetchSystemDetailsAsync(string systemId, bool bypassCache = false)
     {
         var cacheKey = NormalizeCacheKey(systemId);

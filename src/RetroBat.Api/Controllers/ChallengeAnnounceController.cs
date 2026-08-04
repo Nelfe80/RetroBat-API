@@ -47,7 +47,10 @@ public sealed class ChallengeAnnounceController : ControllerBase
             request.StartsAtUtc,
             request.QrImageUrl,
             request.Conditions,
-            cancellationToken);
+            cancellationToken,
+            request.HideAfterSeconds,
+            request.ResultBig,
+            request.ResultLine);
         return Accepted(_overlay.GetState());
     }
 
@@ -228,4 +231,10 @@ public sealed record ChallengeAnnounceRequest(
     string? Objective,
     DateTime? StartsAtUtc,
     string? QrImageUrl,
-    string? Conditions = null);
+    string? Conditions = null,
+    // Mode RÉSUMÉ de fin de challenge : l'annonce se retire seule après N secondes
+    // (le hub la pousse à la clôture, sans countdown). ResultBig = médaille/rang en
+    // GROS (à la place du chrono) ; ResultLine = temps/score sous l'objectif.
+    int? HideAfterSeconds = null,
+    string? ResultBig = null,
+    string? ResultLine = null);

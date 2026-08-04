@@ -91,16 +91,20 @@ public sealed class NelfePlayLinkController : ControllerBase
 <script>
 const $ = (id) => document.getElementById(id);
 let timer = null;
+// ?return : d'où l'on vient (ex. page de participation contest). Une fois lié,
+// on y RETOURNE tout seul — pas de « revenir à la main » ni de « revérifier ».
+const RETURN = new URLSearchParams(location.search).get('return');
 
 function render(state) {
   $('machine').textContent = state.label || '';
   if (state.status === 'linked') {
     $('title').textContent = 'Machine connectée';
     $('lead').innerHTML = '<span class="ok">Cette machine est reliée à votre compte.</span> ' +
-      'Les jeux que vous ajoutez s’installeront tout seuls.';
+      (RETURN ? 'Retour en cours…' : 'Les jeux que vous ajoutez s’installeront tout seuls.');
     $('go').style.display = 'none';
     $('url').textContent = '';
     if (timer) { clearInterval(timer); timer = null; }
+    if (RETURN && /^https?:\/\//.test(RETURN)) { setTimeout(() => { location.href = RETURN; }, 900); }
     return;
   }
   if (state.status === 'pending' && state.url) {
@@ -140,7 +144,17 @@ async function poll() {
 }
 
 $('go').addEventListener('click', start);
-poll();
+// Auto-démarrage : on lit l'état ; si pas déjà lié, on lance l'appairage tout de
+// suite (ouverture de l'accord + polling). Un clic de moins. Si le popup est
+// bloqué, le lien d'autorisation reste affiché et cliquable.
+(async () => {
+  try {
+    const r = await fetch('/api/v1/nelfeplay/link/state');
+    const state = await r.json();
+    render(state);
+    if (state.status !== 'linked') { start(); }
+  } catch { poll(); }
+})();
 </script>
 </body>
 </html>

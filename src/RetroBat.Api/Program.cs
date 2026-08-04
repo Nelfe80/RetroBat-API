@@ -55,10 +55,32 @@ if (testModeRequested)
     });
 }
 
-var consoleLoggingEnabled = builder.Configuration.GetValue("ApiExpose:Logging:ConsoleEnabled", true);
+var logConfig = builder.Configuration.GetSection("ApiExpose:Logging");
+var consoleLoggingEnabled = logConfig.GetValue("ConsoleEnabled", true);
 if (!consoleLoggingEnabled)
 {
     builder.Logging.ClearProviders();
+}
+
+// General runtime file log: APIExpose runs hidden (--hide-console) so console output
+// is lost. This captures every existing _logger.LogXxx into .log/apiexpose-runtime.log
+// so incidents like a black marquee after a media migration are diagnosable.
+if (logConfig.GetValue("FileEnabled", true))
+{
+    var minLevel = Enum.TryParse<LogLevel>(logConfig.GetValue("MinimumLevel", "Information"), ignoreCase: true, out var parsed)
+        ? parsed
+        : LogLevel.Information;
+    var filePathRaw = logConfig.GetValue("FilePath", ".log/apiexpose-runtime.log")!;
+    var filePath = Path.IsPathRooted(filePathRaw) ? filePathRaw : Path.Combine(RetroBatPaths.PluginRoot, filePathRaw);
+    var resetOnStartup = logConfig.GetValue("ResetRuntimeLogsOnStartup", true);
+
+    // let our own logs (down to the configured level) reach the file; keep the
+    // framework's own chatter at Warning so the runtime log stays readable.
+    builder.Logging.SetMinimumLevel(minLevel);
+    builder.Logging.AddFilter("RetroBat", minLevel);
+    builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
+    builder.Logging.AddFilter("System", LogLevel.Warning);
+    builder.Logging.AddProvider(new RuntimeFileLoggerProvider(filePath, minLevel, resetOnStartup));
 }
 
 builder.Services.Configure<ApiExposeOptions>(builder.Configuration.GetSection("ApiExpose"));
@@ -102,7 +124,9 @@ builder.Services.AddCors(options =>
 
             if (parsed.Scheme == Uri.UriSchemeHttps
                 && (parsed.Host.Equals("nelfetech.com", StringComparison.OrdinalIgnoreCase)
-                    || parsed.Host.EndsWith(".nelfetech.com", StringComparison.OrdinalIgnoreCase)))
+                    || parsed.Host.EndsWith(".nelfetech.com", StringComparison.OrdinalIgnoreCase)
+                    || parsed.Host.Equals("nelfeplay.com", StringComparison.OrdinalIgnoreCase)
+                    || parsed.Host.EndsWith(".nelfeplay.com", StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }
@@ -182,6 +206,9 @@ if (!string.IsNullOrWhiteSpace(nelfePlayBaseUrl))
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayLinkService>();
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayPlayReporter>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayPlayReporter>());
+// Joueur de session (Lot 6 / Station) : code joueur RGPC posé au check-in par le hub,
+// lu par le reporter pour attribuer le record certifié au joueur + tag salle.
+builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayScoringSessionService>();
 // Scoring certifié — enrôlement de la clé d'appareil, ticket de session, capture
 // attestation + score (soumission du passeport = étape 3c).
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayScoringReporter>();
@@ -199,6 +226,10 @@ builder.Services.AddSingleton<ChallengeAnnounceOverlayService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ChallengeAnnounceOverlayService>());
 builder.Services.AddSingleton<CabinetLockOverlayService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CabinetLockOverlayService>());
+// « Réclame ton record ! » — surimpression de fin de partie pour rattacher un
+// score anonyme certifié à un compte (déclenchée par le scoring reporter).
+builder.Services.AddSingleton<ClaimOverlayService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ClaimOverlayService>());
 builder.Services.AddSingleton<EsNotifyDeduplicationService>();
 builder.Services.AddSingleton<IEmulationStationNotificationService, EmulationStationNotificationService>();
 builder.Services.AddSingleton<GameListImpactWarningService>();
@@ -457,6 +488,17 @@ app.Use(async (context, next) =>
         return;
     }
 
+    // Inscription Live Contest : ecriture cross-site LEGITIME depuis la page de
+    // participation de la plateforme (elle remet le playToken a cet APIExpose).
+    // Le navigateur envoie Sec-Fetch-Site: cross-site et n'a PAS le jeton local —
+    // on ne l'exige donc pas ici. La garde d'ORIGINE juste en dessous valide que
+    // l'appelant est bien la plateforme officielle (ou le loopback).
+    if (context.Request.Path.StartsWithSegments("/api/v1/livecontest"))
+    {
+        await next();
+        return;
+    }
+
     if (LocalWriteToken.Matches(context.Request.Headers[LocalWriteToken.HeaderName].FirstOrDefault()))
     {
         await next();
@@ -495,6 +537,23 @@ app.Use(async (context, next) =>
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
+    }
+
+    await next();
+});
+
+// Private Network Access (Chrome) : une page PUBLIQUE en HTTPS (nelfetech.com)
+// qui appelle cette API en LOOPBACK (127.0.0.1) doit recevoir, sur le preflight,
+// l'en-tete « Access-Control-Allow-Private-Network: true » — que le CORS ASP.NET
+// n'ajoute pas. Sans lui, Chrome bloque le POST (ex. enroll Live Contest) alors
+// qu'un simple GET passe. On le pose sur tout preflight qui le demande.
+app.Use(async (context, next) =>
+{
+    if (HttpMethods.IsOptions(context.Request.Method) &&
+        context.Request.Headers.TryGetValue("Access-Control-Request-Private-Network", out var pna) &&
+        string.Equals(pna, "true", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.Headers["Access-Control-Allow-Private-Network"] = "true";
     }
 
     await next();

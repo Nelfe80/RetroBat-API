@@ -17,6 +17,9 @@
 
   <ItemGroup>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+    <!-- QR 100 % managé (PngByteQRCode) : le code de réclamation encodé en QR
+         sur l'overlay de fin de partie, sans dépendance native ni réseau. -->
+    <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
 
   <ItemGroup>

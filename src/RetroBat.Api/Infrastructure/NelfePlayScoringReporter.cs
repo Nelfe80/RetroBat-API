@@ -1,8 +1,10 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using RetroBat.Api.Media;
 using RetroBat.Api.Scoring;
 using RetroBat.Domain.Events;
 using RetroBat.Domain.Interfaces;
@@ -28,6 +30,8 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private readonly IEventBus _eventBus;
     private readonly IHttpClientFactory _httpFactory;
     private readonly NelfePlayDeviceStore _devices;
+    private readonly ClaimOverlayService? _claimOverlay;
+    private readonly NelfePlayScoringSessionService? _scoringSession;
     private readonly ILogger<NelfePlayScoringReporter>? _logger;
 
     private IDisposable? _subscription;
@@ -47,11 +51,15 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         IEventBus eventBus,
         IHttpClientFactory httpFactory,
         NelfePlayDeviceStore devices,
+        ClaimOverlayService? claimOverlay = null,
+        NelfePlayScoringSessionService? scoringSession = null,
         ILogger<NelfePlayScoringReporter>? logger = null)
     {
         _eventBus = eventBus;
         _httpFactory = httpFactory;
         _devices = devices;
+        _claimOverlay = claimOverlay;
+        _scoringSession = scoringSession;
         _logger = logger;
     }
 
@@ -61,10 +69,189 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         try
         {
             await EnsureEnrolledAsync(stoppingToken).ConfigureAwait(false);
-            await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
+
+            // La mesure du score est ÉVÉNEMENTIELLE (pipe → HandleEvent). En fond, un
+            // battement calme vérifie l'état recovery « share datas » : si le serveur
+            // reconstruit sa base, cette machine re-verse ses records auto-conservés.
+            // Marche pour les machines ANONYMES (contrairement à /agent/work lié à un
+            // compte) car ResolveCredential retombe sur le credential anonyme.
+            var delay = TimeSpan.FromSeconds(20); // premier contrôle peu après le boot
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+                await RecoveryCheckAsync(stoppingToken).ConfigureAwait(false);
+                await ClaimCheckAsync(stoppingToken).ConfigureAwait(false);
+                delay = TimeSpan.FromSeconds(180);
+            }
         }
         catch (OperationCanceledException) { }
         finally { _subscription?.Dispose(); }
+    }
+
+    /// <summary>
+    /// Battement recovery : interroge l'état « share datas » (endpoint public, sans SQL)
+    /// et, s'il est armé, re-verse les records auto-conservés. On n'agit JAMAIS
+    /// spontanément — uniquement quand l'admin a explicitement armé une reconstruction.
+    /// </summary>
+    private async Task RecoveryCheckAsync(CancellationToken cancellationToken)
+    {
+        if (!Enabled) return;
+        var credential = ResolveCredential();
+        if (string.IsNullOrEmpty(credential)) return;
+        try
+        {
+            using var client = CreateClient(credential);
+            using var response = await client.GetAsync("/api/v1/scores/recovery-status", cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return;
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var root = JsonNode.Parse(body) as JsonObject;
+            var contribute = (bool?)root?["contribute"] ?? false;
+            if (!contribute) return;
+
+            // NOUVEL ÉPISODE : une époque inédite (nouvel armement admin) → on RÉ-ARME les
+            // records déjà versés (*.sent → *.json) pour qu'une NOUVELLE récupération les
+            // re-verse aussi. Le .sent ne vaut donc que POUR l'épisode courant. L'époque est
+            // persistée pour survivre à un redémarrage au milieu d'un même épisode.
+            var epoch = (string?)root?["epoch"] ?? "";
+            if (!string.IsNullOrEmpty(epoch) && epoch != ReadLastEpoch())
+            {
+                RearmSentFiles(CertifiedDir());
+                WriteLastEpoch(epoch);
+            }
+
+            await ContributeCertifiedAsync(client, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Trace($"recovery-check échec : {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// À l'identification de la machine (appairée), rattache ses scores ANONYMES au
+    /// compte. La machine prouve qu'elle possède les deux credentials (appairé pour
+    /// l'auth, anonyme dans le corps). Une seule fois (marqueur claimed.flag).
+    /// </summary>
+    private async Task ClaimCheckAsync(CancellationToken cancellationToken)
+    {
+        if (!Enabled || !_devices.IsPaired) return;
+        var paired = _devices.GetCredential();
+        if (string.IsNullOrEmpty(paired)) return;
+
+        var flag = System.IO.Path.Combine(AppContext.BaseDirectory, "state", "nelfeplay", "claimed.flag");
+        if (System.IO.File.Exists(flag)) return;
+
+        var anon = ReadAnonymousCredential();
+        if (string.IsNullOrEmpty(anon))
+        {
+            try { System.IO.File.WriteAllText(flag, "no-anon"); } catch { }
+            return; // rien d'anonyme à réclamer
+        }
+
+        try
+        {
+            using var client = CreateClient(paired);
+            var body = new JsonObject { ["anonymous_credential"] = anon };
+            using var content = new StringContent(body.ToJsonString(), new UTF8Encoding(false), "application/json");
+            using var response = await client.PostAsync("/api/v1/agent/scores/claim", content, cancellationToken).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                var b = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                Trace($"claim scores anonymes : {b}");
+                try { System.IO.File.WriteAllText(flag, DateTime.UtcNow.ToString("o")); } catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            Trace($"claim échec : {ex.Message}");
+        }
+    }
+
+    private static string? ReadAnonymousCredential()
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(AppContext.BaseDirectory, "state", "nelfeplay", "anonymous.json");
+            if (System.IO.File.Exists(path))
+            {
+                using var doc = JsonDocument.Parse(System.IO.File.ReadAllText(path));
+                if (doc.RootElement.TryGetProperty("credential", out var c) && c.ValueKind == JsonValueKind.String)
+                {
+                    return c.GetString();
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private static string CertifiedDir() =>
+        System.IO.Path.Combine(AppContext.BaseDirectory, "state", "nelfeplay", "certified");
+
+    private static string EpochFile() =>
+        System.IO.Path.Combine(AppContext.BaseDirectory, "state", "nelfeplay", "recovery-epoch.txt");
+
+    private static string ReadLastEpoch()
+    {
+        try { return System.IO.File.Exists(EpochFile()) ? System.IO.File.ReadAllText(EpochFile()).Trim() : ""; }
+        catch { return ""; }
+    }
+
+    private static void WriteLastEpoch(string epoch)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(EpochFile())!);
+            System.IO.File.WriteAllText(EpochFile(), epoch, new UTF8Encoding(false));
+        }
+        catch { /* best-effort : au pire on ré-arme une fois de trop, sans dommage (idempotent) */ }
+    }
+
+    /// <summary>Ré-arme les records d'un épisode précédent : *.sent → *.json.</summary>
+    private void RearmSentFiles(string dir)
+    {
+        if (!System.IO.Directory.Exists(dir)) return;
+        var n = 0;
+        foreach (var sent in System.IO.Directory.EnumerateFiles(dir, "*.sent"))
+        {
+            try { System.IO.File.Move(sent, sent[..^5], overwrite: true); n++; } catch { /* ignore */ }
+        }
+        if (n > 0) Trace($"recovery : {n} record(s) ré-armé(s) (nouvel épisode).");
+    }
+
+    /// <summary>
+    /// Re-verse les passeports auto-conservés dans certified/ vers le serveur en
+    /// reconstruction. Chaque record REPASSE le pipeline vérifié (signature + règles) et
+    /// est idempotent (déjà présent = duplicate). On marque le fichier .sent après envoi
+    /// pour ne pas le renvoyer ; un échec transport le laisse pour le prochain battement.
+    /// </summary>
+    private async Task ContributeCertifiedAsync(HttpClient client, CancellationToken cancellationToken)
+    {
+        var dir = CertifiedDir();
+        if (!System.IO.Directory.Exists(dir)) return;
+
+        var sent = 0;
+        foreach (var path in System.IO.Directory.EnumerateFiles(dir, "*.json"))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string body;
+            try { body = await System.IO.File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false); }
+            catch { continue; }
+
+            using var content = new StringContent(body, new UTF8Encoding(false), "application/json");
+            using var response = await client.PostAsync("/api/v1/agent/scores/contribute", content, cancellationToken).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.Conflict)
+            {
+                try { System.IO.File.Move(path, path + ".sent", overwrite: true); } catch { /* on retentera */ }
+                sent++;
+            }
+        }
+
+        if (sent > 0)
+        {
+            Trace($"recovery : {sent} record(s) auto-conservé(s) re-versé(s).");
+            _logger?.LogInformation("Scoring : {Count} record(s) re-versé(s) (recovery « share datas »).", sent);
+        }
     }
 
     private void HandleEvent(EventEnvelope envelope)
@@ -77,6 +264,9 @@ public sealed class NelfePlayScoringReporter : BackgroundService
                 case "ui.game.started":
                     // Pas de ticket ici : on ne le demande qu'à la fin, si on soumet
                     // vraiment (score + jeu ouvert). Une démo sans score = zéro ticket.
+                    // Une nouvelle partie retire aussitôt une éventuelle surimpression
+                    // de réclamation restée à l'écran.
+                    _claimOverlay?.HideNow();
                     ResetSession();
                     break;
                 case "scoring.listener.attestation":
@@ -306,6 +496,20 @@ public sealed class NelfePlayScoringReporter : BackgroundService
 
         JsonObject Triple(string? h) => new() { ["start_sha256"] = h, ["loaded_sha256"] = h, ["end_sha256"] = h };
 
+        // MONDE de la partie : la session le porte.
+        //  - STATION : joueur checké-in en salle par le hub → provenance salle (nom/ville).
+        //  - STREAM  : participation à un contest de streamer (salle OU maison) → chaîne +
+        //    contest_id. Armée par APIExpose (enrôlement contest) ou par le hub (borne).
+        //  - HOME    : aucune session (machine perso / borne libre).
+        // Le record est attribué au code joueur (RGPC) de la session. Champs ADDITIFS et
+        // SIGNÉS (JCS re-trie ; un vérifieur qui les ignore reste valide).
+        var sessionPlayer = _scoringSession?.Get();
+        var world = sessionPlayer?.World ?? "home";
+        JsonObject? contextVenue = sessionPlayer is not null
+            && (sessionPlayer.VenueName is not null || sessionPlayer.VenueCity is not null)
+            ? new JsonObject { ["name"] = sessionPlayer.VenueName, ["city"] = sessionPlayer.VenueCity }
+            : null;
+
         return new JsonObject
         {
             ["protocol"] = 1,
@@ -318,7 +522,14 @@ public sealed class NelfePlayScoringReporter : BackgroundService
                 ["manifest_commit"] = manifestCommit, ["profile_document_sha256"] = profileDocSha,
             },
             ["device"] = new JsonObject { ["device_id"] = deviceId, ["key_id"] = deviceKey.KeyId, ["key_type"] = "ecdsa_p256" },
-            ["identity"] = new JsonObject { ["player_ref"] = null, ["session_player_id"] = null },
+            ["identity"] = new JsonObject { ["player_ref"] = null, ["session_player_id"] = sessionPlayer?.PlayerCode },
+            ["context"] = new JsonObject
+            {
+                ["world"] = world,
+                ["venue"] = contextVenue,
+                ["channel"] = sessionPlayer?.Channel,
+                ["contest_id"] = sessionPlayer?.ContestId,
+            },
             ["listener"] = new JsonObject
             {
                 ["build"] = wrapperVersion ?? "0", ["start_sha256"] = listenerSha,
@@ -394,10 +605,98 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             Trace($"VERDICT HTTP {(int)response.StatusCode} — {body}");
             _logger?.LogInformation("Scoring : verdict serveur {Status} — {Body}", (int)response.StatusCode, body);
+            PersistCertified(passport, body);
+            MaybeShowClaimOverlay(passport, body);
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Scoring : soumission impossible.");
+        }
+    }
+
+    /// <summary>
+    /// Score anonyme PUBLIÉ → le verdict porte un <c>claim_code</c> : on affiche la
+    /// surimpression « Réclame ton record ! » sur l'écran de la machine. Une machine
+    /// appairée/liée soumet un score attribué (non anonyme) : pas de code, donc pas
+    /// d'overlay — le gating par identité est implicite côté serveur.
+    /// </summary>
+    private void MaybeShowClaimOverlay(JsonObject passport, string responseBody)
+    {
+        if (_claimOverlay is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var obj = JsonNode.Parse(responseBody) as JsonObject;
+            var code = (string?)(obj?["claim_code"]);
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                return;
+            }
+
+            var game = passport["game"] as JsonObject;
+            var systemId = (string?)(game?["system_id"]) ?? "";
+            var ruleset = (string?)(game?["ruleset"]) ?? "";
+            var scoreText = (string?)((passport["metric"] as JsonObject)?["value"]) ?? "0";
+            _ = long.TryParse(scoreText, out var score);
+
+            int? rank = null;
+            if (obj?["rank"] is JsonValue rv && rv.TryGetValue<int>(out var r))
+            {
+                rank = r;
+            }
+
+            _ = _claimOverlay.ShowAsync(systemId, ruleset, score, code!, rank);
+        }
+        catch (Exception ex)
+        {
+            Trace($"overlay claim non affiché : {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// SELF-CUSTODY : conserve localement le passeport SIGNÉ + le verdict serveur dans
+    /// <c>state/nelfeplay/certified/{session_id}.json</c>. C'est la sauvegarde distribuée
+    /// de la flotte : en cas de recovery serveur (mode « contribute »), cette machine
+    /// re-verse ses propres exploits, chacun re-vérifiable (signature d'appareil + OTS).
+    /// Le joueur DÉTIENT ses records — rien ne dépend d'un seul serveur.
+    /// </summary>
+    private void PersistCertified(JsonObject passport, string responseBody)
+    {
+        try
+        {
+            var sessionId = (string?)passport["session_id"];
+            if (string.IsNullOrEmpty(sessionId)) return;
+
+            string? verdict = null;
+            try
+            {
+                var obj = JsonNode.Parse(responseBody) as JsonObject;
+                verdict = (string?)(obj?["status"] ?? obj?["verdict"]); // le serveur renvoie `status`
+            }
+            catch { /* corps non-JSON : on garde le passeport quand même */ }
+
+            var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "state", "nelfeplay", "certified");
+            System.IO.Directory.CreateDirectory(dir);
+            var record = new JsonObject
+            {
+                ["session_id"] = sessionId,
+                ["verdict"] = verdict,
+                ["submitted_at"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                ["server_response"] = responseBody,
+                ["passport"] = passport.DeepClone(),
+            };
+            var path = System.IO.Path.Combine(dir, sessionId + ".json");
+            // SANS BOM : l'archive doit être universellement parsable (json_decode PHP,
+            // outils tiers, miroirs). Encoding.UTF8 écrirait un BOM qui les fait échouer.
+            System.IO.File.WriteAllText(path, record.ToJsonString(), new UTF8Encoding(false));
+            Trace($"certified/ écrit : {sessionId}.json (verdict={verdict ?? "?"})");
+        }
+        catch (Exception ex)
+        {
+            Trace($"certified/ échec : {ex.Message}");
         }
     }
 

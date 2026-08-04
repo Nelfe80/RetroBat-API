@@ -26,6 +26,13 @@ public class EmulationStationWatcherOptions
 
     public bool LocalProjectionOnGameSelected { get; set; } = false;
     public bool PrefetchOnGameSelected { get; set; } = false;
+
+    /// <summary>Run the heavy per-selection media prefetch/scrape on a dedicated
+    /// background worker (latest-wins) instead of inline in the event-processing task.
+    /// Inline, the multi-second prefetch held a thread-pool thread and starved the pool
+    /// (Kestrel warned of it), delaying the marquee and publishing stale system marquees
+    /// seconds late. false restores the historical inline behavior.</summary>
+    public bool OffloadPrefetchToWorker { get; set; } = true;
     public bool CreateUserVariantGuidesOnGameSelected { get; set; } = false;
     public bool QueueRemoteScrapeOnGameSelected { get; set; } = true;
     public bool EsCacheEnabled { get; set; } = true;
