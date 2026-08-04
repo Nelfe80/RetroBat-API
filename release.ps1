@@ -46,9 +46,12 @@ $ex = @(
     # dist = installeur Inno compile (des centaines de Mo) ; installer = sources .iss.
     # Ni l'un ni l'autre ne va dans le pack runtime (sinon l'update.7z explose).
     "-x!$name\dist", "-x!$name\installer",
+    # publish-tmp = sortie de publication temporaire (DLL + .pdb) laissee a la racine ;
+    # jamais dans le pack runtime. + tout .pdb (symboles de debug, inutiles au runtime).
+    "-x!$name\publish-tmp",
     "-x!$name\wiki", "-x!$name\mkdocs.yml", "-x!$name\site",
     "-x!$name\build.bat", "-x!$name\release.ps1",
-    '-xr!__pycache__', '-xr!*.log', '-xr!.vs'
+    '-xr!__pycache__', '-xr!*.log', '-xr!.vs', '-xr!*.pdb'
 )
 
 Set-Location $root
