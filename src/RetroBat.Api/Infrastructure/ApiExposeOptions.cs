@@ -480,7 +480,7 @@ public class ApiExposeOptions
         public bool VisualAdaptiveThrottleEnabled { get; set; } = true;
         public bool VisualStaleDropEnabled { get; set; } = true;
         public int VisualMinIntervalFloorMs { get; set; } = 30;
-        public int VisualMinIntervalCeilingMs { get; set; } = 220;
+        public int VisualMinIntervalCeilingMs { get; set; } = 50;
         public int VisualTargetAgeMs { get; set; } = 90;
         public int VisualFinalFlushMs { get; set; } = 50;
     }
