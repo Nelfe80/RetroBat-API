@@ -1689,12 +1689,20 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         var sequence = ReadLongProperty(envelope.Payload, "Sequence");
         lock (_latestSelectionLock)
         {
-            if (sequence <= _latestSelectionSequence)
+            // Honor the TRUE events.ini order carried in the payload. Raw events
+            // are processed on concurrent Task.Run tasks, so an OLDER selection
+            // (e.g. an intermediate hovered on the way to the destination) can
+            // reach us AFTER a newer one. Advance the high-water mark only on a
+            // strictly greater sequence; never promote an out-of-order arrival.
+            // A late lower sequence keeps its real value so IsStaleSelectionSequence
+            // drops it — the intermediate is skipped by order, the destination wins.
+            // (Equal sequence = the enriched second pass of the same selection: it
+            // is not advanced and not dropped, so genre/year details still publish.)
+            if (sequence > _latestSelectionSequence)
             {
-                sequence = _latestSelectionSequence + 1;
+                _latestSelectionSequence = sequence;
             }
 
-            _latestSelectionSequence = sequence;
             return sequence;
         }
     }
