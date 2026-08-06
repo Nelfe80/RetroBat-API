@@ -55,6 +55,9 @@ Chaque flux ne délivre que les types d'événements de ses préfixes ; certains
 
 Toute l'enveloppe est commune : `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` — le contrat est additif (les champs s'ajoutent, jamais retirés).
 
+!!! note "Hiscores : arcade **et** consoles"
+    Les high scores couvrent désormais les jeux **consoles** (non-MAME) en plus de l'arcade. Le classement du jeu courant s'obtient via `GET /api/v1/hiscores` (le champ `Me` y indique le pseudo du joueur à la borne). Le classement **mondial** du jeu (Top 100, quand la borne est reliée à NelfePlay) est relayé par `GET /api/v1/nelfeplay/records/leaderboard`. Détails et schémas dans Swagger.
+
 ## Construire votre propre outil
 
 Un overlay pour navigateur, un rich presence, un tableau de scores maison : tout consommateur WebSocket/REST peut se brancher. Commencez par :
