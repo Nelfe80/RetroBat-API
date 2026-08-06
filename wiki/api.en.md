@@ -55,6 +55,9 @@ Each stream only delivers the event types of its prefixes; some replay their las
 
 Every event shares one envelope: `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` — the contract is additive (fields are added, never removed).
 
+!!! note "Hiscores: arcade **and** consoles"
+    High scores now cover **console** (non-MAME) games as well as arcade. The current game's board is served by `GET /api/v1/hiscores` (its `Me` field names the player at the cabinet). The game's **world** ranking (Top 100, when the cabinet is linked to NelfePlay) is relayed by `GET /api/v1/nelfeplay/records/leaderboard`. Details and schemas in Swagger.
+
 ## Build your own tool
 
 A browser overlay, a rich presence, a homemade scoreboard: any WebSocket/REST consumer can plug in. Start with:
