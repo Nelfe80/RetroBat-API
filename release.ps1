@@ -69,6 +69,13 @@ Write-Host 'Construction update.7z...'
 $listing = & $sz l $full
 $leaks = $listing | Select-String '\.env|\\media\\|\\src\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db'
 if ($leaks) { throw "FUITE DETECTEE dans l'archive : $($leaks[0])" }
+# La cle API de la borne ne doit JAMAIS etre committee/distribuee : le defaut reste vide
+# (chaque borne genere la sienne au 1er run). On bloque si une valeur traine.
+$appsettingsPath = Join-Path $PSScriptRoot 'appsettings.json'
+if (Test-Path $appsettingsPath) {
+    $apiKeyLeak = Select-String -Path $appsettingsPath -Pattern '"ApiKey"\s*:\s*"[^"]+"'
+    if ($apiKeyLeak) { throw "FUITE : une cle API est presente dans appsettings.json (doit rester vide)." }
+}
 Write-Host 'Controle anti-fuite : OK'
 
 # Controle de contrat : le swagger doit se generer (une regression type schemaId

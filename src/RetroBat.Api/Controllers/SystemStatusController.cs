@@ -69,6 +69,7 @@ public sealed class SystemStatusController : ControllerBase
                 ProcessRunning = esProcessRunning,
                 ApiReachable = esApiReachable
             },
+            RetroBat = BuildRetroBatStatus(),
             Managers = new ManagersStatus
             {
                 LocalMediaManager = _runtimeOptions.IsLocalMediaManagerEnabled(),
@@ -82,6 +83,21 @@ public sealed class SystemStatusController : ControllerBase
                 ToastNotifications = _runtimeOptions.IsTaskProgressEnabled()
             }
         });
+    }
+
+    /// <summary>Resolved RetroBat root and whether it actually holds roms/EmulationStation.
+    /// RomsFound=false means APIExpose is pointed at the wrong tree (empty lists).</summary>
+    private static RetroBatStatus BuildRetroBatStatus()
+    {
+        var romsRoot = RetroBatPaths.RomsRoot;
+        var romsFound = Directory.Exists(romsRoot);
+        return new RetroBatStatus
+        {
+            Root = RetroBatPaths.RetroBatRoot,
+            RomsFound = romsFound,
+            EmulationStationFound = Directory.Exists(RetroBatPaths.EmulationStationConfigRoot),
+            SystemFolders = romsFound ? Directory.GetDirectories(romsRoot).Length : 0
+        };
     }
 
     private static async Task<bool> ProbeEmulationStationApiAsync(CancellationToken cancellationToken)
@@ -185,7 +201,27 @@ public sealed class SystemStatusResponse
     public ApiExposeStatus ApiExpose { get; set; } = new();
     public WebSocketStatus WebSocket { get; set; } = new();
     public EmulationStationStatus EmulationStation { get; set; } = new();
+    public RetroBatStatus RetroBat { get; set; } = new();
     public ManagersStatus Managers { get; set; } = new();
+}
+
+/// <summary>Where APIExpose thinks RetroBat is, and whether it's really there. When
+/// RomsFound is false the plugin sits outside a real &lt;RetroBat&gt;\plugins\ tree and every
+/// game/system list will be empty — check the install location.</summary>
+public sealed class RetroBatStatus
+{
+    /// <summary>Resolved RetroBat root (grandparent of the plugin folder).</summary>
+    /// <example>D:\RetroBat</example>
+    public string Root { get; set; } = string.Empty;
+    /// <summary>&lt;Root&gt;\roms exists. FALSE = wrong location → empty lists.</summary>
+    /// <example>true</example>
+    public bool RomsFound { get; set; }
+    /// <summary>&lt;Root&gt;\emulationstation\.emulationstation exists.</summary>
+    /// <example>true</example>
+    public bool EmulationStationFound { get; set; }
+    /// <summary>Number of system folders under roms (0 when misdetected).</summary>
+    /// <example>42</example>
+    public int SystemFolders { get; set; }
 }
 
 public sealed class ApiExposeStatus

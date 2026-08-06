@@ -8,7 +8,7 @@
 ; ─────────────────────────────────────────────────────────────────────────────
 
 #define AppName "APIExpose (borne RetroBat)"
-#define AppVersion "1.4.0"
+#define AppVersion "1.4.1"
 #define AppExe "RetroBat.Api.exe"
 
 [Setup]
@@ -17,8 +17,9 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=NelfeTech
 AppPublisherURL=https://www.nelfetech.com
-; La cible est le dossier plugins du RetroBat de la borne.
-DefaultDirName=C:\RetroBat\plugins\APIExpose
+; La cible est le dossier plugins du RetroBat de la borne. DefaultDirName est resolu
+; par [Code] (retrobat-detect.iss) : RetroBat detecte sur les lecteurs, sinon C:\RetroBat.
+DefaultDirName={code:GetPluginInstallDir|APIExpose}
 DirExistsWarning=no
 AppendDefaultDirName=no
 PrivilegesRequired=lowest
@@ -58,3 +59,13 @@ Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Description: "Démarrer APIExp
 
 [UninstallRun]
 Filename: "taskkill"; Parameters: "/f /im {#AppExe}"; Flags: runhidden; RunOnceId: "StopApi"
+
+; Detection/validation du RetroBat cible (DefaultDirName + avertissement si mauvais dossier).
+#include "retrobat-detect.iss"
+
+[Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+    WarnIfNotRetroBat();
+end;
