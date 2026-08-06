@@ -23,6 +23,21 @@ public class Hi2TxtExtractionService : IHiscoreService
         var romName = Path.GetFileNameWithoutExtension(targetGame.GamePath);
         result.RomName = romName;
 
+        // Console systems have no hi2txt descriptor: serve the accumulated LOCAL console
+        // leaderboard (per-game XML written on game-end by the RetroArch capture), so
+        // /api/v1/hiscores and the WS unify arcade and console local scores.
+        if (!IsMameFamilyTarget(targetGame))
+        {
+            result.SourceType = "console-local";
+            result.Scores = RetroBat.Domain.Models.ConsoleHiscoreStore.ReadScores(targetGame.SystemId ?? string.Empty, romName, targetGame.GameName);
+            result.Status = "ok";
+            result.Message = result.Scores.Count > 0
+                ? "local console leaderboard"
+                : "no local console leaderboard yet";
+            result.UpdatedAt = DateTime.Now;
+            return Task.FromResult(result);
+        }
+
         var candidates = EnumerateSaveFiles(targetGame, romName).ToList();
         if (candidates.Count == 0)
         {

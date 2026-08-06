@@ -106,4 +106,15 @@ public class ApiContext
     public NodeState Node { get; set; } = new NodeState();
     public GameState Ui { get; set; } = new GameState();
     public DateTime UtcTime => DateTime.UtcNow;
+
+    /// <summary>Pseudo du compte NelfePlay appairé à CETTE borne (cas HOME), publié
+    /// par NelfePlayAgentService à l'appairage. Identité des scores LOCAUX quand la
+    /// borne est libre. Null tant que la borne n'est pas connectée à un compte.</summary>
+    public string? PlayerPseudo { get; set; }
+
+    /// <summary>Pseudo du joueur CHECKÉ-IN en salle (cas VENUE), publié par le service
+    /// de badge (plaque joueur) au check-in du hub, effacé au checkout. Prioritaire sur
+    /// PlayerPseudo pour l'identité des scores locaux : en salle, le score est au joueur,
+    /// pas au propriétaire de la borne. Null quand la borne est libre.</summary>
+    public string? SessionPseudo { get; set; }
 }

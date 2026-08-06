@@ -46,17 +46,20 @@ public sealed class NelfePlayAgentService : BackgroundService
     private readonly NelfePlayDeviceStore _device;
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<NelfePlayAgentService> _logger;
+    private readonly RetroBat.Domain.Models.ApiContext _context;
     private readonly string _packageRoot =
         Path.Combine(AppContext.BaseDirectory, "state", "nelfeplay", "packages");
 
     public NelfePlayAgentService(
         NelfePlayDeviceStore device,
         IHttpClientFactory httpFactory,
-        ILogger<NelfePlayAgentService> logger)
+        ILogger<NelfePlayAgentService> logger,
+        RetroBat.Domain.Models.ApiContext context)
     {
         _device = device;
         _httpFactory = httpFactory;
         _logger = logger;
+        _context = context;
     }
 
     /// <summary>Adresse du service Nelfe Play (surchargeable pour les tests).</summary>
@@ -230,6 +233,9 @@ public sealed class NelfePlayAgentService : BackgroundService
             PendingIntents = (payload.Intents?.Count ?? 0) - installed,
             LastError = null,
         };
+        // Propagate the paired account pseudo to the shared context so local scores
+        // (console leaderboard) are attributed to the cabinet's NelfePlay identity.
+        _context.PlayerPseudo = payload.Pseudo;
 
         if (installed > 0)
         {

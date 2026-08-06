@@ -412,6 +412,9 @@ public sealed class RetroArchConsoleHiscoreProvider : IProvider
         }
 
         var playerName = ResolvePlayerName();
+        // The player just identified (check-in / pairing): claim the ANO runs written
+        // earlier in this same session so the local board follows, like the certified path.
+        if (playerName != "ANO") ReattributePendingAnonymous(playerName);
         var maxHiscore = ResolveMaxHiscore();
         var leaderboard = ReadExistingScores(game.SystemId, score.Rom);
         leaderboard.Add(new HiscoreEntry
@@ -468,10 +471,62 @@ public sealed class RetroArchConsoleHiscoreProvider : IProvider
             playerName,
             score.BestScore);
 
+        // Anonymous run: remember it so a later identification in THIS session claims it.
+        if (string.Equals(playerName, "ANO", StringComparison.OrdinalIgnoreCase))
+        {
+            lock (_pendingAno)
+            {
+                _pendingAno.Add((game.SystemId, score.Rom, game.GameName ?? string.Empty,
+                    score.BestScore.ToString(), DateTime.UtcNow));
+                if (_pendingAno.Count > 200) _pendingAno.RemoveRange(0, _pendingAno.Count - 200);
+            }
+        }
+
         lock (_sync)
         {
             _scores.Remove(BuildKey(score.SystemId, score.Rom));
             _activeConsoleGame = null;
+        }
+    }
+
+    private readonly List<(string Sys, string Rom, string Game, string Score, DateTime At)> _pendingAno = new();
+    private static readonly TimeSpan AnoClaimWindow = TimeSpan.FromMinutes(30);
+
+    /// <summary>When a player identifies (check-in / pairing), reattribute the ANO runs
+    /// they wrote earlier in THIS session (bounded to a freshness window so a player who
+    /// left long ago is never claimed) to their pseudo, in the local store, and republish
+    /// so a browsing MarqueeManager refreshes the names.</summary>
+    private void ReattributePendingAnonymous(string playerName)
+    {
+        List<(string Sys, string Rom, string Game, string Score, DateTime At)> claim;
+        lock (_pendingAno)
+        {
+            if (_pendingAno.Count == 0) return;
+            var cutoff = DateTime.UtcNow - AnoClaimWindow;
+            claim = _pendingAno.Where(p => p.At >= cutoff).ToList();
+            _pendingAno.Clear();
+        }
+        foreach (var p in claim)
+        {
+            try
+            {
+                if (!ConsoleHiscoreStore.RenamePlayer(p.Sys, p.Rom, p.Game, "ANO", playerName, p.Score)) continue;
+                _logger?.LogInformation("Console hiscore: ANO run claimed by {Player} for {Sys}/{Rom} (score {Score}).", playerName, p.Sys, p.Rom, p.Score);
+                _ = _eventBus.PublishAsync(new EventEnvelope
+                {
+                    Type = "hiscore.updated",
+                    Payload = new HiscoreExtractionResult
+                    {
+                        RomName = p.Rom,
+                        System = p.Sys,
+                        Status = "ok",
+                        Message = "console local reattribution",
+                        SourceType = "console-local",
+                        Scores = ConsoleHiscoreStore.ReadScores(p.Sys, p.Rom, p.Game)
+                    }
+                });
+            }
+            catch (Exception ex) { _logger?.LogDebug("ANO reattribution failed for {Sys}/{Rom}: {Msg}", p.Sys, p.Rom, ex.Message); }
         }
     }
 
@@ -523,14 +578,14 @@ public sealed class RetroArchConsoleHiscoreProvider : IProvider
 
     private string ResolvePlayerName()
     {
-        var settings = _settingsService.GetAllSettings();
-        if (settings.TryGetValue("global.retroachievements.username", out var username) &&
-            !string.IsNullOrWhiteSpace(username))
-        {
-            return username.Trim();
-        }
-
-        return "PLAYER";
+        // Identity of a local score — same resolution order as the certified reporter:
+        //  1. VENUE : the checked-in player's pseudo, published by the badge at check-in.
+        //  2. HOME  : the pseudo of the account paired to this cabinet.
+        //  3. else  : ANO (anonymous) — reattached to the account on pairing (recovery).
+        // Never es_settings, never the RetroAchievements username.
+        var pseudo = _context.SessionPseudo;
+        if (string.IsNullOrWhiteSpace(pseudo)) pseudo = _context.PlayerPseudo;
+        return string.IsNullOrWhiteSpace(pseudo) ? "ANO" : pseudo.Trim();
     }
 
     private static List<HiscoreEntry> ReadExistingScores(string systemId, string rom)
