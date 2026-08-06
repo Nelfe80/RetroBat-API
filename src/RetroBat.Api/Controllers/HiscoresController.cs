@@ -59,6 +59,12 @@ public class HiscoresController : ControllerBase
             return StatusCode(500, result);
         }
 
+        // Who is playing right now (session/venue > home account > anonymous): lets the
+        // marquee point out "your best line" under the local board.
+        result.Me = string.IsNullOrWhiteSpace(_context.SessionPseudo)
+            ? (string.IsNullOrWhiteSpace(_context.PlayerPseudo) ? null : _context.PlayerPseudo)
+            : _context.SessionPseudo;
+
         return Ok(result);
     }
 }

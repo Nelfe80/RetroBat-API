@@ -21,6 +21,7 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
     private static readonly HttpClient ImageHttp = new() { Timeout = TimeSpan.FromSeconds(8) };
 
     private readonly IOptionsMonitor<ApiExposeOptions> _options;
+    private readonly RetroBat.Domain.Models.ApiContext _context;
     private readonly ILogger<CabinetBadgeOverlayService>? _logger;
     private readonly object _sync = new();
     private Thread? _uiThread;
@@ -31,9 +32,11 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
 
     public CabinetBadgeOverlayService(
         IOptionsMonitor<ApiExposeOptions> options,
+        RetroBat.Domain.Models.ApiContext context,
         ILogger<CabinetBadgeOverlayService>? logger = null)
     {
         _options = options;
+        _context = context;
         _logger = logger;
     }
 
@@ -85,6 +88,10 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
         CancellationToken cancellationToken = default)
     {
         var playerMode = string.Equals(mode, "player", StringComparison.OrdinalIgnoreCase);
+        // Publish the checked-in player's pseudo so local scores are attributed to the
+        // player in a venue (player mode = check-in with a label), cleared on qr mode
+        // (free cabinet / checkout). Independent of whether the visual overlay renders.
+        _context.SessionPseudo = playerMode && !string.IsNullOrWhiteSpace(label) ? label.Trim() : null;
         if (!_options.CurrentValue.CabinetBadgeOverlay.Enabled)
         {
             _state = new BadgeState(false, imageUrl, label, playerMode ? "player" : "qr", subtitle, honors, challengeEndsAtUtc);

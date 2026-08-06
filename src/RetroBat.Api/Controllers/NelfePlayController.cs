@@ -21,17 +21,20 @@ public sealed class NelfePlayController : ControllerBase
     private readonly NelfePlayAgentService _agent;
     private readonly IHttpClientFactory _httpFactory;
     private readonly NelfePlayScoringSessionService _scoringSession;
+    private readonly RetroBat.Domain.Models.ApiContext _context;
 
     public NelfePlayController(
         NelfePlayDeviceStore device,
         NelfePlayAgentService agent,
         IHttpClientFactory httpFactory,
-        NelfePlayScoringSessionService scoringSession)
+        NelfePlayScoringSessionService scoringSession,
+        RetroBat.Domain.Models.ApiContext context)
     {
         _device = device;
         _agent = agent;
         _httpFactory = httpFactory;
         _scoringSession = scoringSession;
+        _context = context;
     }
 
     /// <summary>
@@ -198,6 +201,119 @@ public sealed class NelfePlayController : ControllerBase
         {
             return Ok(new { present = false, paired = _device.IsPaired, identify_url = identifyUrl });
         }
+    }
+
+    /// <summary>Classement MONDIAL (records certifiés) du jeu COURANT — proxy public de
+    /// /api/v1/scores/leaderboard, sans paramètre : la borne résout elle-même le rom_group
+    /// du jeu sélectionné. Sert la source « nelfeplay » du composant leaderboard.</summary>
+    [HttpGet("records/leaderboard")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> RecordsLeaderboard(
+        [FromQuery] string? ruleset,
+        [FromQuery] int? limit,
+        CancellationToken cancellationToken)
+    {
+        var identifyUrl = "http://127.0.0.1:12345/link";
+        var romGroup = RomGroupSlug(_context.Ui.Running ?? _context.Ui.Selected);
+        if (string.IsNullOrEmpty(romGroup))
+        {
+            return Ok(new { present = false, paired = _device.IsPaired, identify_url = identifyUrl });
+        }
+
+        var rule = string.IsNullOrWhiteSpace(ruleset) ? "1cc" : ruleset.Trim();
+        var n = Math.Clamp(limit ?? 100, 1, 100);
+        try
+        {
+            var client = _httpFactory.CreateClient();
+            client.BaseAddress = new Uri(NelfePlayAgentService.BaseUrl.TrimEnd('/'));
+            var url = $"/api/v1/scores/leaderboard?rom_group={Uri.EscapeDataString(romGroup)}"
+                    + $"&ruleset={Uri.EscapeDataString(rule)}&limit={n}";
+            using var response = await client.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return Ok(new { present = false, paired = _device.IsPaired, rom_group = romGroup, ruleset = rule, identify_url = identifyUrl });
+            }
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            JsonElement board = default;
+            if (doc.RootElement.TryGetProperty("leaderboard", out var lb) && lb.ValueKind == JsonValueKind.Array)
+            {
+                board = lb.Clone();
+            }
+            var hasBoard = board.ValueKind == JsonValueKind.Array && board.GetArrayLength() > 0;
+            // "Ta position" sous le classement : même bloc que records/me, en une seule
+            // requête (null si non appairé/anonyme sans score, ou pas encore classé).
+            var me = await FetchMyRankAsync(romGroup, rule, cancellationToken);
+            return Ok(new
+            {
+                present = hasBoard,
+                paired = _device.IsPaired,
+                rom_group = romGroup,
+                ruleset = rule,
+                leaderboard = hasBoard ? (object)board : Array.Empty<object>(),
+                me,
+                identify_url = identifyUrl,
+            });
+        }
+        catch
+        {
+            return Ok(new { present = false, paired = _device.IsPaired, rom_group = romGroup, ruleset = rule, identify_url = identifyUrl });
+        }
+    }
+
+    /// <summary>Meilleur rang du joueur courant (appairé ?? anonyme) pour ce jeu, ou null
+    /// s'il n'y a pas de credential ou pas encore de score classé. Sert le bloc « me » du
+    /// classement mondial ET reste la brique de records/me.</summary>
+    private async Task<object?> FetchMyRankAsync(string romGroup, string ruleset, CancellationToken cancellationToken)
+    {
+        var credential = ResolveCredential();
+        if (string.IsNullOrEmpty(credential) || string.IsNullOrEmpty(romGroup)) return null;
+        try
+        {
+            var client = _httpFactory.CreateClient();
+            client.BaseAddress = new Uri(NelfePlayAgentService.BaseUrl.TrimEnd('/'));
+            client.DefaultRequestHeaders.Add("X-Nelfeplay-Device", credential);
+            var url = $"/api/v1/agent/scores/my-rank?rom_group={Uri.EscapeDataString(romGroup)}"
+                    + $"&ruleset={Uri.EscapeDataString(string.IsNullOrEmpty(ruleset) ? "1cc" : ruleset)}";
+            using var response = await client.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            var root = doc.RootElement;
+            int? Num(string k) => root.TryGetProperty(k, out var e) && e.ValueKind == JsonValueKind.Number ? e.GetInt32() : null;
+            var rank = Num("rank");
+            if (rank == null) return null; // pas encore classé
+            return new
+            {
+                rank = rank.Value,
+                of = Num("of") ?? 0,
+                score = Num("score"),
+                anonymous = root.TryGetProperty("anonymous", out var a) && a.GetBoolean(),
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>rom_group du classement (= slug du jeu, région retirée) : "Sonic The
+    /// Hedgehog (USA, Europe)" → "sonic-the-hedgehog", identique au store local.</summary>
+    private static string RomGroupSlug(RetroBat.Domain.Models.GameReference? game)
+    {
+        if (game == null) return string.Empty;
+        var name = !string.IsNullOrWhiteSpace(game.GameName)
+            ? game.GameName
+            : System.IO.Path.GetFileNameWithoutExtension(game.GamePath ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+        name = System.Text.RegularExpressions.Regex.Replace(name, @"[\(\[].*?[\)\]]", " ");
+        var sb = new System.Text.StringBuilder(name.Length);
+        foreach (var ch in name.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch)) sb.Append(ch);
+            else if (sb.Length > 0 && sb[^1] != '-') sb.Append('-');
+        }
+        return sb.ToString().Trim('-');
     }
 
     // Credential des appels sortants : appairé, sinon l'anonyme (anonymous.json).

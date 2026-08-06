@@ -20,5 +20,8 @@ public class HiscoreExtractionResult
     public string SourceType { get; set; } = string.Empty;
     public string SourceFile { get; set; } = string.Empty;
     public List<HiscoreEntry> Scores { get; set; } = new();
+    /// <summary>Pseudo of the player currently at the cabinet (session/venue &gt; home
+    /// account &gt; null when anonymous), so a leaderboard can point out "your best line".</summary>
+    public string? Me { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }
