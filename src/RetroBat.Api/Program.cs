@@ -403,7 +403,13 @@ app.UseRouting();
 // loopback vers /api ou /ws doit presenter X-Api-Key (le hub la pose sur tous
 // ses appels via Hub:CabinetApiKey). Obligatoire avant toute exposition hors
 // LAN.
+// Empty in appsettings (no secret in the repo) → generate a unique per-cabinet key on
+// first run, so non-loopback access stays gated with a key that differs per machine.
 var cabinetApiKey = app.Configuration["Security:ApiKey"] ?? string.Empty;
+if (cabinetApiKey.Length == 0)
+{
+    cabinetApiKey = RetroBat.Api.Infrastructure.CabinetApiKeyStore.GetOrCreate();
+}
 if (cabinetApiKey.Length > 0)
 {
     app.Use(async (context, next) =>
@@ -426,6 +432,26 @@ if (cabinetApiKey.Length > 0)
 
         await next();
     });
+}
+
+// Fail LOUD when RetroBat can't be located: APIExpose resolves it as the grandparent
+// of its plugin folder, so an install placed outside <RetroBat>\plugins\ points at an
+// empty tree — the #1 cause of "empty game/system lists". Surfaced here + in /api/v1/status.
+{
+    var retroBatRoot = RetroBatPaths.RetroBatRoot;
+    var romsFound = Directory.Exists(RetroBatPaths.RomsRoot);
+    var esFound = Directory.Exists(RetroBatPaths.EmulationStationConfigRoot);
+    if (romsFound && esFound)
+    {
+        app.Logger.LogInformation("RetroBat detecte : {Root} (roms + emulationstation presents).", retroBatRoot);
+    }
+    else
+    {
+        app.Logger.LogError(
+            "RetroBat INTROUVABLE a {Root} (roms={Roms}, emulationstation={Es}). Les listes de jeux/systemes " +
+            "seront VIDES : installez APIExpose dans <RetroBat>\\plugins\\APIExpose du bon RetroBat.",
+            retroBatRoot, romsFound, esFound);
+    }
 }
 
 // Le jeton local est cree AU DEMARRAGE, pas a la premiere verification : un
