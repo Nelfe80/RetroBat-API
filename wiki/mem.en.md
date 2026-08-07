@@ -4,6 +4,10 @@ A `.MEM` file teaches APIExpose to **read a game's memory while you play**: wher
 
 This page teaches you how to write your own. No special tool required: a `.MEM` is a plain text file.
 
+!!! tip "Share your .MEM with the community"
+    Got a `.MEM` that works for a game? **Submit it on NelfePlay**: it gets validated, tested, then — if it's good — integrated into the official RAM set and deployed to every cabinet, credited to you.
+    → **[Contribute a .MEM](https://nelfeplay.com/en/mem/contribute)** (NelfePlay account required).
+
 ## How it works
 
 ```text

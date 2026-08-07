@@ -4,6 +4,10 @@ Un fichier `.MEM` apprend à APIExpose à **lire la mémoire d'un jeu pendant qu
 
 Cette page vous apprend à écrire le vôtre. Aucun outil spécial requis : un `.MEM` est un simple fichier texte.
 
+!!! tip "Partagez votre .MEM avec la communauté"
+    Vous avez un `.MEM` qui marche pour un jeu ? **Proposez-le sur NelfePlay** : il est validé, testé, puis — s'il est bon — intégré au dossier RAM officiel et déployé sur toutes les bornes, crédité à votre nom.
+    → **[Contribuer un .MEM](https://nelfeplay.com/fr/mem/contribute)** (compte NelfePlay requis).
+
 ## Comment ça marche
 
 ```text
