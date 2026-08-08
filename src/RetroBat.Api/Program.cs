@@ -189,6 +189,9 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<LiveContestClientS
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayDeviceStore>();
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayAgentService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayAgentService>());
+// Canal RAM communautaire : pull périodique des .MEM publiés sur RetroBat-RAM-Community
+// vers le dossier RAM local (lecture seule, n'écrase pas l'officiel). Réglages : ApiExpose:CommunityRam.
+builder.Services.AddHostedService<RetroBat.Api.Infrastructure.CommunityRamSyncService>();
 // Releve d'audience : ce qui est joue et combien de temps, jamais par qui.
 //
 // L'interrupteur est reel : une mesure qu'on ne peut pas eteindre n'est pas une

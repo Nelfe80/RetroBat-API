@@ -35,6 +35,7 @@ public class ApiExposeOptions
     public LoggingOptions Logging { get; set; } = new();
     public TaxonomyOptions Taxonomy { get; set; } = new();
     public RetroAchievementsOptions RetroAchievements { get; set; } = new();
+    public CommunityRamOptions CommunityRam { get; set; } = new();
 
     public class TestModeOptions
     {
