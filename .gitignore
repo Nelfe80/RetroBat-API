@@ -21,9 +21,9 @@ tools/**
 !tools/**/
 !tools/**/README.txt
 
-# mem-curator is source code, not an installed tool: keep it under Git.
-# Its generated outputs stay local via tools/mem-curator/.gitignore.
-!tools/mem-curator/**
+# mem-curator : outil interne privé — hors du repo public (historique purgé le 2026-08-09).
+# L'exclusion du dossier entier prime sur les ré-inclusions tools/**/ ci-dessus.
+tools/mem-curator/
 
 # Product specs / cahiers des charges stay local.
 CAHIER_DES_CHARGES*
