@@ -86,50 +86,89 @@ public sealed class NelfePlayLinkController : ControllerBase
   <div class="machine" id="machine">…</div>
   <p id="lead">Un clic ici, un clic sur NelfePlay, et c'est fait. Aucun code à recopier.</p>
   <button id="go">Connecter à NelfePlay</button>
+  <a class="b" id="account" href="#" style="display:none">Voir mes machines</a>
   <div class="url" id="url"></div>
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-// ?return : destination FINALE (le compte NelfePlay), fournie par l'approbation au
-// retour. ?claimed : on revient de la page d'autorisation, il reste a retirer le
-// credential. Tout se passe dans UN SEUL onglet, par redirections successives.
+// ?return : destination FINALE (le compte), fournie par l'approbation au retour.
+// ?claimed : on revient de la page d'autorisation, il reste a retirer le credential.
+// ?lang : la langue d'origine (le site qui a lance l'appairage). Tout se passe dans
+// UN SEUL onglet, par redirections successives.
 const RETURN = params.get('return');
 const CLAIMED = params.has('claimed');
+const SITE = 'https://nelfeplay.com';
+const LANG = (((params.get('lang') || navigator.language || 'fr').slice(0, 2).toLowerCase()) === 'en') ? 'en' : 'fr';
+const T = {
+  fr: {
+    connectTitle: 'Connecter cette machine',
+    connectLead: 'Un clic ici, un clic sur NelfePlay, et c’est fait. Aucun code à recopier.',
+    go: 'Connecter à NelfePlay',
+    opening: 'Ouverture de la page d’autorisation…',
+    ifNothing: 'Si rien ne s’ouvre : ', cont: 'continuer',
+    linkedTitle: 'Machine connectée',
+    linkedOk: 'Cette machine est reliée à votre compte NelfePlay.',
+    linkedInstall: 'Les jeux et démos que vous ajouterez à votre gamelist pourront être automatiquement installés sur cette machine.',
+    expired: 'La demande a expiré. Relancez la connexion.',
+    error: 'NelfePlay est injoignable pour l’instant. Vérifiez la connexion, puis réessayez.',
+    seeAccount: 'Voir mes machines',
+  },
+  en: {
+    connectTitle: 'Connect this machine',
+    connectLead: 'One click here, one click on NelfePlay, and you’re done. No code to copy.',
+    go: 'Connect to NelfePlay',
+    opening: 'Opening the authorisation page…',
+    ifNothing: 'If nothing opens: ', cont: 'continue',
+    linkedTitle: 'Machine connected',
+    linkedOk: 'This machine is linked to your NelfePlay account.',
+    linkedInstall: 'Games and demos you add to your gamelist can be installed on this machine automatically.',
+    expired: 'The request has expired. Start the connection again.',
+    error: 'NelfePlay is unreachable right now. Check your connection and try again.',
+    seeAccount: 'See my machines',
+  },
+}[LANG];
+// Destination finale : le return fourni par l'approbation, sinon le compte, LOCALISE —
+// pour ne jamais rester bloque sur cette page, meme quand la machine est deja liee.
+const ACCOUNT = (RETURN && /^https?:\/\//.test(RETURN)) ? RETURN : (SITE + '/' + LANG + '/account#mymachines');
 let timer = null;
 
-// via=local : marque, pour l'approbation cote NelfePlay, que la demande vient de
-// CETTE page locale — c'est ce qui la fera rediriger ici (?claimed) pour finaliser.
+// via=local : marque, pour NelfePlay, que la demande vient de CETTE page locale — ce qui
+// fait auto-autoriser puis rediriger ici (?claimed) pour finaliser.
 function withVia(u) { return u + (u.indexOf('?') === -1 ? '?' : '&') + 'via=local'; }
-function goReturn() { if (RETURN && /^https?:\/\//.test(RETURN)) { location.replace(RETURN); } }
+// Le lien d'autorisation est fige sur /fr/ cote serveur : on l'aligne sur la langue d'origine.
+function localize(u) { return u.replace(/\/(fr|en)\/link\//, '/' + LANG + '/link/'); }
+
+document.documentElement.lang = LANG;
+$('title').textContent = T.connectTitle;
+$('lead').textContent = T.connectLead;
+$('go').textContent = T.go;
+$('account').textContent = T.seeAccount;
 
 function render(state) {
   $('machine').textContent = state.label || '';
   if (state.status === 'linked') {
-    $('title').textContent = 'Machine connectée';
-    $('lead').innerHTML = '<span class="ok">Cette machine est reliée à votre compte.</span> ' +
-      (RETURN ? 'Retour…' : 'Les jeux que vous ajoutez s’installeront tout seuls.');
+    $('title').textContent = T.linkedTitle;
+    $('lead').innerHTML = '<span class="ok">' + T.linkedOk + '</span> ' + T.linkedInstall;
     $('go').style.display = 'none';
     $('url').textContent = '';
+    $('account').href = ACCOUNT; $('account').style.display = '';
     if (timer) { clearInterval(timer); timer = null; }
-    setTimeout(goReturn, 600);
+    // Redirection AUTO vers le compte (le bouton reste en secours si bloquee).
+    setTimeout(() => { location.replace(ACCOUNT); }, 1200);
     return;
   }
   if (state.status === 'pending' && state.url) {
-    // On repart (meme onglet) vers l'autorisation. L'adresse reste cliquable au cas
-    // ou la redirection automatique n'aboutit pas.
-    $('lead').textContent = 'Ouverture de la page d’autorisation…';
+    $('lead').textContent = T.opening;
     $('go').style.display = 'none';
-    $('url').innerHTML = 'Si rien ne s’ouvre : <a href="' + withVia(state.url) + '">continuer</a>';
+    $('url').innerHTML = T.ifNothing + '<a href="' + withVia(localize(state.url)) + '">' + T.cont + '</a>';
     return;
   }
   if (state.status === 'expired') {
-    $('lead').textContent = 'La demande a expiré. Relancez la connexion.';
-    $('go').textContent = 'Connecter à NelfePlay'; $('go').style.display = ''; $('url').textContent = '';
+    $('lead').textContent = T.expired; $('go').textContent = T.go; $('go').style.display = ''; $('url').textContent = '';
   }
   if (state.status === 'error') {
-    $('lead').textContent = 'NelfePlay est injoignable pour l’instant. Vérifiez la connexion, puis réessayez.';
-    $('go').style.display = '';
+    $('lead').textContent = T.error; $('go').style.display = '';
   }
 }
 
@@ -141,7 +180,7 @@ async function start() {
     const state = await r.json();
     if (state.status === 'linked') { render(state); return; }
     render(state);
-    if (state.url) { location.href = withVia(state.url); }
+    if (state.url) { location.href = withVia(localize(state.url)); }
   } catch { render({ status: 'error' }); } finally { $('go').disabled = false; }
 }
 
