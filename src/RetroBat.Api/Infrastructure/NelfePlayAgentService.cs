@@ -483,6 +483,41 @@ public sealed class NelfePlayAgentService : BackgroundService
         }
     }
 
+    // ---- Relais MEM Explorer -> NelfePlay (auth = credential d'appairage) ----
+
+    /// <summary>Découvertes communauté (candidats en test) d'un jeu. (status, corps JSON).</summary>
+    public async Task<(int status, string body)> MemCandidatesAsync(string system, string grp, CancellationToken ct)
+    {
+        var credential = _device.GetCredential();
+        if (credential is null) return (401, "{\"error\":\"not_paired\"}");
+        using var client = CreateClient(credential);
+        using var response = await client.GetAsync(
+            $"/api/v1/agent/mem-candidates?system={Uri.EscapeDataString(system)}&grp={Uri.EscapeDataString(grp)}", ct);
+        return ((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>Soumet une contribution .MEM (attribuée au compte appairé).</summary>
+    public async Task<(int status, string body)> MemContributeAsync(string json, CancellationToken ct)
+    {
+        var credential = _device.GetCredential();
+        if (credential is null) return (401, "{\"error\":\"not_paired\"}");
+        using var client = CreateClient(credential);
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/api/v1/agent/mem-contribute", content, ct);
+        return ((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>Vote works/broken sur un candidat communautaire.</summary>
+    public async Task<(int status, string body)> MemCandidateTestAsync(string json, CancellationToken ct)
+    {
+        var credential = _device.GetCredential();
+        if (credential is null) return (401, "{\"error\":\"not_paired\"}");
+        using var client = CreateClient(credential);
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/api/v1/agent/mem-candidate-test", content, ct);
+        return ((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+    }
+
     private HttpClient CreateClient(string? credential)
     {
         var client = _httpFactory.CreateClient();
