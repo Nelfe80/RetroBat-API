@@ -191,8 +191,9 @@ function render(state) {
     $('url').textContent = '';
     $('account').href = ACCOUNT; $('account').style.display = '';
     if (timer) { clearInterval(timer); timer = null; }
-    // Redirection AUTO vers le compte (le bouton reste en secours si bloquee).
-    setTimeout(() => { location.replace(ACCOUNT); }, 1200);
+    // Redirection AUTO vers le compte UNIQUEMENT au retour d'appairage (?claimed).
+    // Sur simple visite d'une machine deja liee, on laisse le bouton decider.
+    if (CLAIMED) { setTimeout(() => { location.replace(ACCOUNT); }, 1200); }
     return;
   }
   if (state.status === 'pending' && state.url) {
@@ -239,6 +240,10 @@ $('go').addEventListener('click', () => { CLAIMED ? claimLoop() : start(); });
 (async () => {
   checks();
   if (CLAIMED) { claimLoop(); return; }
+  // Reconcilie avec le serveur : une machine REVOQUEE cote compte doit cesser de se
+  // croire liee ici (sinon boucle : « connectee » ici mais « aucune machine » sur le
+  // compte). /sync force un releve qui detecte la revocation et delie localement.
+  try { await fetch('/api/v1/nelfeplay/sync', { method: 'POST' }); } catch {}
   try {
     const r = await fetch('/api/v1/nelfeplay/link/state');
     const state = await r.json();
