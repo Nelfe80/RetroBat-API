@@ -162,12 +162,7 @@ public sealed class NelfePlayAgentService : BackgroundService
             return;
         }
 
-        using var client = CreateClient(credential);
-        // Le NOM de cette machine part a chaque releve : c'est le poste local
-        // qui en est proprietaire (borne nommee dans HubManager pour une salle,
-        // nom de la machine Windows pour un joueur). Nelfe Play l'affiche mais
-        // ne le possede pas — un renommage cote salle se propage ici tout seul.
-        client.DefaultRequestHeaders.Add("X-Nelfeplay-Label", MachineLabel);
+        using var client = CreateClient(credential);   // le nom machine (X-Nelfeplay-Label) est déjà posé par CreateClient
         using var response = await client.GetAsync("/api/v1/agent/work", cancellationToken);
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
@@ -546,6 +541,12 @@ public sealed class NelfePlayAgentService : BackgroundService
         if (credential is not null)
         {
             client.DefaultRequestHeaders.Add("X-Nelfeplay-Device", credential);
+        }
+        // Le NOM de la machine part avec chaque appel : Nelfe Play l'affiche (« Mes machines »)
+        // sans jamais le posséder — un renommage local se propage au relevé suivant.
+        if (!string.IsNullOrEmpty(MachineLabel))
+        {
+            client.DefaultRequestHeaders.Add("X-Nelfeplay-Label", MachineLabel);
         }
 
         return client;
