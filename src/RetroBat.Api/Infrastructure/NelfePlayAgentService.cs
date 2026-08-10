@@ -488,7 +488,7 @@ public sealed class NelfePlayAgentService : BackgroundService
     /// <summary>Découvertes communauté (candidats en test) d'un jeu. (status, corps JSON).</summary>
     public async Task<(int status, string body)> MemCandidatesAsync(string system, string grp, CancellationToken ct)
     {
-        var credential = _device.GetCredential();
+        var credential = ResolveMemCredential();
         if (credential is null) return (401, "{\"error\":\"not_paired\"}");
         using var client = CreateClient(credential);
         using var response = await client.GetAsync(
@@ -499,7 +499,7 @@ public sealed class NelfePlayAgentService : BackgroundService
     /// <summary>Soumet une contribution .MEM (attribuée au compte appairé).</summary>
     public async Task<(int status, string body)> MemContributeAsync(string json, CancellationToken ct)
     {
-        var credential = _device.GetCredential();
+        var credential = ResolveMemCredential();
         if (credential is null) return (401, "{\"error\":\"not_paired\"}");
         using var client = CreateClient(credential);
         using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
@@ -510,12 +510,31 @@ public sealed class NelfePlayAgentService : BackgroundService
     /// <summary>Vote works/broken sur un candidat communautaire.</summary>
     public async Task<(int status, string body)> MemCandidateTestAsync(string json, CancellationToken ct)
     {
-        var credential = _device.GetCredential();
+        var credential = ResolveMemCredential();
         if (credential is null) return (401, "{\"error\":\"not_paired\"}");
         using var client = CreateClient(credential);
         using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
         using var response = await client.PostAsync("/api/v1/agent/mem-candidate-test", content, ct);
         return ((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>Credential pour les actions .MEM : appairage compte SINON install anonyme (records-claim).</summary>
+    private string? ResolveMemCredential()
+    {
+        var paired = _device.GetCredential();
+        if (!string.IsNullOrEmpty(paired)) return paired;
+        try
+        {
+            var path = System.IO.Path.Combine(AppContext.BaseDirectory, "state", "nelfeplay", "anonymous.json");
+            if (System.IO.File.Exists(path))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(path));
+                if (doc.RootElement.TryGetProperty("credential", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.String)
+                    return c.GetString();
+            }
+        }
+        catch { /* pas de credential anonyme */ }
+        return null;
     }
 
     private HttpClient CreateClient(string? credential)
