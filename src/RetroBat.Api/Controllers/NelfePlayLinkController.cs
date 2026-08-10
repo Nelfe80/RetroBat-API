@@ -78,14 +78,26 @@ public sealed class NelfePlayLinkController : ControllerBase
   button[disabled] { opacity:.5; cursor:default; }
   .url { margin-top:18px; font-size:.85rem; color:#8f9bb0; word-break:break-all; }
   .ok { color:#5ce3a1; font-weight:700; }
+  .checks { display:flex; flex-direction:column; gap:8px; margin:0 0 22px; text-align:left; }
+  .check { display:flex; align-items:center; gap:10px; font-size:.95rem; color:#8f9bb0;
+           padding:10px 14px; border:1px solid rgba(151,174,211,.18); border-radius:10px; background:rgba(8,12,20,.4); }
+  .check .dot { width:11px; height:11px; border-radius:50%; background:#5b6474; flex:0 0 auto; transition:background .2s,box-shadow .2s; }
+  .check.on .dot { background:#5ce3a1; box-shadow:0 0 8px rgba(92,227,161,.6); }
+  .check.off .dot { background:#ef7a8b; }
+  .check.on { color:#e8eef7; }
+  .check .sub { margin-left:auto; font-size:.8rem; opacity:.8; }
 </style>
 </head>
 <body>
 <div class="box">
   <h1 id="title">Connecter cette machine</h1>
   <div class="machine" id="machine">…</div>
-  <p id="lead">Un clic ici, un clic sur NelfePlay, et c'est fait. Aucun code à recopier.</p>
-  <button id="go">Connecter à NelfePlay</button>
+  <div class="checks" id="checks">
+    <div class="check" id="chk-api"><span class="dot"></span> <span class="lbl">APIExpose</span><span class="sub" id="sub-api"></span></div>
+    <div class="check" id="chk-es"><span class="dot"></span> <span class="lbl">EmulationStation</span><span class="sub" id="sub-es"></span></div>
+  </div>
+  <p id="lead"></p>
+  <button id="go" style="display:none">Lier cette machine à mon compte</button>
   <a class="b" id="account" href="#" style="display:none">Voir mes machines</a>
   <div class="url" id="url"></div>
 </div>
@@ -113,6 +125,9 @@ const T = {
     expired: 'La demande a expiré. Relancez la connexion.',
     error: 'NelfePlay est injoignable pour l’instant. Vérifiez la connexion, puis réessayez.',
     seeAccount: 'Voir mes machines',
+    linkButton: 'Lier :label à mon compte', thisMachine: 'cette machine',
+    ready: 'Un clic, et cette machine rejoint votre compte NelfePlay.',
+    on: 'actif', off: 'non détecté',
   },
   en: {
     connectTitle: 'Connect this machine',
@@ -126,6 +141,9 @@ const T = {
     expired: 'The request has expired. Start the connection again.',
     error: 'NelfePlay is unreachable right now. Check your connection and try again.',
     seeAccount: 'See my machines',
+    linkButton: 'Link :label to my account', thisMachine: 'this machine',
+    ready: 'One click, and this machine joins your NelfePlay account.',
+    on: 'active', off: 'not detected',
   },
 }[LANG];
 // Destination finale : le return fourni par l'approbation, sinon le compte, LOCALISE —
@@ -141,15 +159,34 @@ function localize(u) { return u.replace(/\/(fr|en)\/link\//, '/' + LANG + '/link
 
 document.documentElement.lang = LANG;
 $('title').textContent = T.connectTitle;
-$('lead').textContent = T.connectLead;
-$('go').textContent = T.go;
 $('account').textContent = T.seeAccount;
+
+// Voyants : APIExpose (forcement actif — cette page vient de lui) + EmulationStation.
+async function checks() {
+  $('chk-api').classList.add('on'); $('sub-api').textContent = T.on;
+  try {
+    const r = await fetch('/api/v1/status', { cache: 'no-store' });
+    const s = await r.json();
+    const es = !!(s && s.emulationStation && s.emulationStation.processRunning);
+    $('chk-es').classList.add(es ? 'on' : 'off'); $('sub-es').textContent = es ? T.on : T.off;
+  } catch { $('chk-es').classList.add('off'); $('sub-es').textContent = T.off; }
+}
+
+// Ecran pret : bouton NOMME d'apres la machine (aucun demarrage automatique — c'est
+// CE clic qui vaut consentement, la validation cote NelfePlay etant ensuite invisible).
+function ready(state) {
+  $('machine').textContent = (state && state.label) || '';
+  $('lead').textContent = T.ready;
+  $('go').textContent = T.linkButton.replace(':label', (state && state.label) || T.thisMachine);
+  $('go').style.display = '';
+}
 
 function render(state) {
   $('machine').textContent = state.label || '';
   if (state.status === 'linked') {
     $('title').textContent = T.linkedTitle;
     $('lead').innerHTML = '<span class="ok">' + T.linkedOk + '</span> ' + T.linkedInstall;
+    $('checks').style.display = 'none';
     $('go').style.display = 'none';
     $('url').textContent = '';
     $('account').href = ACCOUNT; $('account').style.display = '';
@@ -159,6 +196,7 @@ function render(state) {
     return;
   }
   if (state.status === 'pending' && state.url) {
+    $('checks').style.display = 'none';
     $('lead').textContent = T.opening;
     $('go').style.display = 'none';
     $('url').innerHTML = T.ifNothing + '<a href="' + withVia(localize(state.url)) + '">' + T.cont + '</a>';
@@ -199,13 +237,14 @@ async function claimLoop() {
 $('go').addEventListener('click', () => { CLAIMED ? claimLoop() : start(); });
 
 (async () => {
+  checks();
   if (CLAIMED) { claimLoop(); return; }
   try {
     const r = await fetch('/api/v1/nelfeplay/link/state');
     const state = await r.json();
     if (state.status === 'linked') { render(state); return; }
-    start();
-  } catch { start(); }
+    ready(state);
+  } catch { ready({ label: '' }); }
 })();
 </script>
 </body>
