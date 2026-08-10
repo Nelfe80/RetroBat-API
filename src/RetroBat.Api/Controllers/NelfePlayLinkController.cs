@@ -90,70 +90,83 @@ public sealed class NelfePlayLinkController : ControllerBase
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+// ?return : destination FINALE (le compte NelfePlay), fournie par l'approbation au
+// retour. ?claimed : on revient de la page d'autorisation, il reste a retirer le
+// credential. Tout se passe dans UN SEUL onglet, par redirections successives.
+const RETURN = params.get('return');
+const CLAIMED = params.has('claimed');
 let timer = null;
-// ?return : d'où l'on vient (ex. page de participation contest). Une fois lié,
-// on y RETOURNE tout seul — pas de « revenir à la main » ni de « revérifier ».
-const RETURN = new URLSearchParams(location.search).get('return');
+
+// via=local : marque, pour l'approbation cote NelfePlay, que la demande vient de
+// CETTE page locale — c'est ce qui la fera rediriger ici (?claimed) pour finaliser.
+function withVia(u) { return u + (u.indexOf('?') === -1 ? '?' : '&') + 'via=local'; }
+function goReturn() { if (RETURN && /^https?:\/\//.test(RETURN)) { location.replace(RETURN); } }
 
 function render(state) {
   $('machine').textContent = state.label || '';
   if (state.status === 'linked') {
     $('title').textContent = 'Machine connectée';
     $('lead').innerHTML = '<span class="ok">Cette machine est reliée à votre compte.</span> ' +
-      (RETURN ? 'Retour en cours…' : 'Les jeux que vous ajoutez s’installeront tout seuls.');
+      (RETURN ? 'Retour…' : 'Les jeux que vous ajoutez s’installeront tout seuls.');
     $('go').style.display = 'none';
     $('url').textContent = '';
     if (timer) { clearInterval(timer); timer = null; }
-    if (RETURN && /^https?:\/\//.test(RETURN)) { setTimeout(() => { location.href = RETURN; }, 900); }
+    setTimeout(goReturn, 600);
     return;
   }
   if (state.status === 'pending' && state.url) {
-    $('lead').textContent = 'Autorisez cette machine dans la page qui vient de s’ouvrir, puis revenez ici.';
-    $('go').textContent = 'Rouvrir la page d’autorisation';
-    // L'adresse reste VISIBLE : si l'ouverture automatique echoue — navigateur
-    // absent, fenetre bloquee — le joueur doit pouvoir la lire et la reporter.
-    $('url').innerHTML = 'Ou ouvrez : <a href="' + state.url + '" target="_blank" rel="noopener">' + state.url + '</a>';
+    // On repart (meme onglet) vers l'autorisation. L'adresse reste cliquable au cas
+    // ou la redirection automatique n'aboutit pas.
+    $('lead').textContent = 'Ouverture de la page d’autorisation…';
+    $('go').style.display = 'none';
+    $('url').innerHTML = 'Si rien ne s’ouvre : <a href="' + withVia(state.url) + '">continuer</a>';
     return;
   }
   if (state.status === 'expired') {
     $('lead').textContent = 'La demande a expiré. Relancez la connexion.';
-    $('go').textContent = 'Connecter à NelfePlay';
-    $('url').textContent = '';
+    $('go').textContent = 'Connecter à NelfePlay'; $('go').style.display = ''; $('url').textContent = '';
   }
   if (state.status === 'error') {
     $('lead').textContent = 'NelfePlay est injoignable pour l’instant. Vérifiez la connexion, puis réessayez.';
+    $('go').style.display = '';
   }
 }
 
+// Premiere visite : ouvre une demande et REDIRIGE (meme onglet) vers l'autorisation.
 async function start() {
   $('go').disabled = true;
   try {
     const r = await fetch('/api/v1/nelfeplay/link/start', { method: 'POST' });
     const state = await r.json();
+    if (state.status === 'linked') { render(state); return; }
     render(state);
-    if (state.url) { window.open(state.url, '_blank', 'noopener'); }
-    if (!timer) { timer = setInterval(poll, 3000); }
-  } finally {
-    $('go').disabled = false;
-  }
+    if (state.url) { location.href = withVia(state.url); }
+  } catch { render({ status: 'error' }); } finally { $('go').disabled = false; }
 }
 
-async function poll() {
-  const r = await fetch('/api/v1/nelfeplay/link/state');
-  render(await r.json());
+// Retour d'autorisation : on RETIRE le credential (poll), puis on repart vers le compte.
+async function claimLoop() {
+  let tries = 0;
+  const tick = async () => {
+    let st = 'error';
+    try { const r = await fetch('/api/v1/nelfeplay/link/state'); const s = await r.json(); render(s); st = s.status; } catch {}
+    if (st === 'linked' || ++tries > 10) { if (timer) { clearInterval(timer); timer = null; } }
+  };
+  await tick();
+  if (!timer) { timer = setInterval(tick, 1500); }
 }
 
-$('go').addEventListener('click', start);
-// Auto-démarrage : on lit l'état ; si pas déjà lié, on lance l'appairage tout de
-// suite (ouverture de l'accord + polling). Un clic de moins. Si le popup est
-// bloqué, le lien d'autorisation reste affiché et cliquable.
+$('go').addEventListener('click', () => { CLAIMED ? claimLoop() : start(); });
+
 (async () => {
+  if (CLAIMED) { claimLoop(); return; }
   try {
     const r = await fetch('/api/v1/nelfeplay/link/state');
     const state = await r.json();
-    render(state);
-    if (state.status !== 'linked') { start(); }
-  } catch { poll(); }
+    if (state.status === 'linked') { render(state); return; }
+    start();
+  } catch { start(); }
 })();
 </script>
 </body>
