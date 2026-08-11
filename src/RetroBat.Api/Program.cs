@@ -337,6 +337,7 @@ if (!testModeRequested)
     builder.Services.AddHostedService<MameLuaIngamePluginDeploymentHostedService>();
     builder.Services.AddHostedService<RomSetManagerSettingsWatcherHostedService>();
     builder.Services.AddHostedService<DatasThemeExposeSettingsWatcherHostedService>();
+    builder.Services.AddHostedService<PersoMemFlagSyncHostedService>();
 }
 builder.Services.AddHostedService<CpoPanelWebSocketProjectionService>();
 builder.Services.AddHostedService<RetroAchievementsRuntimeProjectionService>();

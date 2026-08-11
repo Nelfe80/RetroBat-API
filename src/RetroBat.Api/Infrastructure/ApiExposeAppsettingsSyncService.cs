@@ -156,7 +156,8 @@ public sealed class ApiExposeAppsettingsSyncService
             ["global.apiexpose.websocket.enabled"] = Bool("WebSocket", "Enabled"),
             ["global.apiexpose.toast_notifications.enabled"] = Bool("Toasts", "Enabled"),
             ["global.apiexpose.api_notifications.enabled"] = Bool("ApiNotifications", "Enabled"),
-            ["global.apiexpose.task_progress.enabled"] = Bool("TaskProgress", "Enabled")
+            ["global.apiexpose.task_progress.enabled"] = Bool("TaskProgress", "Enabled"),
+            ["global.apiexpose.community_ram.prefer_perso"] = Bool("CommunityRam", "PreferPerso")
         };
 
     private readonly ILogger<ApiExposeAppsettingsSyncService>? _logger;
