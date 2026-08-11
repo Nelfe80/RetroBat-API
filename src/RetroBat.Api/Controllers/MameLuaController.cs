@@ -27,4 +27,36 @@ public class MameLuaController : ControllerBase
         => _provider is null
             ? StatusCode(StatusCodes.Status501NotImplemented)
             : Ok(_provider.SessionsSnapshot());
+
+    /// <summary>Arme la découverte MAME (MEM Explorer) : au prochain HELLO d'un plugin Lua, APIExpose
+    /// lui répond <c>DISCOVER|host|port|hz</c> → il streame la RAM principale vers le listener TCP de
+    /// l'Explorer (au lieu d'écouter des adresses connues).</summary>
+    [HttpPost("discovery/arm")]
+    public IActionResult ArmDiscovery([FromBody] DiscoveryArmRequest? req)
+    {
+        if (_provider is null) return StatusCode(StatusCodes.Status501NotImplemented);
+        if (req is null || req.Port is <= 0 or >= 65536)
+            return BadRequest(new { error = "port requis (1..65535)." });
+
+        var host = string.IsNullOrWhiteSpace(req.Host) ? "127.0.0.1" : req.Host!.Trim();
+        var hz = req.Hz is > 0 and <= 60 ? req.Hz : 8;
+        _provider.ArmDiscovery(host, req.Port, hz);
+        return Ok(new { ok = true, armed = true, host, port = req.Port, hz });
+    }
+
+    /// <summary>Désarme la découverte MAME (retour au mode WATCH runtime).</summary>
+    [HttpDelete("discovery/arm")]
+    public IActionResult DisarmDiscovery()
+    {
+        if (_provider is null) return StatusCode(StatusCodes.Status501NotImplemented);
+        _provider.DisarmDiscovery();
+        return Ok(new { ok = true, armed = false });
+    }
+
+    public sealed class DiscoveryArmRequest
+    {
+        public string? Host { get; set; }
+        public int Port { get; set; }
+        public int Hz { get; set; }
+    }
 }

@@ -27,6 +27,7 @@ public sealed class MameLuaIngameProvider : IProvider
     private readonly Dictionary<string, MameLuaSessionSnapshot> _sessions = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _cts;
     private Task? _workerTask;
+    private volatile DiscoveryArm? _discoveryArm;
 
     public MameLuaIngameProvider(
         IEventBus eventBus,
@@ -62,6 +63,18 @@ public sealed class MameLuaIngameProvider : IProvider
     }
 
     public bool IsHealthy() => _workerTask != null && !_workerTask.IsCompleted;
+
+    /// <summary>Arme la découverte (MEM Explorer) : au prochain HELLO d'un plugin Lua, on lui répond
+    /// <c>DISCOVER|host|port|hz</c> au lieu de la liste WATCH → il streame la RAM principale vers le
+    /// listener TCP de l'Explorer (le plugin ne peut être que client sortant).</summary>
+    public void ArmDiscovery(string host, int port, int hz) =>
+        _discoveryArm = new DiscoveryArm(string.IsNullOrWhiteSpace(host) ? "127.0.0.1" : host, port, hz);
+
+    /// <summary>Désarme la découverte : retour au mode WATCH (events runtime).</summary>
+    public void DisarmDiscovery() => _discoveryArm = null;
+
+    /// <summary>La découverte est-elle armée ?</summary>
+    public bool IsDiscoveryArmed => _discoveryArm != null;
 
     private int GetPort()
     {
@@ -171,6 +184,21 @@ public sealed class MameLuaIngameProvider : IProvider
                 {
                     var rom = parts.Length > 1 ? parts[1].Trim() : string.Empty;
                     var gameName = parts.Length > 2 ? parts[2].Trim() : rom;
+
+                    // Découverte armée (MEM Explorer) : on demande au plugin de streamer la RAM
+                    // principale vers le listener TCP de l'Explorer, au lieu d'écouter des adresses
+                    // connues. definition reste null → pas de session d'events ici (le plugin
+                    // streame ailleurs), et le finally n'émet pas de "stopped" fantôme.
+                    var arm = _discoveryArm;
+                    if (arm != null)
+                    {
+                        await writer.WriteLineAsync($"DISCOVER|{arm.Host}|{arm.Port}|{arm.Hz}");
+                        _logger.LogInformation(
+                            "MAME Lua découverte : plugin dirigé vers {Host}:{Port} @ {Hz}Hz (rom={Rom})",
+                            arm.Host, arm.Port, arm.Hz, rom);
+                        continue;
+                    }
+
                     definition = ResolveDefinition(rom);
                     previousValues.Clear();
 
@@ -1017,6 +1045,8 @@ public sealed class MameLuaIngameProvider : IProvider
                 .ToList();
         }
     }
+
+    private sealed record DiscoveryArm(string Host, int Port, int Hz);
 
     private sealed record MameLuaTarget(int Id, long Address, long RuntimeAddress, string Type);
 
