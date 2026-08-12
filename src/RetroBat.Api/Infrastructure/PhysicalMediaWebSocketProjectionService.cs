@@ -157,7 +157,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
             });
-            await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "projection");
+            await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "projection", roots);
             _logger?.LogInformation(
                 "marquee system snapshot published: trigger={Trigger}, system={SystemId}, elapsedMs={ElapsedMs}",
                 trigger.Type,
@@ -259,7 +259,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
             });
-            await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "projection");
+            await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "projection", roots, fallbackSystemRoots);
 
             var topper = FindFirstAsset(roots, "artwork", "marquee", "topper.*");
             await _eventBus.PublishAsync(new EventEnvelope
@@ -278,6 +278,11 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     {
                         Topper = topper
                     },
+                    // A topper shows more than a topper: the game's identity and the
+                    // printed matter that used to sit above the cabinet. Self-sufficient
+                    // stream — no second subscription to dress this surface.
+                    Assets = BuildAssetTable(roots, TopperAssetKinds),
+                    SystemAssets = BuildAssetTable(fallbackSystemRoots, TopperAssetKinds),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
             });
@@ -372,12 +377,19 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             dmd.Animations.Count > 0;
     }
 
+    /// <param name="roots">Roots of the entry being shown. A screen serves screen-shaped
+    /// media of its own, so it carries its own asset table rather than borrowing the
+    /// marquee's: a consumer subscribed to this stream alone must not need a second one.</param>
+    /// <param name="systemRoots">Null in system scope — there is no wider scope to
+    /// distinguish it from.</param>
     private async Task PublishScreenSnapshotAsync(
         EventEnvelope trigger,
         PhysicalMediaSelectionSnapshot selection,
         MarqueeMediaSnapshot marquee,
         Stopwatch perf,
-        string phase)
+        string phase,
+        IReadOnlyList<string> roots,
+        IReadOnlyList<string>? systemRoots = null)
     {
         await _eventBus.PublishAsync(new EventEnvelope
         {
@@ -397,6 +409,10 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     marquee.ScreenMarqueeSmall,
                     marquee.Fanart
                 },
+                Assets = BuildAssetTable(roots, ScreenAssetKinds),
+                SystemAssets = systemRoots is null
+                    ? null
+                    : BuildAssetTable(systemRoots, ScreenAssetKinds),
                 Latency = BuildSnapshotLatency(trigger, selection.Sequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, phase)
             }
         });
@@ -520,7 +536,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "background-generation")
                 }
             });
-            await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "background-generation");
+            await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "background-generation", roots);
 
             _logger?.LogInformation(
                 "marquee system background generation completed: system={SystemId}, elapsedMs={ElapsedMs}",
@@ -592,7 +608,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "background-generation")
                 }
             });
-            await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "background-generation");
+            await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "background-generation", roots, fallbackSystemRoots);
 
             _logger?.LogInformation(
                 "marquee game background generation completed: state={State}, system={SystemId}, game={GameSlug}, elapsedMs={ElapsedMs}",
@@ -1333,6 +1349,22 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
         return table;
     }
+
+    /// <summary>What a TOPPER can display: the cabinet's top sign — its own art, the
+    /// identity of the game, and the printed matter that used to live up there.</summary>
+    private static readonly IReadOnlySet<string> TopperAssetKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        MediaKinds.Topper, MediaKinds.Fanart, MediaKinds.Wheel, MediaKinds.Logo,
+        MediaKinds.Thumbnail, MediaKinds.Flyer, MediaKinds.Box3d, MediaKinds.BoxFront
+    };
+
+    /// <summary>What a secondary SCREEN can display: the screen-shaped media. The title
+    /// screen and the in-game capture are two different things, hence two kinds.</summary>
+    private static readonly IReadOnlySet<string> ScreenAssetKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        MediaKinds.ScreenMarquee, MediaKinds.ScreenMarqueeSmall, MediaKinds.Fanart,
+        MediaKinds.Thumbnail, MediaKinds.Image
+    };
 
     /// <summary>What a MARQUEE surface can display (plan, matrix per surface).</summary>
     private static readonly IReadOnlySet<string> MarqueeAssetKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)

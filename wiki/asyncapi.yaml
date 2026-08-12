@@ -58,7 +58,10 @@ channels:
         $ref: '#/components/messages/envelope'
   topper:
     address: /ws/topper
-    description: Prefixes `topper.` — topper media snapshots (topper.snapshot).
+    description: >
+      Prefixes `topper.` — topper media snapshots (topper.snapshot). Payload carries
+      `Media.Topper` plus `Assets`/`SystemAssets`: the game identity and printed matter
+      a topper can show (flyer, box art, wheel, fanart, screenshot).
     messages:
       envelope:
         $ref: '#/components/messages/envelope'
@@ -72,7 +75,10 @@ channels:
         $ref: '#/components/messages/envelope'
   screen:
     address: /ws/screen
-    description: Prefixes `screen.` — secondary screen snapshots (screen.snapshot).
+    description: >
+      Prefixes `screen.` — secondary screen snapshots (screen.snapshot). Payload carries
+      `Media` plus `Assets`/`SystemAssets`: screen-shaped media, with the title screen
+      (`image`) and the in-game capture (`thumbnail`) kept apart.
     messages:
       envelope:
         $ref: '#/components/messages/envelope'
