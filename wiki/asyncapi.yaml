@@ -61,7 +61,8 @@ channels:
     description: >
       Prefixes `topper.` — topper media snapshots (topper.snapshot). Payload carries
       `Media.Topper` plus `Assets`/`SystemAssets`: the game identity and printed matter
-      a topper can show (flyer, box art, wheel, fanart, screenshot).
+      a topper can show (flyer, box art, wheel, fanart, screenshot), and `Text`:
+      description, genre, players, rating in the language EmulationStation is set to.
     messages:
       envelope:
         $ref: '#/components/messages/envelope'
@@ -70,6 +71,8 @@ channels:
     description: >
       Prefixes `instruction-card.` — instruction card snapshots
       (instruction-card.snapshot). Aliases: instructioncard, instruction_card, instructions.
+      Payload carries `Cards` and `Text` (description, genre, players, rating in the
+      EmulationStation language) — enough to compose a card, not only to show one.
     messages:
       envelope:
         $ref: '#/components/messages/envelope'

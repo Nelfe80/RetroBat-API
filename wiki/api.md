@@ -55,6 +55,8 @@ Chaque flux ne délivre que les types d'événements de ses préfixes ; certains
 
 Les instantanes de surface portent `Media` (champs historiques, inchanges) et, en plus, `Assets` — une table indexee sur le type de media canonique (`box-3d`, `mixrbv2`, `wheel`…) ne contenant que ce que l'entree possede vraiment. En portee jeu, `SystemAssets` porte la meme table pour son systeme : c'est ce qui permet de distinguer le fanart du jeu de celui du systeme, la ou les champs historiques replient silencieusement de l'un sur l'autre. **Une cle n'existe que si le fichier existe.**
 
+Les flux qui impriment quelque chose sur un jeu — topper, carte d'instructions — portent en plus `Text` : description, genre, nombre de joueurs, note, dans la langue reglee dans EmulationStation, avec la liste des langues disponibles pour cette entree.
+
 Toute l'enveloppe est commune : `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` — le contrat est additif (les champs s'ajoutent, jamais retirés).
 
 !!! note "Hiscores : arcade **et** consoles"

@@ -55,6 +55,8 @@ Each stream only delivers the event types of its prefixes; some replay their las
 
 Surface snapshots carry `Media` (legacy fields, unchanged) and, in addition, `Assets` — a table keyed by canonical media kind (`box-3d`, `mixrbv2`, `wheel`…) holding only what the entry really owns. In game scope, `SystemAssets` carries the same table for its system: that is what tells the game's fanart apart from the system's, where the legacy fields silently fall back from one to the other. **A key exists only when the file does.**
 
+Streams that print something about a game — topper, instruction card — also carry `Text`: description, genre, player count and rating in the language EmulationStation is set to, with the languages available for that entry.
+
 Every event shares one envelope: `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` — the contract is additive (fields are added, never removed).
 
 !!! note "Hiscores: arcade **and** consoles"

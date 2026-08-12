@@ -12,6 +12,8 @@ namespace RetroBat.Api.Infrastructure;
 public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, IDisposable
 {
     private const string SystemLogoCacheVersion = "system-logo-cache-v4-png32-srgb";
+    private readonly ILocalizedTextStore _localizedText;
+    private readonly IEsSettingsStore _esSettings;
     private const int SelectionSnapshotDebounceMs = 35;
 
     private readonly IEventBus _eventBus;
@@ -37,8 +39,12 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         GameNameNormalizer gameNameNormalizer,
         IMediaAliasStore mediaAliasStore,
         ApiExposeRuntimeOptionsService runtimeOptions,
+        ILocalizedTextStore localizedText,
+        IEsSettingsStore esSettings,
         ILogger<PhysicalMediaWebSocketProjectionService>? logger = null)
     {
+        _localizedText = localizedText;
+        _esSettings = esSettings;
         _eventBus = eventBus;
         _context = context;
         _systemIdNormalizer = systemIdNormalizer;
@@ -158,6 +164,32 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                 }
             });
             await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "projection", roots);
+
+            // A topper stayed dark for the whole system navigation: this snapshot was
+            // published on the game path only, so a consumer subscribed to /ws/topper
+            // alone had nothing until a game was picked. The marquee always spoke at
+            // both scopes; the topper now does too.
+            await _eventBus.PublishAsync(new EventEnvelope
+            {
+                Type = "topper.snapshot",
+                NodeId = trigger.NodeId,
+                CorrelationId = trigger.CorrelationId,
+                Payload = new
+                {
+                    SnapshotVersion = 2,
+                    Sequence = selectionSequence,
+                    SelectionKey = selection.SelectionKey,
+                    Stream = "topper",
+                    Selection = selection,
+                    Media = new
+                    {
+                        marquee.Topper
+                    },
+                    Assets = BuildAssetTable(roots, TopperAssetKinds),
+                    Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
+                }
+            });
+
             _logger?.LogInformation(
                 "marquee system snapshot published: trigger={Trigger}, system={SystemId}, elapsedMs={ElapsedMs}",
                 trigger.Type,
@@ -261,6 +293,11 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             });
             await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "projection", roots, fallbackSystemRoots);
 
+            // built once for the whole batch: the topper and the instruction card print
+            // the same text, and reading it twice per selection would put a file read on
+            // the hot path for nothing
+            var text = await BuildTextBlockAsync(systemId, gameSlug, selected.Details, roots);
+
             var topper = FindFirstAsset(roots, "artwork", "marquee", "topper.*");
             await _eventBus.PublishAsync(new EventEnvelope
             {
@@ -283,6 +320,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // stream — no second subscription to dress this surface.
                     Assets = BuildAssetTable(roots, TopperAssetKinds),
                     SystemAssets = BuildAssetTable(fallbackSystemRoots, TopperAssetKinds),
+                    Text = text,
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
             });
@@ -301,6 +339,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Stream = "instruction-card",
                     Selection = selection,
                     Cards = cards,
+                    Text = text,
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
             });
@@ -382,6 +421,138 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// marquee's: a consumer subscribed to this stream alone must not need a second one.</param>
     /// <param name="systemRoots">Null in system scope — there is no wider scope to
     /// distinguish it from.</param>
+    /// <summary>
+    /// The entry's TEXT, in the language EmulationStation is set to. Surfaces that print
+    /// something about a game — a topper, an instruction card — needed the description,
+    /// the genre, the number of players, and had no way to get them.
+    ///
+    /// Only text is published. The metadata bundles also carry media pointers
+    /// (boxart, wheel, mix...) written when they were scraped: they are stale by
+    /// design and would compete with the asset tables, which are resolved fresh.
+    /// Fields the bundle does not carry are completed from the in-memory details.
+    /// Null when nothing is known — an empty block would say "nothing to print" where
+    /// the truth is "we never looked".
+    /// </summary>
+    private async Task<object?> BuildTextBlockAsync(
+        string systemId,
+        string gameSlug,
+        GameDetails? details,
+        IReadOnlyList<string> roots)
+    {
+        var requested = ResolveEsLanguage();
+        LocalizedTextBundle? bundle = null;
+        try
+        {
+            bundle = await _localizedText.LoadPreferredBundleAsync(systemId, gameSlug, requested);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "Localized text bundle unavailable for {System}/{Game}", systemId, gameSlug);
+        }
+
+        var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (bundle?.Fields is { Count: > 0 })
+        {
+            foreach (var (key, value) in bundle.Fields)
+            {
+                if (TextFieldKeys.Contains(key) && !string.IsNullOrWhiteSpace(value))
+                {
+                    fields[key] = value.Trim();
+                }
+            }
+        }
+
+        void Complete(string key, string? value)
+        {
+            if (!fields.ContainsKey(key) && !string.IsNullOrWhiteSpace(value)) fields[key] = value!.Trim();
+        }
+
+        Complete("name", details?.Name);
+        Complete("desc", details?.Desc);
+        Complete("developer", details?.Developer);
+        Complete("publisher", details?.Publisher);
+        Complete("genre", details?.Genre);
+        Complete("genres", details?.Genres);
+        Complete("players", details?.Players);
+        Complete("rating", details?.Rating);
+        Complete("releasedate", details?.Releasedate);
+        Complete("region", details?.Region);
+        Complete("family", details?.Family);
+        Complete("arcadesystemname", details?.Arcadesystemname);
+        Complete("emulator", details?.Emulator);
+        Complete("md5", details?.Md5);
+
+        if (fields.Count == 0) return null;
+
+        return new
+        {
+            Language = string.IsNullOrWhiteSpace(bundle?.Language) ? requested : bundle!.Language,
+            Requested = requested,
+            Available = ListTextLanguages(roots),
+            Fields = fields
+        };
+    }
+
+    /// <summary>Which languages this entry has been written in — so a consumer that
+    /// wants another one knows it exists before asking for it.</summary>
+    private static IReadOnlyList<string> ListTextLanguages(IReadOnlyList<string> roots)
+    {
+        var languages = new List<string>();
+        foreach (var root in roots)
+        {
+            var textRoot = Path.Combine(root, "texts");
+            if (!Directory.Exists(textRoot)) continue;
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(textRoot, "metadata-*.json", SearchOption.TopDirectoryOnly))
+                {
+                    var language = Path.GetFileNameWithoutExtension(file)["metadata-".Length..];
+                    // "text" and "langue" are working files of the scraper, not languages
+                    if (language is "text" or "langue" || languages.Contains(language, StringComparer.OrdinalIgnoreCase)) continue;
+                    languages.Add(language);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // unreadable: the next root may still answer
+            }
+        }
+
+        languages.Sort(StringComparer.OrdinalIgnoreCase);
+        return languages;
+    }
+
+    /// <summary>The language EmulationStation is set to (es_settings "Language").</summary>
+    private string ResolveEsLanguage()
+    {
+        try
+        {
+            if (_esSettings.ReadAllSettings().TryGetValue("Language", out var language)
+                && !string.IsNullOrWhiteSpace(language))
+            {
+                var parts = language.Trim().Replace('-', '_')
+                    .Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length == 1) return parts[0].ToLowerInvariant();
+                if (parts.Length > 1) return $"{parts[0].ToLowerInvariant()}_{parts[1].ToUpperInvariant()}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "ES language unreadable, falling back to en");
+        }
+
+        return "en";
+    }
+
+    /// <summary>What of a metadata bundle is TEXT. Everything else in there is a media
+    /// pointer frozen at scrape time.</summary>
+    private static readonly IReadOnlySet<string> TextFieldKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "name", "desc", "developer", "publisher", "players", "genre", "genres",
+        "releasedate", "rating", "region", "family", "arcadesystemname", "emulator",
+        "source", "md5", "crc32", "gameid", "system"
+    };
+
     private async Task PublishScreenSnapshotAsync(
         EventEnvelope trigger,
         PhysicalMediaSelectionSnapshot selection,
