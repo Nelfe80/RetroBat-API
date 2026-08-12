@@ -340,6 +340,14 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Selection = selection,
                     Cards = cards,
                     Text = text,
+                    // Composing a card takes more than the cards: the logo, the box, a
+                    // fanart to sit behind them, and what the buttons DO.
+                    Assets = BuildAssetTable(roots, InstructionCardAssetKinds),
+                    SystemAssets = BuildAssetTable(fallbackSystemRoots, InstructionCardAssetKinds),
+                    // keyed by ROM NAME, not by the media slug: dynpanels are named after
+                    // the rom file ("1943.json"), and a media folder is a slug that often
+                    // differs ("sonic_the_hedgehog" for "Sonic The Hedgehog (USA)")
+                    Controls = BuildControlsBlock(frontendSystemId, Path.GetFileNameWithoutExtension(selected.GamePath ?? string.Empty)),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
             });
@@ -433,6 +441,132 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// Null when nothing is known — an empty block would say "nothing to print" where
     /// the truth is "we never looked".
     /// </summary>
+    /// <summary>
+    /// What the buttons DO, compact enough to travel on every selection. A composed
+    /// instruction card needs the meaning and the colour of each control; the full
+    /// geometry, the MAME masks and the export plan stay on /ws/panel, which is built
+    /// for that. A consumer subscribed to this stream alone can draw a panel without a
+    /// second subscription.
+    ///
+    /// Source: resources/dynpanels, game file then system file — the same precedence
+    /// the panel export uses. Null when the entry has no panel: an empty block would
+    /// claim the buttons mean nothing.
+    /// </summary>
+    private object? BuildControlsBlock(string systemId, string rom)
+    {
+        JsonElement root;
+        foreach (var candidate in new[]
+                 {
+                     Path.Combine(RetroBatPaths.DynPanelsRoot, "games", rom + ".json"),
+                     Path.Combine(RetroBatPaths.DynPanelsRoot, "systems", systemId.ToLowerInvariant() + ".json")
+                 })
+        {
+            try
+            {
+                if (!File.Exists(candidate)) continue;
+                using var document = JsonDocument.Parse(File.ReadAllText(candidate));
+                root = document.RootElement.Clone();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Dynpanel unreadable: {Path}", candidate);
+                continue;
+            }
+
+            var buttons = new List<object>();
+            var devices = new List<object>();
+            var system = new List<object>();
+
+            if (root.TryGetProperty("players", out var players) && players.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var player in players.EnumerateObject())
+                {
+                    if (player.Value.ValueKind != JsonValueKind.Object) continue;
+
+                    if (player.Value.TryGetProperty("buttons", out var playerButtons)
+                        && playerButtons.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var button in playerButtons.EnumerateObject())
+                        {
+                            var function = Text(button.Value, "function");
+                            if (string.IsNullOrWhiteSpace(function)) continue; // unused button: says nothing
+                            buttons.Add(new
+                            {
+                                Player = player.Name,
+                                Id = button.Name,
+                                Function = function,
+                                Color = Text(button.Value, "color"),
+                                Output = Text(button.Value, "output")
+                            });
+                        }
+                    }
+
+                    if (player.Value.TryGetProperty("devices", out var playerDevices)
+                        && playerDevices.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var device in playerDevices.EnumerateArray())
+                        {
+                            devices.Add(new
+                            {
+                                Player = player.Name,
+                                Label = Text(device, "label"),
+                                Type = Text(device, "type"),
+                                Color = Text(device, "color")
+                            });
+                        }
+                    }
+
+                    if (player.Value.TryGetProperty("system_inputs", out var systemInputs)
+                        && systemInputs.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var input in systemInputs.EnumerateObject())
+                        {
+                            system.Add(new
+                            {
+                                Player = player.Name,
+                                Id = input.Name,
+                                Label = Text(input.Value, "label"),
+                                Color = Text(input.Value, "color")
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (buttons.Count == 0 && devices.Count == 0) return null;
+
+            root.TryGetProperty("meta", out var meta);
+            return new
+            {
+                Source = Path.GetFileName(candidate),
+                Scope = Text(root, "scope"),
+                Players = Number(meta, "players"),
+                Alternating = Number(meta, "alternating") == 1,
+                Notes = Text(meta, "misc_details"),
+                Buttons = buttons,
+                Devices = devices,
+                System = system
+            };
+        }
+
+        return null;
+
+        static string Text(JsonElement element, string property)
+            => element.ValueKind == JsonValueKind.Object
+               && element.TryGetProperty(property, out var value)
+               && value.ValueKind == JsonValueKind.String
+                ? value.GetString() ?? string.Empty
+                : string.Empty;
+
+        static int? Number(JsonElement element, string property)
+            => element.ValueKind == JsonValueKind.Object
+               && element.TryGetProperty(property, out var value)
+               && value.ValueKind == JsonValueKind.Number
+               && value.TryGetInt32(out var parsed)
+                ? parsed
+                : null;
+    }
+
     private async Task<object?> BuildTextBlockAsync(
         string systemId,
         string gameSlug,
@@ -1520,6 +1654,14 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
         return table;
     }
+
+    /// <summary>What a composed INSTRUCTION CARD can carry: the game's identity, the
+    /// printed matter, and a fanart to sit behind them.</summary>
+    private static readonly IReadOnlySet<string> InstructionCardAssetKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        MediaKinds.Wheel, MediaKinds.Logo, MediaKinds.Box3d, MediaKinds.BoxFront,
+        MediaKinds.Flyer, MediaKinds.Fanart, MediaKinds.InstructionCard
+    };
 
     /// <summary>What a TOPPER can display: the cabinet's top sign — its own art, the
     /// identity of the game, and the printed matter that used to live up there.</summary>

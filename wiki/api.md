@@ -57,6 +57,8 @@ Les instantanes de surface portent `Media` (champs historiques, inchanges) et, e
 
 Les flux qui impriment quelque chose sur un jeu — topper, carte d'instructions — portent en plus `Text` : description, genre, nombre de joueurs, note, dans la langue reglee dans EmulationStation, avec la liste des langues disponibles pour cette entree.
 
+`/ws/instruction-card` porte en plus `Controls` : ce que fait chaque bouton et sa couleur, projete depuis `resources/dynpanels`. De quoi composer une carte (logo, jaquette, description, panel colore sur un fond de fanart) et pas seulement en afficher une deja faite ; la geometrie complete du panel reste sur `/ws/panel`.
+
 Toute l'enveloppe est commune : `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` — le contrat est additif (les champs s'ajoutent, jamais retirés).
 
 !!! note "Hiscores : arcade **et** consoles"

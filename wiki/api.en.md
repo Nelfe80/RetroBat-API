@@ -57,6 +57,8 @@ Surface snapshots carry `Media` (legacy fields, unchanged) and, in addition, `As
 
 Streams that print something about a game — topper, instruction card — also carry `Text`: description, genre, player count and rating in the language EmulationStation is set to, with the languages available for that entry.
 
+`/ws/instruction-card` also carries `Controls`: what each button does and its colour, projected from `resources/dynpanels`. Enough to compose a card (logo, box art, description, coloured panel over a fanart) rather than only display a ready-made one; the full panel geometry stays on `/ws/panel`.
+
 Every event shares one envelope: `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` — the contract is additive (fields are added, never removed).
 
 !!! note "Hiscores: arcade **and** consoles"

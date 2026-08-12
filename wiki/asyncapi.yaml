@@ -71,8 +71,11 @@ channels:
     description: >
       Prefixes `instruction-card.` — instruction card snapshots
       (instruction-card.snapshot). Aliases: instructioncard, instruction_card, instructions.
-      Payload carries `Cards` and `Text` (description, genre, players, rating in the
-      EmulationStation language) — enough to compose a card, not only to show one.
+      Payload carries `Cards`, `Assets`/`SystemAssets` (wheel, box art, flyer, fanart),
+      `Text` (description, genre, players, rating in the EmulationStation language) and
+      `Controls`: what each button DOES and its colour, from resources/dynpanels —
+      enough to compose a card, not only to show one. The full panel geometry stays on
+      /ws/panel.
     messages:
       envelope:
         $ref: '#/components/messages/envelope'
