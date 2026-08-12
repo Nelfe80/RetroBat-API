@@ -69,6 +69,108 @@ public static class MediaKinds
             _ => normalized
         };
     }
+
+    // Kinds carried by the physical media store that predate this vocabulary. They
+    // were named by the WebSocket snapshot's own fields; naming them here lets an
+    // asset table speak one language instead of two.
+    public const string GeneratedMarquee = "generated-marquee";
+    public const string GeneratedDmd = "generated-dmd";
+    public const string Dmd = "dmd";
+    public const string DmdAnimation = "dmd-animation";
+    public const string Topper = "topper";
+    public const string InstructionCard = "instruction-card";
+
+    /// <summary>
+    /// The kind a file stands for, from its path RELATIVE to a game or system media
+    /// root ("artwork/box/3d.png" → box-3d). Naming by file stem alone cannot do this:
+    /// "3d.png" and "front.png" only mean something under "artwork/box/", and
+    /// "marquee.png" under "artwork/marquee/" is not the same thing as a folder called
+    /// marquee. Null when the file is not a recognised medium — the caller publishes
+    /// nothing rather than inventing a name.
+    /// </summary>
+    public static string? FromRelativePath(string? relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath)) return null;
+        var path = relativePath.Replace('\\', '/').Trim('/').ToLowerInvariant();
+        var slash = path.LastIndexOf('/');
+        var directory = slash < 0 ? string.Empty : path[..slash];
+        var file = slash < 0 ? path : path[(slash + 1)..];
+        var dot = file.LastIndexOf('.');
+        var stem = dot < 0 ? file : file[..dot];
+
+        return directory switch
+        {
+            "artwork" => stem switch
+            {
+                "fanart" => Fanart,
+                "flyer" => Flyer,
+                "screenshot" => Thumbnail,
+                "screentitle" => Image,
+                "steamgrid" => SteamGrid,
+                _ => VariantOf(stem, "screentitle", Image) ?? VariantOf(stem, "fanart", Fanart)
+            },
+            "artwork/box" => stem switch
+            {
+                "3d" => Box3d,
+                "front" => BoxFront,
+                "back" => BoxBack,
+                "side" => BoxSide,
+                "texture" => BoxTexture,
+                _ => VariantOf(stem, "front", BoxFront)
+            },
+            "artwork/mix" => stem switch
+            {
+                "mixrbv1" => MixRbv1,
+                "mixrbv2" => MixRbv2,
+                _ => null
+            },
+            "artwork/bezels" => stem == "bezel" ? Bezel : null,
+            "artwork/marquee" => stem switch
+            {
+                "marquee" => Marquee,
+                "screenmarquee" => ScreenMarquee,
+                "screenmarquee-small" => ScreenMarqueeSmall,
+                "topper" => Topper,
+                "dmd" => Dmd,
+                "generated-marquee" or "generated-system-marquee" => GeneratedMarquee,
+                "generated-dmd" or "generated-system-dmd" => GeneratedDmd,
+                _ => stem.StartsWith("dmd", StringComparison.Ordinal) ? DmdAnimation : null
+            },
+            "artwork/ic" => stem == "ic" || stem.StartsWith("ic-", StringComparison.Ordinal)
+                ? InstructionCard
+                : null,
+            "ui" => stem == "steamgrid" ? SteamGrid : null,
+            "ui/wheels" => stem switch
+            {
+                "wheel" => Wheel,
+                "wheel-carbon" => WheelCarbon,
+                "wheel-steel" => WheelSteel,
+                _ => VariantOf(stem, "wheel", Wheel)
+            },
+            "ui/logos" => stem == "logo" ? Logo : null,
+            "documents" => stem == "manual" ? Manual : null,
+            "themes" => stem == "themehb" ? ThemeHb : null,
+            "" => stem switch
+            {
+                "video" => Video,
+                "video-normalized" => VideoNormalized,
+                _ => null
+            },
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// A regional or styled variant keeps its suffix as its own kind ("front-us" →
+    /// "box-front-us"): merging it into the base would let a consumer show a US box for
+    /// a European game without ever being told. Consumers that only know the base kind
+    /// simply do not see it.
+    /// </summary>
+    private static string? VariantOf(string stem, string baseStem, string baseKind)
+        => stem.Length > baseStem.Length + 1
+           && stem.StartsWith(baseStem + "-", StringComparison.Ordinal)
+            ? baseKind + stem[baseStem.Length..]
+            : null;
 }
 
 public class MediaPrefetchRequest

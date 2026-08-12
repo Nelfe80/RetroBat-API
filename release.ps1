@@ -95,6 +95,29 @@ $asyncapiFile = $null
 if (Test-Path $asyncapiSource) {
     $asyncapiFile = Join-Path $out 'asyncapi.yaml'
     Copy-Item $asyncapiSource $asyncapiFile -Force
+
+    # Controle de derive : asyncapi.yaml est SAISIE A LA MAIN alors que
+    # /api/v1/ws/streams sort du code. Rien ne garantissait qu'elles disent la
+    # meme chose, et c'est elle qui part avec la release. Avertissement pour
+    # l'instant : on regarde d'abord ce qu'elle crie sur l'existant.
+    try {
+        $streams = (Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:12345/api/v1/ws/streams' -TimeoutSec 30).Content |
+            ConvertFrom-Json
+        $live = @($streams.Streams | ForEach-Object { $_.Name }) | Sort-Object
+        $declared = @(Select-String -Path $asyncapiSource -Pattern '^\s{4}address:\s*/ws/(.+)$' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Sort-Object
+        $onlyLive = @($live | Where-Object { $declared -notcontains $_ })
+        $onlyDoc = @($declared | Where-Object { $live -notcontains $_ })
+        if ($onlyLive.Count -or $onlyDoc.Count) {
+            Write-Warning "Contrat WS desynchronise entre le code et asyncapi.yaml :"
+            if ($onlyLive.Count) { Write-Warning "  servis mais non documentes : $($onlyLive -join ', ')" }
+            if ($onlyDoc.Count) { Write-Warning "  documentes mais non servis : $($onlyDoc -join ', ')" }
+        } else {
+            Write-Host "Controle contrat WS : OK ($($live.Count) canaux, code == asyncapi)"
+        }
+    } catch {
+        Write-Warning "Controle contrat WS impossible : $($_.Exception.Message)"
+    }
 }
 
 $hashes = Get-FileHash "$out\*.7z" -Algorithm SHA256 | ForEach-Object { '{0}  {1}' -f $_.Hash, (Split-Path $_.Path -Leaf) }

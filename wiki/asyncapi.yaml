@@ -50,6 +50,9 @@ channels:
     description: >
       Prefixes `marquee.` — marquee media snapshots for the selected game/system:
       marquee.snapshot, marquee.snapshot.updated.
+      Payload carries `Media` (legacy named fields, kept as-is) plus `Assets` and,
+      in game scope, `SystemAssets`: tables keyed by canonical media kind holding
+      only what THAT scope really owns. A key is present only when the file is.
     messages:
       envelope:
         $ref: '#/components/messages/envelope'

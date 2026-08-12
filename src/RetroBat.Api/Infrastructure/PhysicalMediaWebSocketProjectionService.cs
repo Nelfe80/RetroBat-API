@@ -150,6 +150,9 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Stream = "marquee",
                     Selection = selection,
                     Media = marquee,
+                    // Additive: the legacy Media fields keep their shape and their
+                    // fallbacks, Assets says exactly what THIS entry owns.
+                    Assets = BuildAssetTable(roots, MarqueeAssetKinds),
                     Generation = ResolveSystemGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
@@ -245,6 +248,13 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Stream = "marquee",
                     Selection = selection,
                     Media = marquee,
+                    // Additive, and SCOPED. Media.Fanart silently falls back to the
+                    // system's (`game.Fanart ?? system.Fanart`), so a consumer holding a
+                    // path cannot tell whose art it is. These two tables can: each holds
+                    // only what that scope really owns, and a key is absent when the file
+                    // is. The legacy fields are untouched.
+                    Assets = BuildAssetTable(roots, MarqueeAssetKinds),
+                    SystemAssets = BuildAssetTable(fallbackSystemRoots, MarqueeAssetKinds),
                     Generation = ResolveGameGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
@@ -503,6 +513,9 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Stream = "marquee",
                     Selection = selection,
                     Media = marquee,
+                    // Additive: the legacy Media fields keep their shape and their
+                    // fallbacks, Assets says exactly what THIS entry owns.
+                    Assets = BuildAssetTable(roots, MarqueeAssetKinds),
                     Generation = ResolveSystemGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "background-generation")
                 }
@@ -568,6 +581,13 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Stream = "marquee",
                     Selection = selection,
                     Media = marquee,
+                    // Additive, and SCOPED. Media.Fanart silently falls back to the
+                    // system's (`game.Fanart ?? system.Fanart`), so a consumer holding a
+                    // path cannot tell whose art it is. These two tables can: each holds
+                    // only what that scope really owns, and a key is absent when the file
+                    // is. The legacy fields are untouched.
+                    Assets = BuildAssetTable(roots, MarqueeAssetKinds),
+                    SystemAssets = BuildAssetTable(fallbackSystemRoots, MarqueeAssetKinds),
                     Generation = ResolveGameGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "background-generation")
                 }
@@ -1264,6 +1284,64 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
         return current;
     }
+
+    /// <summary>
+    /// Every recognised medium under these roots, keyed by canonical
+    /// <see cref="MediaKinds"/>. ONE enumeration per root instead of a dozen pattern
+    /// searches that could only find what they already knew to ask for — and the first
+    /// root wins, so the media/user override keeps its priority.
+    ///
+    /// <paramref name="allowed"/> curates the table for the surface being served: a
+    /// stream carries what its surface can display, not everything on disk. A key only
+    /// exists when the file exists; absence IS the answer.
+    /// </summary>
+    private static IReadOnlyDictionary<string, MediaStreamAsset> BuildAssetTable(
+        IReadOnlyList<string> roots,
+        IReadOnlySet<string> allowed)
+    {
+        var table = new Dictionary<string, MediaStreamAsset>(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in roots)
+        {
+            if (!Directory.Exists(root)) continue;
+            IEnumerable<string> files;
+            try
+            {
+                files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue; // unreadable root: the next one may still answer
+            }
+
+            foreach (var path in files)
+            {
+                string relative;
+                try
+                {
+                    relative = Path.GetRelativePath(root, path);
+                }
+                catch (ArgumentException)
+                {
+                    continue;
+                }
+
+                if (MediaKinds.FromRelativePath(relative) is not { Length: > 0 } kind) continue;
+                if (!allowed.Contains(kind) || table.ContainsKey(kind)) continue;
+                table[kind] = CreateAsset(path) with { Kind = kind };
+            }
+        }
+
+        return table;
+    }
+
+    /// <summary>What a MARQUEE surface can display (plan, matrix per surface).</summary>
+    private static readonly IReadOnlySet<string> MarqueeAssetKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        MediaKinds.Fanart, MediaKinds.Wheel, MediaKinds.Logo, MediaKinds.Marquee,
+        MediaKinds.ScreenMarquee, MediaKinds.ScreenMarqueeSmall, MediaKinds.GeneratedMarquee,
+        MediaKinds.Dmd, MediaKinds.GeneratedDmd, MediaKinds.MixRbv1, MediaKinds.MixRbv2,
+        MediaKinds.Box3d, MediaKinds.BoxFront, MediaKinds.Topper
+    };
 
     private static MediaStreamAsset CreateAsset(string path)
     {

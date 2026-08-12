@@ -53,6 +53,8 @@ Chaque flux ne délivre que les types d'événements de ses préfixes ; certains
 | `/ws/hiscore` | Captures et mises à jour de high scores |
 | `/ws/media`, `/ws/roms`, `/ws/system`, `/ws/control`, `/ws/esevent` | Store médias, Roms Manager, service, commandes, hooks ES bruts |
 
+Les instantanes de surface portent `Media` (champs historiques, inchanges) et, en plus, `Assets` — une table indexee sur le type de media canonique (`box-3d`, `mixrbv2`, `wheel`…) ne contenant que ce que l'entree possede vraiment. En portee jeu, `SystemAssets` porte la meme table pour son systeme : c'est ce qui permet de distinguer le fanart du jeu de celui du systeme, la ou les champs historiques replient silencieusement de l'un sur l'autre. **Une cle n'existe que si le fichier existe.**
+
 Toute l'enveloppe est commune : `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` — le contrat est additif (les champs s'ajoutent, jamais retirés).
 
 !!! note "Hiscores : arcade **et** consoles"
