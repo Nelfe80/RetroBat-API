@@ -340,6 +340,8 @@ if (!testModeRequested)
     builder.Services.AddHostedService<PersoMemFlagSyncHostedService>();
 }
 builder.Services.AddHostedService<CpoPanelWebSocketProjectionService>();
+// presses resolved to panel slots, for the wiring check
+builder.Services.AddHostedService<PanelInputWatcherService>();
 builder.Services.AddHostedService<RetroAchievementsRuntimeProjectionService>();
 builder.Services.AddHostedService<RetroAchievementsLeaderboardInferenceService>();
 builder.Services.AddHostedService<RetroArchLogMonitorService>();
