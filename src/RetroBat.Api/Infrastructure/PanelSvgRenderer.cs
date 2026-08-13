@@ -99,12 +99,49 @@ public static class PanelSvgRenderer
         svg.Append(Inv($"<text class=\"s\" x=\"{Margin + 22:0.#}\" y=\"{Margin + 12:0.#}\">SELECT</text>"))
            .Append(Inv($"<text class=\"s\" x=\"{Margin + 78:0.#}\" y=\"{Margin + 12:0.#}\">START</text>"));
 
+        // real artwork when it is there, plain shapes otherwise: a cabinet whose theme
+        // images were removed still gets a readable panel
+        var buttonArt = PanelSvgArtwork.Load("top-button-v2.svg");
+        var stickArt = PanelSvgArtwork.Load("top-joystick.svg");
+
+        // One definition per COLOUR, not per button: a panel uses two or three colours,
+        // and the artwork weighs 9 KB each time it is copied.
+        var colorKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (buttonArt is not null)
+        {
+            var defs = new StringBuilder();
+            foreach (var row in layout)
+                foreach (var slot in row)
+                {
+                    buttons.TryGetValue(slot, out var b);
+                    var c = b?.Used == true && !string.IsNullOrWhiteSpace(b.Color) ? WebColor(b.Color) : "#3a3f4b";
+                    if (colorKeys.ContainsKey(c)) continue;
+                    var key = "c" + colorKeys.Count;
+                    colorKeys[c] = key;
+                    defs.Append(PanelSvgArtwork.Define(buttonArt, key, c));
+                }
+
+            if (stickArt is not null) defs.Append(PanelSvgArtwork.Define(stickArt, "stick", null));
+            svg.Append("<defs>").Append(defs).Append("</defs>");
+        }
+        else if (stickArt is not null)
+        {
+            svg.Append("<defs>").Append(PanelSvgArtwork.Define(stickArt, "stick", null)).Append("</defs>");
+        }
+
         if (hasStick)
         {
             var cx = Margin + StickRadius;
             var cy = top + (layout.Length * ButtonRadius) + ((layout.Length - 1) * RowGap) / 2.0;
-            svg.Append(Inv($"<circle cx=\"{cx:0.#}\" cy=\"{cy:0.#}\" r=\"{StickRadius:0.#}\" fill=\"#20232b\" stroke=\"#5b6270\" stroke-width=\"3\"/>"))
-               .Append(Inv($"<circle cx=\"{cx:0.#}\" cy=\"{cy:0.#}\" r=\"9\" fill=\"#5b6270\"/>"));
+            if (stickArt is not null)
+            {
+                svg.Append(PanelSvgArtwork.Use(stickArt, "stick", cx, cy, StickRadius * 2, 1.0));
+            }
+            else
+            {
+                svg.Append(Inv($"<circle cx=\"{cx:0.#}\" cy=\"{cy:0.#}\" r=\"{StickRadius:0.#}\" fill=\"#20232b\" stroke=\"#5b6270\" stroke-width=\"3\"/>"))
+                   .Append(Inv($"<circle cx=\"{cx:0.#}\" cy=\"{cy:0.#}\" r=\"9\" fill=\"#5b6270\"/>"));
+            }
         }
 
         for (var r = 0; r < layout.Length; r++)
@@ -123,9 +160,19 @@ public static class PanelSvgRenderer
                 var used = button?.Used == true;
                 var fill = used && !string.IsNullOrWhiteSpace(button!.Color) ? WebColor(button.Color) : "#3a3f4b";
 
-                svg.Append(Inv($"<g opacity=\"{(used ? 1.0 : 0.2):0.##}\">"))
-                   .Append(Inv($"<circle cx=\"{cx:0.#}\" cy=\"{cy:0.#}\" r=\"{ButtonRadius:0.#}\" fill=\"{fill}\" stroke=\"#0d0f13\" stroke-width=\"2\"/>"))
-                   .Append(Inv($"<text class=\"f\" x=\"{cx:0.#}\" y=\"{cy + 5:0.#}\">{Escape(button?.Label ?? slot.ToString())}</text>"));
+                var opacity = used ? 1.0 : 0.2;
+                if (buttonArt is not null)
+                {
+                    svg.Append(PanelSvgArtwork.Use(buttonArt, colorKeys[fill], cx, cy, ButtonRadius * 2, opacity))
+                       .Append(Inv($"<g opacity=\"{opacity:0.##}\">"));
+                }
+                else
+                {
+                    svg.Append(Inv($"<g opacity=\"{opacity:0.##}\">"))
+                       .Append(Inv($"<circle cx=\"{cx:0.#}\" cy=\"{cy:0.#}\" r=\"{ButtonRadius:0.#}\" fill=\"{fill}\" stroke=\"#0d0f13\" stroke-width=\"2\"/>"));
+                }
+
+                svg.Append(Inv($"<text class=\"f\" x=\"{cx:0.#}\" y=\"{cy + 5:0.#}\">{Escape(button?.Label ?? slot.ToString())}</text>"));
 
                 if (used && !string.IsNullOrWhiteSpace(button!.Function))
                 {
