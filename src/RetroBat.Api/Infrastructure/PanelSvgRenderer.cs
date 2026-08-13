@@ -87,7 +87,10 @@ public static class PanelSvgRenderer
         var height = Margin * 2 + layout.Length * (ButtonRadius * 2) + (layout.Length - 1) * RowGap + 46;
 
         var svg = new StringBuilder();
-        svg.Append(Inv($"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {width:0.#} {height:0.#}\" "))
+        // xlink must be declared here: the artwork's own root carries it, and only its
+        // BODY is kept — without this the gradients referenced by xlink:href resolve to
+        // nothing and the file fails to parse.
+        svg.Append(Inv($"<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"0 0 {width:0.#} {height:0.#}\" "))
            .Append(Inv($"width=\"{width:0.#}\" height=\"{height:0.#}\" role=\"img\">"))
            .Append("<style>.f{font:600 13px 'Segoe UI',sans-serif;fill:#fff;text-anchor:middle}"
                    + ".s{font:600 11px 'Segoe UI',sans-serif;fill:#cfd3dc;text-anchor:middle}</style>");
