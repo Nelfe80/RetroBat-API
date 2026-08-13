@@ -17,6 +17,23 @@ RetroArch runs the game
          → LedManager, MarqueeManager and your tools react to them
 ```
 
+## Finding addresses: MEM Explorer
+
+Writing a `.MEM` means knowing **where** a game keeps its lives, its score, its state. **MEM Explorer** is the desktop tool that discovers them for you, installed alongside APIExpose:
+
+```text
+plugins\APIExpose\tools\mem-explorer\MemExplorer.exe
+```
+
+It launches a game **through APIExpose**, watches memory while you play, and helps you isolate the address that changes when the value changes on screen. Two engines depending on the platform, picked automatically: the **RetroArch wrapper** for consoles, the **MAME Lua bridge** for arcade.
+
+The method is the one every address hunter uses: play, tell the tool what you just saw (“I lost a life”, “the score went up”), and the candidate list narrows on every pass until only the right address is left.
+
+The tool then writes the definition in the **curator's format** — the same vocabulary the official `.MEM` files use — and you can test it in game straight away, before offering it to the community.
+
+!!! note "Discovery mode only runs when you ask for it"
+    Reading RAM continuously costs machine time. MEM Explorer turns discovery on for the session and releases it afterwards: a cabinet simply playing pays nothing for it.
+
 ## Where to put the file
 
 ```text
