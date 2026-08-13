@@ -47,9 +47,10 @@ public static class PanelSvgRenderer
             // front instead of from above, so a theme can pick whichever fits its slot
             WritePair(systemId, stem + "-3d",
                 Render(buttonsPerPlayer, hasStick, buttons, stickColor, "iso-button.svg", "iso-joystick.svg",
-                    // 95 % dwarfed the buttons: a third off leaves it dominant without
-                    // taking the panel over
-                    stickHeightRatio: 0.63),
+                    // full height: the artwork's perspective now matches the buttons', so
+                    // the stick reads at the same scale as them rather than being sized
+                    // down to compensate
+                    stickHeightRatio: 1.0),
                 logger);
 
             var svg = Render(buttonsPerPlayer, hasStick, buttons, stickColor);
@@ -120,6 +121,7 @@ public static class PanelSvgRenderer
         var layout = PanelLayoutConvention.RowsFor(buttonsPerPlayer);
         var columns = layout.Max(row => row.Length);
         var height = Margin * 2 + layout.Length * (ButtonRadius * 2) + (layout.Length - 1) * RowGap + 46;
+        var top = Margin + 30; // the rows start below the top margin
 
         // A stick seen from the FRONT is a tall object: sized like the round top view it
         // came out tiny next to the buttons. Given a height ratio, it is measured against
@@ -133,6 +135,22 @@ public static class PanelSvgRenderer
         var stickWidth = hasStick ? stickDrawnWidth + ButtonGap * 2 : 0;
         var width = Margin * 2 + stickWidth + columns * (ButtonRadius * 2) + (columns - 1) * ButtonGap;
 
+        // A stick seen from the front stands ON the panel: its BASE belongs between the
+        // two rows of buttons, not its middle. Raising it that far pushes its ball above
+        // the frame — the drawing gains the room it needs, and it must be claimed HERE,
+        // before the viewBox is written, or everything below simply falls outside it.
+        var rowsMiddle = top + layout.Length * ButtonRadius + (layout.Length - 1) * RowGap / 2.0;
+        if (hasStick && stickHeightRatio > 0)
+        {
+            var headroom = Margin - (rowsMiddle - stickHeight);
+            if (headroom > 0)
+            {
+                top += headroom;
+                rowsMiddle += headroom;
+                height += headroom;
+            }
+        }
+
         var svg = new StringBuilder();
         // xlink must be declared here: the artwork's own root carries it, and only its
         // BODY is kept — without this the gradients referenced by xlink:href resolve to
@@ -142,7 +160,6 @@ public static class PanelSvgRenderer
            .Append("<style>.f{font:600 13px 'Segoe UI',sans-serif;fill:#fff;text-anchor:middle}"
                    + ".s{font:600 11px 'Segoe UI',sans-serif;fill:#cfd3dc;text-anchor:middle}</style>");
 
-        var top = Margin + 30; // the system row sits above the buttons
 
         // real artwork when it is there, plain shapes otherwise: a cabinet whose theme
         // images were removed still gets a readable panel
@@ -179,7 +196,8 @@ public static class PanelSvgRenderer
         if (hasStick)
         {
             var cx = Margin + stickDrawnWidth / 2;
-            var cy = top + (layout.Length * ButtonRadius) + ((layout.Length - 1) * RowGap) / 2.0;
+            // base on the row midline for the front view, plain centre for the top view
+            var cy = stickHeightRatio > 0 ? rowsMiddle - stickHeight / 2 : rowsMiddle;
             if (stickArt is not null)
             {
                 svg.Append(PanelSvgArtwork.Use(stickArt, "stick", cx, cy, stickHeight, 1.0));
