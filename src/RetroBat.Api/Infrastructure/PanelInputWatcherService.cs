@@ -27,6 +27,9 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     private readonly ILogger<PanelInputWatcherService>? _logger;
     private CabinetInputReader? _reader;
     private long _ticks;
+    private bool _pollFailed;
+    private bool _firstPressLogged;
+    private int _lastAttachedCount = -1;
     private const int RescanEveryTicks = 200; // ~5 s at 25 ms
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -80,9 +83,13 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
             {
                 await Task.Delay(PollIntervalMs, token).ConfigureAwait(false);
 
-                // a pad plugged in after startup, or an emulator that took the device and
-                // gave it back: rescan now and then rather than stay deaf until restart
-                if (++_ticks % RescanEveryTicks == 0) _reader!.OpenControllers();
+                // A pad plugged in after startup, or an emulator that took the device and
+                // gave it back. The rescan CLOSES and reopens every joystick, so doing it
+                // blindly on a timer meant one unlucky moment — a reopen refused while
+                // something else held the device — left the watcher deaf for good, with
+                // nothing in the log to say so. It now runs only when the number of
+                // joysticks actually changed, and says what it found.
+                if (++_ticks % RescanEveryTicks == 0) RescanIfChanged();
 
                 var now = _reader!.Snapshot()
                     .Select(p => (Device: p.DeviceIndex, p.Identity))
@@ -106,10 +113,38 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
             }
             catch (Exception ex)
             {
-                _logger?.LogDebug(ex, "Panel input poll failed.");
+                // Debug-only was a trap: a poll failing every tick is EXACTLY the state
+                // that explains "I press and nothing happens", and it was the one thing
+                // the log did not say. Loud once, then quiet — a repeating failure must
+                // not drown the file.
+                if (!_pollFailed)
+                {
+                    _pollFailed = true;
+                    _logger?.LogWarning(ex, "Panel input poll failed; presses are no longer being read.");
+                }
+
                 await Task.Delay(1000, CancellationToken.None).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>
+    /// Reopens the joysticks only when their number changed. Says what it found: a
+    /// cabinet whose panel stops answering must be able to show, from the log alone,
+    /// whether the device disappeared or the presses did.
+    /// </summary>
+    private void RescanIfChanged()
+    {
+        var reader = _reader;
+        if (reader is null) return;
+
+        var attached = CabinetInputReader.AttachedCount();
+        if (attached == _lastAttachedCount) return;
+        _lastAttachedCount = attached;
+
+        var mapped = reader.OpenControllers();
+        _logger?.LogInformation("Panel input devices changed: {Attached} attached, {Mapped} mapped [{Names}]",
+            attached, mapped, string.Join(", ", reader.DeviceNames));
     }
 
     private void Publish(string type, int device, string identity)
@@ -118,6 +153,16 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         var player = device + 1;
         var slot = ResolveSlot(player, identity);
         var system = SystemInput(identity);
+
+        // One line for the first press of a session: proof the cabinet is being read at
+        // all. Without it, "nothing lights up" cannot be told apart from "nothing was
+        // pressed" — and the two need opposite fixes.
+        if (type.EndsWith(".pressed", StringComparison.Ordinal) && !_firstPressLogged)
+        {
+            _firstPressLogged = true;
+            _logger?.LogInformation("First cabinet press read: player {Player}, identity {Identity}, slot {Slot}, system {System}",
+                player, identity, slot?.ToString() ?? "-", system ?? "-");
+        }
 
         _eventBus.PublishAsync(new EventEnvelope
         {
@@ -156,10 +201,29 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
 
     private int? ResolveSlot(int player, string identity)
     {
-        // the cabinet's own map, read where the wizard wrote it. Player 1's map is the
-        // fallback: a second panel wired like the first has no entry of its own, and
-        // answering nothing there would make its buttons silent.
-        var map = CabinetCartographyStore.Read(player);
+        // THE GLOBAL MAP FIRST — deliberately the opposite order to the remap and cfg
+        // exports, and it is not a mistake.
+        //
+        // A cabinet is cartographed TWICE, because two chains name the same physical
+        // button differently:
+        //
+        //   CabinetButtons          what SDL + gamecontrollerdb call it — the chain
+        //                           THIS reader uses
+        //   CabinetButtonsByPlayer  what RetroArch calls it — the chain the remaps and
+        //                           the MAME cfg are written against
+        //
+        // Measured button by button on a real cabinet, the two disagree on six of eight
+        // places: the top-left button answers to "x" for the reader and to "y" for the
+        // launcher, and the shoulders and triggers swap the same way. Resolving a press
+        // through the launcher's map lit the neighbouring button — while the games
+        // themselves stayed correctly mapped, since their remaps read the other map.
+        //
+        // So each chain resolves against the map that was measured THROUGH IT. The
+        // per-player maps remain the fallback: a cabinet cartographed only by the
+        // LedManager wizard has nothing else, and answering nothing would leave every
+        // button silent with the panel drawn and correct.
+        var map = ReadLegacyCabinetButtons();
+        if (map.Count == 0) map = CabinetCartographyStore.Read(player);
         if (map.Count == 0 && player != 1) map = CabinetCartographyStore.Read(1);
 
         foreach (var (slot, wired) in map)
@@ -171,6 +235,38 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         }
 
         return null;
+    }
+
+    /// <summary>The cabinet-wide map: the one measured through SDL, which is the chain
+    /// this reader listens on. See <see cref="ResolveSlot"/> for why it wins here and
+    /// loses in the remap export.</summary>
+    private static IReadOnlyDictionary<string, string> ReadLegacyCabinetButtons()
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var path = Path.Combine(RetroBatPaths.PluginRoot, "appsettings.json");
+            if (!File.Exists(path)) return result;
+
+            var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))
+                ?["ApiExpose"]?["PanelRemapExport"]?["CabinetButtons"] as System.Text.Json.Nodes.JsonObject;
+            if (node is null) return result;
+
+            foreach (var entry in node)
+            {
+                if (entry.Value is System.Text.Json.Nodes.JsonValue value
+                    && value.TryGetValue<string>(out var identity))
+                {
+                    result[entry.Key] = identity;
+                }
+            }
+        }
+        catch
+        {
+            // unreadable settings: no map, the press is simply reported without a slot
+        }
+
+        return result;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)

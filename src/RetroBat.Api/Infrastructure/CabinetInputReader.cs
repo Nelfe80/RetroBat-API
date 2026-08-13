@@ -193,6 +193,22 @@ public sealed class CabinetInputReader : IDisposable
     /// has to show for "player 2 lit up" to ever be explainable.</summary>
     public IReadOnlyList<string> DeviceNames => _devices.Select(d => d.Name).ToList();
 
+    /// <summary>How many joysticks Windows currently shows, WITHOUT touching the ones
+    /// already open. Asking this before reopening is what lets the watcher leave a
+    /// working device alone.</summary>
+    public static int AttachedCount()
+    {
+        try
+        {
+            SDL_JoystickUpdate();
+            return SDL_NumJoysticks();
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
     private static readonly string[] VirtualMarkers = { "vjoy", "virtual", "vigem", "dummy", "emulated" };
 
     private static bool IsVirtual(string name) =>
