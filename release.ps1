@@ -55,7 +55,22 @@ $ex = @(
     # .env : drapeaux locaux (le mode decouverte du wrapper, par exemple). Gitignores,
     # donc invisibles a la revue, mais bien presents sur le disque : ils partaient dans
     # l'archive et seul le controle en aval les voyait. Exclusion recursive, a la source.
-    '-xr!.env'
+    '-xr!.env',
+    # Sauvegardes de travail : sans interet pour une installation, et un .bak d'exe pese
+    # le poids d'un exe.
+    '-xr!*.bak',
+    # OUTILLAGE INTERNE : les scripts de tools/ sont du savoir-faire de curation et
+    # d'exploitation (deploiement de flotte, migrations de medias, sondes de latence).
+    # Ils ne sont ni dans le depot, ni distribues, et le runtime n'en lit aucun.
+    '-xr!*.ps1', '-xr!*.py',
+    # Binaires tiers : lourds, et fournis par l'INSTALLER, pas par les archives. Un pack
+    # runtime n'a pas a redistribuer ffmpeg, ImageMagick ni translateLocally.
+    "-x!$name\tools\ffmpeg", "-x!$name\tools\imagemagick", "-x!$name\tools\translateLocally",
+    # resources\ra : donnees RetroAchievements personnelles de la borne (leaderboards).
+    "-x!$name\resources\ra",
+    # Page de diagnostic ScreenScraper : outil local, jamais distribue. Recursive : elle
+    # vit sous resources\scraping, pas a la racine.
+    '-xr!ScreenScraper.html'
 )
 
 Set-Location $root
@@ -71,7 +86,11 @@ Write-Host 'Construction update.7z...'
 
 # Controle anti-fuite : l'archive ne doit contenir ni .env, ni media, ni sources.
 $listing = & $sz l $full
-$leaks = $listing | Select-String '\.env|\\media\\|\\src\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db'
+# Le controle ne cherchait que les familles connues a l'epoque : tout tools\*.ps1 et
+# tools\*.py, resources\ra et ScreenScraper.html sont passes au travers. Il couvre
+# desormais ce que les exclusions ci-dessus retirent, pour que les deux listes se
+# contredisent bruyamment si l'une d'elles derive.
+$leaks = $listing | Select-String '\.env|\.bak|\.ps1$|\.py$|\\media\\|\\src\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db|\\resources\\ra\\|ScreenScraper\.html|\\tools\\(ffmpeg|imagemagick|translateLocally)\\'
 if ($leaks) { throw "FUITE DETECTEE dans l'archive : $($leaks[0])" }
 # La cle API de la borne ne doit JAMAIS etre committee/distribuee : le defaut reste vide
 # (chaque borne genere la sienne au 1er run). On bloque si une valeur traine.
