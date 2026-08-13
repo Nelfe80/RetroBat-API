@@ -143,6 +143,9 @@ public static class PanelSvgArtwork
             // near-grey stays grey: the rim, the specular and the shadows are not part
             // of the coloured plastic
             if (saturation < 0.15) return match.Value;
+            // a near-neutral target (a WHITE button) must stay neutral: transferring its
+            // hue amplified the faint blue of its hex and turned the plastic bluish
+            if (targetSaturation < 0.08) return FromHsl(0, 0, lightness);
             var blended = Math.Clamp(saturation * 0.35 + targetSaturation * 0.65, 0, 1);
             return FromHsl(targetHue, blended, lightness);
         });

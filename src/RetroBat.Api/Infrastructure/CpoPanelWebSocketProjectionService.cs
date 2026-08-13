@@ -165,8 +165,14 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
                     used);
             }
 
+            // the stick has its own colour in the dynpanel (1941 red, sf2 blue): it is
+            // data, not a decoration to invent
+            var stickColor = panel.ControlMap.Inputs
+                .FirstOrDefault(i => i.DeviceType.Contains("joy", StringComparison.OrdinalIgnoreCase)
+                                     && !string.IsNullOrWhiteSpace(i.Color))?.Color;
+
             PanelSvgRenderer.Write(snapshot.SystemId, snapshot.Rom, control.ButtonsPerPlayer,
-                control.ArcadeJoystick || control.AnalogJoystick, buttons, _logger);
+                control.ArcadeJoystick || control.AnalogJoystick, buttons, stickColor, _logger);
         }
         catch (Exception ex)
         {

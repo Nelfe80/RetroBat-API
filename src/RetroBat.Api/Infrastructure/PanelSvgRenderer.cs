@@ -25,9 +25,8 @@ public static class PanelSvgRenderer
     private const double Margin = 28;
     private const double StickRadius = 34;
 
-    /// <summary>Neutral ball top: an arcade stick is rarely the colour of a button, and
-    /// the buttons are what carry meaning here.</summary>
-    private const string StickColor = "#2b2f38";
+    /// <summary>Ball top when the panel says nothing about it.</summary>
+    private const string DefaultStickColor = "#2b2f38";
 
     /// <summary>A button as it must be drawn: its slot, what it does here, its colour.</summary>
     public sealed record Button(int Slot, string Label, string Function, string Color, bool Used);
@@ -38,11 +37,11 @@ public static class PanelSvgRenderer
     /// better than a half-drawn panel.
     /// </summary>
     public static string? Write(string systemId, string? gameName, int buttonsPerPlayer,
-        bool hasStick, IReadOnlyDictionary<int, Button> buttons, ILogger? logger = null)
+        bool hasStick, IReadOnlyDictionary<int, Button> buttons, string? stickColor = null, ILogger? logger = null)
     {
         try
         {
-            var svg = Render(buttonsPerPlayer, hasStick, buttons);
+            var svg = Render(buttonsPerPlayer, hasStick, buttons, stickColor);
             var relative = Path.Combine(Safe(systemId),
                 string.IsNullOrWhiteSpace(gameName) ? "default.svg" : Safe(gameName) + ".svg");
 
@@ -82,7 +81,8 @@ public static class PanelSvgRenderer
     /// 20 % opacity — because the panel must tell the truth about the CABINET: you see
     /// your eight holes, and which of them this game speaks to.
     /// </summary>
-    public static string Render(int buttonsPerPlayer, bool hasStick, IReadOnlyDictionary<int, Button> buttons)
+    public static string Render(int buttonsPerPlayer, bool hasStick, IReadOnlyDictionary<int, Button> buttons,
+        string? stickColor = null)
     {
         var layout = PanelLayoutConvention.RowsFor(buttonsPerPlayer);
         var columns = layout.Max(row => row.Length);
@@ -100,11 +100,6 @@ public static class PanelSvgRenderer
                    + ".s{font:600 11px 'Segoe UI',sans-serif;fill:#cfd3dc;text-anchor:middle}</style>");
 
         var top = Margin + 30; // the system row sits above the buttons
-
-        // SELECT then START, top-left, per the convention: they are wired on their own
-        // pins and are not part of the numbered rows.
-        svg.Append(Inv($"<text class=\"s\" x=\"{Margin + 22:0.#}\" y=\"{Margin + 12:0.#}\">SELECT</text>"))
-           .Append(Inv($"<text class=\"s\" x=\"{Margin + 78:0.#}\" y=\"{Margin + 12:0.#}\">START</text>"));
 
         // real artwork when it is there, plain shapes otherwise: a cabinet whose theme
         // images were removed still gets a readable panel
@@ -130,12 +125,12 @@ public static class PanelSvgRenderer
 
             // the stick is neutral: the buttons carry the game's colours, and a red ball
             // on top of them would read as one more function
-            if (stickArt is not null) defs.Append(PanelSvgArtwork.Define(stickArt, "stick", StickColor));
+            if (stickArt is not null) defs.Append(PanelSvgArtwork.Define(stickArt, "stick", string.IsNullOrWhiteSpace(stickColor) ? DefaultStickColor : WebColor(stickColor)));
             svg.Append("<defs>").Append(defs).Append("</defs>");
         }
         else if (stickArt is not null)
         {
-            svg.Append("<defs>").Append(PanelSvgArtwork.Define(stickArt, "stick", StickColor)).Append("</defs>");
+            svg.Append("<defs>").Append(PanelSvgArtwork.Define(stickArt, "stick", string.IsNullOrWhiteSpace(stickColor) ? DefaultStickColor : WebColor(stickColor))).Append("</defs>");
         }
 
         if (hasStick)
@@ -204,7 +199,7 @@ public static class PanelSvgRenderer
         return value.ToLowerInvariant() switch
         {
             "red" => "#d64545", "blue" => "#3d6fd6", "green" => "#3fa650",
-            "yellow" => "#e0b038", "white" => "#e8eaed", "black" => "#1a1c22",
+            "yellow" => "#e0b038", "white" => "#e9e9e9", "black" => "#1a1c22",
             "orange" => "#e08a38", "purple" => "#8a5cd6", "pink" => "#d65c9e",
             "cyan" => "#3fb6c4", "magenta" => "#c43fb6",
             _ => "#3a3f4b"
