@@ -25,6 +25,10 @@ public static class PanelSvgRenderer
     private const double Margin = 28;
     private const double StickRadius = 34;
 
+    /// <summary>How far below the row midline the front view's base sits — resting
+    /// exactly on the midline read a touch high.</summary>
+    private const double StickBaseDrop = 14;
+
     /// <summary>Ball top when the panel says nothing about it.</summary>
     private const string DefaultStickColor = "#2b2f38";
 
@@ -47,10 +51,9 @@ public static class PanelSvgRenderer
             // front instead of from above, so a theme can pick whichever fits its slot
             WritePair(systemId, stem + "-3d",
                 Render(buttonsPerPlayer, hasStick, buttons, stickColor, "iso-button.svg", "iso-joystick.svg",
-                    // full height: the artwork's perspective now matches the buttons', so
-                    // the stick reads at the same scale as them rather than being sized
-                    // down to compensate
-                    stickHeightRatio: 1.0),
+                    // the artwork's perspective matches the buttons' now, so the stick is
+                    // sized for balance rather than to compensate for it
+                    stickHeightRatio: 0.67),
                 logger);
 
             var svg = Render(buttonsPerPlayer, hasStick, buttons, stickColor);
@@ -142,7 +145,7 @@ public static class PanelSvgRenderer
         var rowsMiddle = top + layout.Length * ButtonRadius + (layout.Length - 1) * RowGap / 2.0;
         if (hasStick && stickHeightRatio > 0)
         {
-            var headroom = Margin - (rowsMiddle - stickHeight);
+            var headroom = Margin - (rowsMiddle + StickBaseDrop - stickHeight);
             if (headroom > 0)
             {
                 top += headroom;
@@ -197,7 +200,7 @@ public static class PanelSvgRenderer
         {
             var cx = Margin + stickDrawnWidth / 2;
             // base on the row midline for the front view, plain centre for the top view
-            var cy = stickHeightRatio > 0 ? rowsMiddle - stickHeight / 2 : rowsMiddle;
+            var cy = stickHeightRatio > 0 ? rowsMiddle + StickBaseDrop - stickHeight / 2 : rowsMiddle;
             if (stickArt is not null)
             {
                 svg.Append(PanelSvgArtwork.Use(stickArt, "stick", cx, cy, stickHeight, 1.0));
