@@ -46,7 +46,8 @@ public static class PanelSvgRenderer
             // the 3D front view uses the SAME coordinates: same panel, seen from the
             // front instead of from above, so a theme can pick whichever fits its slot
             WritePair(systemId, stem + "-3d",
-                Render(buttonsPerPlayer, hasStick, buttons, stickColor, "iso-button.svg", "iso-joystick.svg"),
+                Render(buttonsPerPlayer, hasStick, buttons, stickColor, "iso-button.svg", "iso-joystick.svg",
+                    stickHeightRatio: 0.95),
                 logger);
 
             var svg = Render(buttonsPerPlayer, hasStick, buttons, stickColor);
@@ -111,13 +112,24 @@ public static class PanelSvgRenderer
     /// your eight holes, and which of them this game speaks to.
     /// </summary>
     public static string Render(int buttonsPerPlayer, bool hasStick, IReadOnlyDictionary<int, Button> buttons,
-        string? stickColor = null, string buttonFile = "top-button-v2.svg", string stickFile = "top-joystick.svg")
+        string? stickColor = null, string buttonFile = "top-button-v2.svg", string stickFile = "top-joystick.svg",
+        double stickHeightRatio = 0)
     {
         var layout = PanelLayoutConvention.RowsFor(buttonsPerPlayer);
         var columns = layout.Max(row => row.Length);
-        var stickWidth = hasStick ? StickRadius * 2 + ButtonGap * 2 : 0;
-        var width = Margin * 2 + stickWidth + columns * (ButtonRadius * 2) + (columns - 1) * ButtonGap;
         var height = Margin * 2 + layout.Length * (ButtonRadius * 2) + (layout.Length - 1) * RowGap + 46;
+
+        // A stick seen from the FRONT is a tall object: sized like the round top view it
+        // came out tiny next to the buttons. Given a height ratio, it is measured against
+        // the panel instead, and the room reserved for it follows its real proportions —
+        // otherwise it would spill over the first column.
+        var stickArtPiece = hasStick ? PanelSvgArtwork.Load(stickFile) : null;
+        var stickHeight = stickHeightRatio > 0 ? height * stickHeightRatio : StickRadius * 2;
+        var stickDrawnWidth = stickArtPiece is not null && stickHeightRatio > 0
+            ? stickHeight * stickArtPiece.Width / stickArtPiece.Height
+            : StickRadius * 2;
+        var stickWidth = hasStick ? stickDrawnWidth + ButtonGap * 2 : 0;
+        var width = Margin * 2 + stickWidth + columns * (ButtonRadius * 2) + (columns - 1) * ButtonGap;
 
         var svg = new StringBuilder();
         // xlink must be declared here: the artwork's own root carries it, and only its
@@ -133,7 +145,7 @@ public static class PanelSvgRenderer
         // real artwork when it is there, plain shapes otherwise: a cabinet whose theme
         // images were removed still gets a readable panel
         var buttonArt = PanelSvgArtwork.Load(buttonFile);
-        var stickArt = PanelSvgArtwork.Load(stickFile);
+        var stickArt = stickArtPiece;
 
         // One definition per COLOUR, not per button: a panel uses two or three colours,
         // and the artwork weighs 9 KB each time it is copied.
@@ -164,11 +176,11 @@ public static class PanelSvgRenderer
 
         if (hasStick)
         {
-            var cx = Margin + StickRadius;
+            var cx = Margin + stickDrawnWidth / 2;
             var cy = top + (layout.Length * ButtonRadius) + ((layout.Length - 1) * RowGap) / 2.0;
             if (stickArt is not null)
             {
-                svg.Append(PanelSvgArtwork.Use(stickArt, "stick", cx, cy, StickRadius * 2, 1.0));
+                svg.Append(PanelSvgArtwork.Use(stickArt, "stick", cx, cy, stickHeight, 1.0));
             }
             else
             {
