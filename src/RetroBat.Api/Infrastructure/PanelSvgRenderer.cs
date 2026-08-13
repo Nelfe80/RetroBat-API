@@ -25,6 +25,10 @@ public static class PanelSvgRenderer
     private const double Margin = 28;
     private const double StickRadius = 34;
 
+    /// <summary>Neutral ball top: an arcade stick is rarely the colour of a button, and
+    /// the buttons are what carry meaning here.</summary>
+    private const string StickColor = "#2b2f38";
+
     /// <summary>A button as it must be drawn: its slot, what it does here, its colour.</summary>
     public sealed record Button(int Slot, string Label, string Function, string Color, bool Used);
 
@@ -124,12 +128,14 @@ public static class PanelSvgRenderer
                     defs.Append(PanelSvgArtwork.Define(buttonArt, key, c));
                 }
 
-            if (stickArt is not null) defs.Append(PanelSvgArtwork.Define(stickArt, "stick", null));
+            // the stick is neutral: the buttons carry the game's colours, and a red ball
+            // on top of them would read as one more function
+            if (stickArt is not null) defs.Append(PanelSvgArtwork.Define(stickArt, "stick", StickColor));
             svg.Append("<defs>").Append(defs).Append("</defs>");
         }
         else if (stickArt is not null)
         {
-            svg.Append("<defs>").Append(PanelSvgArtwork.Define(stickArt, "stick", null)).Append("</defs>");
+            svg.Append("<defs>").Append(PanelSvgArtwork.Define(stickArt, "stick", StickColor)).Append("</defs>");
         }
 
         if (hasStick)

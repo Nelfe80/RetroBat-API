@@ -105,16 +105,28 @@ public static class PanelSvgArtwork
                        .Replace($"href=\"#{id}\"", $"href=\"#{id}-{key}\"");
         }
 
-        // CSS classes are global too: .cls-1 in two instances is one rule for both
-        foreach (var css in Regex.Matches(body, @"\.(cls-[\w-]+)").Select(m => m.Groups[1].Value).Distinct())
+        // CSS classes are global too: .cls-1 in two instances is one rule for both.
+        var classes = Regex.Matches(body, @"\.(cls-[\w-]+)")
+            .Select(m => m.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // the rules first…
+        foreach (var css in classes)
         {
-            body = Regex.Replace(body, $@"\.{Regex.Escape(css)}\b", $".{css}-{key}")
-                        .Replace($"class=\"{css}\"", $"class=\"{css}-{key}\"");
-            body = Regex.Replace(body, $@"class=""([^""]*)\b{Regex.Escape(css)}\b([^""]*)""",
-                m => $"class=\"{m.Groups[1].Value}{css}-{key}{m.Groups[2].Value}\"");
+            body = Regex.Replace(body, $@"\.{Regex.Escape(css)}\b", $".{css}-{key}");
         }
 
-        return body;
+        // …then the attributes, in ONE pass per class="a b c". Renaming class by class
+        // suffixed the same token twice — the next rule matched the "cls-1" it had just
+        // written inside "cls-1-c0" — so every element pointed at a rule that did not
+        // exist and every fill fell back to black.
+        return Regex.Replace(body, "class=\"([^\"]*)\"", match =>
+        {
+            var tokens = match.Groups[1].Value
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Select(token => classes.Contains(token) ? $"{token}-{key}" : token);
+            return $"class=\"{string.Join(' ', tokens)}\"";
+        });
     }
 
     /// <summary>Transfers the target hue onto every saturated colour, keeping each one's
