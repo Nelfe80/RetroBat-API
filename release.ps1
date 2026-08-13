@@ -51,7 +51,11 @@ $ex = @(
     "-x!$name\publish-tmp",
     "-x!$name\wiki", "-x!$name\mkdocs.yml", "-x!$name\site",
     "-x!$name\build.bat", "-x!$name\release.ps1",
-    '-xr!__pycache__', '-xr!*.log', '-xr!.vs', '-xr!*.pdb'
+    '-xr!__pycache__', '-xr!*.log', '-xr!.vs', '-xr!*.pdb',
+    # .env : drapeaux locaux (le mode decouverte du wrapper, par exemple). Gitignores,
+    # donc invisibles a la revue, mais bien presents sur le disque : ils partaient dans
+    # l'archive et seul le controle en aval les voyait. Exclusion recursive, a la source.
+    '-xr!.env'
 )
 
 Set-Location $root
