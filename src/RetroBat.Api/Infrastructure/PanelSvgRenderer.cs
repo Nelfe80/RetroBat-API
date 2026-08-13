@@ -41,9 +41,16 @@ public static class PanelSvgRenderer
     {
         try
         {
+            var stem = string.IsNullOrWhiteSpace(gameName) ? "default" : Safe(gameName);
+
+            // the 3D front view uses the SAME coordinates: same panel, seen from the
+            // front instead of from above, so a theme can pick whichever fits its slot
+            WritePair(systemId, stem + "-3d",
+                Render(buttonsPerPlayer, hasStick, buttons, stickColor, "iso-button.svg", "iso-joystick.svg"),
+                logger);
+
             var svg = Render(buttonsPerPlayer, hasStick, buttons, stickColor);
-            var relative = Path.Combine(Safe(systemId),
-                string.IsNullOrWhiteSpace(gameName) ? "default.svg" : Safe(gameName) + ".svg");
+            var relative = Path.Combine(Safe(systemId), stem + ".svg");
 
             // same two roots as the panel theme XML (PanelsCatalogService): a theme finds
             // <game>.xml and <game>.svg side by side, in the folder it already reads
@@ -70,6 +77,28 @@ public static class PanelSvgRenderer
         }
     }
 
+    /// <summary>Writes one variant to both roots, best effort on the mirror.</summary>
+    private static void WritePair(string systemId, string stem, string svg, ILogger? logger)
+    {
+        try
+        {
+            var relative = Path.Combine(Safe(systemId), stem + ".svg");
+            WriteFile(Path.Combine(RetroBatPaths.ThemePanelsResourcesRoot, relative), svg);
+            try
+            {
+                WriteFile(Path.Combine(RetroBatPaths.EmulationStationPanelsThemeRoot, relative), svg);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogDebug(ex, "Panel SVG mirror not written for {System}/{Stem}", systemId, stem);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger?.LogDebug(ex, "Panel SVG variant not written for {System}/{Stem}", systemId, stem);
+        }
+    }
+
     private static void WriteFile(string path, string svg)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -82,7 +111,7 @@ public static class PanelSvgRenderer
     /// your eight holes, and which of them this game speaks to.
     /// </summary>
     public static string Render(int buttonsPerPlayer, bool hasStick, IReadOnlyDictionary<int, Button> buttons,
-        string? stickColor = null)
+        string? stickColor = null, string buttonFile = "top-button-v2.svg", string stickFile = "top-joystick.svg")
     {
         var layout = PanelLayoutConvention.RowsFor(buttonsPerPlayer);
         var columns = layout.Max(row => row.Length);
@@ -103,8 +132,8 @@ public static class PanelSvgRenderer
 
         // real artwork when it is there, plain shapes otherwise: a cabinet whose theme
         // images were removed still gets a readable panel
-        var buttonArt = PanelSvgArtwork.Load("top-button-v2.svg");
-        var stickArt = PanelSvgArtwork.Load("top-joystick.svg");
+        var buttonArt = PanelSvgArtwork.Load(buttonFile);
+        var stickArt = PanelSvgArtwork.Load(stickFile);
 
         // One definition per COLOUR, not per button: a panel uses two or three colours,
         // and the artwork weighs 9 KB each time it is copied.
@@ -176,7 +205,9 @@ public static class PanelSvgRenderer
                        .Append(Inv($"<circle cx=\"{cx:0.#}\" cy=\"{cy:0.#}\" r=\"{ButtonRadius:0.#}\" fill=\"{fill}\" stroke=\"#0d0f13\" stroke-width=\"2\"/>"));
                 }
 
-                svg.Append(Inv($"<text class=\"f\" x=\"{cx:0.#}\" y=\"{cy + 5:0.#}\">{Escape(button?.Label ?? slot.ToString())}</text>"));
+                // no number on the cap: it read as the GAME's button number when the game
+                // used it, and as the physical slot when it did not — two different
+                // meanings in one drawing. The function underneath says what it does.
 
                 if (used && !string.IsNullOrWhiteSpace(button!.Function))
                 {

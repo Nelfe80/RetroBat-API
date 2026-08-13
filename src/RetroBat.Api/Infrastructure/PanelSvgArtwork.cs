@@ -134,7 +134,19 @@ public static class PanelSvgArtwork
     private static string Recolor(string body, string color)
     {
         if (!TryParseHex(color, out var r, out var g, out var b)) return body;
-        var (targetHue, targetSaturation, _) = ToHsl(r, g, b);
+        var (targetHue, targetSaturation, targetLightness) = ToHsl(r, g, b);
+
+        // The artwork's own level has to move too. Transferring only the hue kept the
+        // RED ramp's lightness, so a button declared White came out dark grey — the
+        // right hue, at the wrong level. The ramp is therefore re-centred on the target:
+        // each nuance keeps its DISTANCE to the middle, so the highlight, the body and
+        // the shadow survive, and the button as a whole lands where its colour says.
+        var levels = HexPattern.Matches(body)
+            .Select(m => TryParseHex(m.Value, out var lr, out var lg, out var lb) ? ToHsl(lr, lg, lb) : (0, 0, -1))
+            .Where(x => x.Item2 >= 0.15 && x.Item3 >= 0)
+            .Select(x => x.Item3)
+            .ToList();
+        var middle = levels.Count > 0 ? levels.Average() : 0.5;
 
         return HexPattern.Replace(body, match =>
         {
@@ -143,11 +155,13 @@ public static class PanelSvgArtwork
             // near-grey stays grey: the rim, the specular and the shadows are not part
             // of the coloured plastic
             if (saturation < 0.15) return match.Value;
+
+            var level = Math.Clamp(targetLightness + (lightness - middle), 0.04, 0.97);
             // a near-neutral target (a WHITE button) must stay neutral: transferring its
             // hue amplified the faint blue of its hex and turned the plastic bluish
-            if (targetSaturation < 0.08) return FromHsl(0, 0, lightness);
+            if (targetSaturation < 0.08) return FromHsl(0, 0, level);
             var blended = Math.Clamp(saturation * 0.35 + targetSaturation * 0.65, 0, 1);
-            return FromHsl(targetHue, blended, lightness);
+            return FromHsl(targetHue, blended, level);
         });
     }
 
