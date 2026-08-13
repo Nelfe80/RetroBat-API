@@ -53,7 +53,7 @@ public static class PanelSvgRenderer
                 Render(buttonsPerPlayer, hasStick, buttons, stickColor, "iso-button.svg", "iso-joystick.svg",
                     // the artwork's perspective matches the buttons' now, so the stick is
                     // sized for balance rather than to compensate for it
-                    stickHeightRatio: 0.67),
+                    stickHeightRatio: 0.45),
                 logger);
 
             var svg = Render(buttonsPerPlayer, hasStick, buttons, stickColor);
