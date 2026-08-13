@@ -47,7 +47,9 @@ public static class PanelSvgRenderer
             // front instead of from above, so a theme can pick whichever fits its slot
             WritePair(systemId, stem + "-3d",
                 Render(buttonsPerPlayer, hasStick, buttons, stickColor, "iso-button.svg", "iso-joystick.svg",
-                    stickHeightRatio: 0.95),
+                    // 95 % dwarfed the buttons: a third off leaves it dominant without
+                    // taking the panel over
+                    stickHeightRatio: 0.63),
                 logger);
 
             var svg = Render(buttonsPerPlayer, hasStick, buttons, stickColor);
