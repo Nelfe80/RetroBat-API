@@ -55,8 +55,8 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
             // Initialize only loads the mapping database; the joysticks still have to be
             // OPENED, or Snapshot walks an empty list and no press is ever seen.
             var mapped = _reader.OpenControllers();
-            _logger?.LogInformation("Panel input watcher started: {Message}, {Mapped} mapped device(s)",
-                message, mapped);
+            _logger?.LogInformation("Panel input watcher started: {Message}, {Mapped} mapped device(s) [{Names}]",
+                message, mapped, string.Join(", ", _reader.DeviceNames));
             _cts = new CancellationTokenSource();
             _loop = Task.Run(() => WatchAsync(_cts.Token), CancellationToken.None);
         }

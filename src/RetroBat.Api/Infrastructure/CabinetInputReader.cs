@@ -88,6 +88,9 @@ public sealed class CabinetInputReader : IDisposable
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern void SDL_JoystickGetGUIDString(SdlGuid guid, byte[] pszGUID, int cbGUID);
 
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr SDL_JoystickName(IntPtr joystick);
+
     // ---- model -------------------------------------------------------------
 
     /// <summary>Result of one measurement: the RetroPad identity emitted, the device
@@ -99,6 +102,7 @@ public sealed class CabinetInputReader : IDisposable
     {
         public required IntPtr Handle { get; init; }
         public required string Guid { get; init; }
+        public required string Name { get; init; }
         public Dictionary<int, string> ButtonToIdentity { get; } = new();
         public List<(int Axis, int Sign, string Identity)> AxisToIdentity { get; } = new();
         public bool HasMapping => ButtonToIdentity.Count > 0 || AxisToIdentity.Count > 0;
@@ -164,12 +168,40 @@ public sealed class CabinetInputReader : IDisposable
                 continue;
             }
 
-            var device = new Device { Handle = handle, Guid = GuidString(handle) };
+            var name = DeviceName(handle);
+
+            // A virtual pad is not a panel. vJoy, ViGEm and the like are created by
+            // software — a mapping tool, a streaming client, a wheel driver — and they
+            // report the same identities as a real pad. Left in, one would occupy a
+            // panel slot the cabinet does not have, and its player numbering would push
+            // the REAL panel to player 2.
+            if (IsVirtual(name))
+            {
+                SDL_JoystickClose(handle);
+                continue;
+            }
+
+            var device = new Device { Handle = handle, Guid = GuidString(handle), Name = name };
             ApplyMapping(device);
             _devices.Add(device);
         }
 
         return _devices.Count(d => d.HasMapping);
+    }
+
+    /// <summary>The names of the devices actually kept, in player order — what the log
+    /// has to show for "player 2 lit up" to ever be explainable.</summary>
+    public IReadOnlyList<string> DeviceNames => _devices.Select(d => d.Name).ToList();
+
+    private static readonly string[] VirtualMarkers = { "vjoy", "virtual", "vigem", "dummy", "emulated" };
+
+    private static bool IsVirtual(string name) =>
+        VirtualMarkers.Any(marker => name.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
+    private static string DeviceName(IntPtr joystick)
+    {
+        var ptr = SDL_JoystickName(joystick);
+        return ptr == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
     }
 
     /// <summary>Waits for a FRESH press (edge) on any open device and returns the
