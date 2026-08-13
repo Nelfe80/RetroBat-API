@@ -24,6 +24,7 @@ public class WebSocketConnectionManager
     private readonly Dictionary<string, DateTime> _latestWinsAcceptedTimestamps = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, long> _latestWinsAcceptedSequences = new(StringComparer.OrdinalIgnoreCase);
     private string? _retainedPanelStateJson;
+    private string? _retainedPanelConfigJson;
     private string? _retainedScoreJson;
     private string? _retainedTimerJson;
     private string? _retainedRetroAchievementsSessionJson;
@@ -382,7 +383,10 @@ public class WebSocketConnectionManager
     {
         if (string.Equals(stream, "panel", StringComparison.OrdinalIgnoreCase))
         {
-            return One(_retainedPanelStateJson);
+            // the cabinet's own description comes FIRST: a consumer must know how many
+            // panels and buttons it draws before it receives the state of one
+            return new[] { _retainedPanelConfigJson, _retainedPanelStateJson }
+                .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).ToArray();
         }
 
         if (string.Equals(stream, "score", StringComparison.OrdinalIgnoreCase))
@@ -416,6 +420,14 @@ public class WebSocketConnectionManager
             IsRetainablePanelState(envelope))
         {
             _retainedPanelStateJson = json;
+        }
+
+        // static configuration: retained so a client gets it the moment it connects,
+        // instead of having to wait for the user to reconfigure their cabinet
+        if (message is EventEnvelope panelConfigEnvelope &&
+            string.Equals(panelConfigEnvelope.Type, "panel.config.changed", StringComparison.OrdinalIgnoreCase))
+        {
+            _retainedPanelConfigJson = json;
         }
 
         if (message is EventEnvelope scoreEnvelope &&
@@ -639,7 +651,7 @@ public class WebSocketConnectionManager
     public static readonly IReadOnlyDictionary<string, string[]> RetainedTypesByStream =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
-            ["panel"] = ["panel.state"],
+            ["panel"] = ["panel.state", "panel.config.changed"],
             ["score"] = ["score.live.changed"],
             ["timer"] = ["timer.live.changed"],
             ["retroachievements"] = ["retroachievements.catalog.updated", "retroachievements.session.updated"]

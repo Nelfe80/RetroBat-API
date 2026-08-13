@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Reflection;
+using Microsoft.Extensions.Options;
 using RetroBat.Domain.Events;
 using RetroBat.Domain.Interfaces;
 using RetroBat.Domain.Models;
@@ -20,7 +21,9 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
     private readonly EmulationStationSettingsService _settingsService;
     private readonly EmulationStationSystemConfigService _systemConfig;
     private readonly ApiContext _context;
+    private readonly IOptionsMonitor<ApiExposeOptions> _options;
     private readonly ILogger<CpoPanelWebSocketProjectionService>? _logger;
+    private string _lastPublishedConfig = string.Empty;
     private readonly object _publishLock = new();
     private readonly object _pendingPanelLock = new();
     private string _lastPublishedPanelKey = string.Empty;
@@ -39,8 +42,10 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
         EmulationStationSettingsService settingsService,
         EmulationStationSystemConfigService systemConfig,
         ApiContext context,
+        IOptionsMonitor<ApiExposeOptions> options,
         ILogger<CpoPanelWebSocketProjectionService>? logger = null)
     {
+        _options = options;
         _eventBus = eventBus;
         _runtimeOptions = runtimeOptions;
         _panels = panels;
@@ -55,7 +60,118 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _subscription = _eventBus.Subscribe<EventEnvelope>(OnEvent);
+        PublishPanelConfigIfChanged("startup");
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The CABINET's own description: how many player panels it has, how many buttons
+    /// each carries, which peripherals are wired, and WHERE those buttons sit. Static
+    /// configuration — it only changes when the user reconfigures — so it is published
+    /// as a RETAINED event instead of riding on panel.state, which recomputes on every
+    /// game selection and would repeat it hundreds of times for nothing.
+    ///
+    /// Retained means a client gets it the moment it connects: the "read the config once
+    /// at startup" behaviour comes free from the stream, with no REST call and no
+    /// polling. Same stream as panel.state on purpose — it is the same subject, and a
+    /// separate stream would force two subscriptions to draw one panel.
+    /// </summary>
+    private void PublishPanelConfigIfChanged(string trigger)
+    {
+        try
+        {
+            var control = _options.CurrentValue.ControlManager;
+            var payload = new
+            {
+                SnapshotVersion = 1,
+                Trigger = trigger,
+                Cabinet = new
+                {
+                    control.CabinetProfile,
+                    control.PlayerCount,
+                    control.ButtonsPerPlayer,
+                    control.ArcadeJoystick,
+                    control.AnalogJoystick,
+                    control.RotaryJoystick,
+                    control.Spinner,
+                    control.Trackball,
+                    control.Wheel,
+                    control.Pedals,
+                    control.Shifter,
+                    control.Lightgun,
+                    control.DanceMat,
+                    control.Guitar,
+                    control.Drums,
+                    control.Turntable,
+                    control.Microphone,
+                    control.Keyboard,
+                    control.Mouse,
+                    control.Touchscreen,
+                    control.MotionController
+                },
+                Layout = PanelLayoutConvention.Describe(control.ButtonsPerPlayer)
+            };
+
+            // republish only on a real change: this is called at startup AND on every
+            // panel publish, and a config event that never changes is noise
+            var signature = JsonSerializer.Serialize(payload.Cabinet) + "|" + control.ButtonsPerPlayer;
+            if (string.Equals(signature, _lastPublishedConfig, StringComparison.Ordinal)) return;
+            _lastPublishedConfig = signature;
+
+            _ = _eventBus.PublishAsync(new EventEnvelope
+            {
+                Type = "panel.config.changed",
+                Payload = payload
+            });
+            _logger?.LogInformation(
+                "panel config published ({Trigger}): {Players} player panel(s), {Buttons} button(s) each",
+                trigger, control.PlayerCount, control.ButtonsPerPlayer);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Unable to publish the panel configuration.");
+        }
+    }
+
+    /// <summary>
+    /// Draws the resolved panel as an SVG for EmulationStation themes, next to the
+    /// theme XML this service already exports. Arcade gets one file per game; the other
+    /// systems fall back to a "default" until a game of theirs earns its own — the
+    /// resolution is per-system-then-per-game either way, arcade is simply where the
+    /// per-game file is the norm.
+    ///
+    /// Drawn against the CABINET's button count, not the game's: the panel must show
+    /// the eight holes you really have, with the ones this game uses lit and the rest
+    /// at 20 %.
+    /// </summary>
+    private void WritePanelSvg(PanelThemeSnapshot snapshot, PanelDefinitionProjection panel)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(snapshot.SystemId)) return;
+            var control = _options.CurrentValue.ControlManager;
+
+            var buttons = new Dictionary<int, PanelSvgRenderer.Button>();
+            foreach (var input in panel.ControlMap.Inputs)
+            {
+                if (input.Slot is not { } slot || input.Player > 1) continue;
+                var used = !string.IsNullOrWhiteSpace(input.Function);
+                if (buttons.TryGetValue(slot, out var existing) && existing.Used && !used) continue;
+                buttons[slot] = new PanelSvgRenderer.Button(
+                    slot,
+                    string.IsNullOrWhiteSpace(input.Label) ? slot.ToString() : input.Label,
+                    input.Function,
+                    input.Color,
+                    used);
+            }
+
+            PanelSvgRenderer.Write(snapshot.SystemId, snapshot.Rom, control.ButtonsPerPlayer,
+                control.ArcadeJoystick || control.AnalogJoystick, buttons, _logger);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "Panel SVG not written for {System}/{Rom}", snapshot.SystemId, snapshot.Rom);
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -338,6 +454,8 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
                 AgeMs = receivedAtUtc.HasValue ? Math.Max(0, (int)(publishedAtUtc - receivedAtUtc.Value).TotalMilliseconds) : 0
             }
         };
+
+        WritePanelSvg(snapshot, activePanel);
 
         _ = _eventBus.PublishAsync(new EventEnvelope
         {
