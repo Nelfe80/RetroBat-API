@@ -267,6 +267,13 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             }
 
             var marquee = BuildGameMarqueeMedia(roots, fallbackSystemRoots);
+
+            // Built once for the whole batch, and BEFORE the first publish: a marquee
+            // prints the game's name, its genre, its description. Computing it after
+            // meant the marquee snapshot never carried it, and a template that asked for
+            // {desc} drew the tag itself.
+            var text = await BuildTextBlockAsync(systemId, gameSlug, selected.Details, roots);
+
             await _eventBus.PublishAsync(new EventEnvelope
             {
                 Type = "marquee.snapshot",
@@ -287,16 +294,12 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // is. The legacy fields are untouched.
                     Assets = BuildAssetTable(roots, MarqueeAssetKinds),
                     SystemAssets = BuildAssetTable(fallbackSystemRoots, MarqueeAssetKinds),
+                    Text = text,
                     Generation = ResolveGameGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
             });
             await PublishScreenSnapshotAsync(trigger, selection, marquee, perf, "projection", roots, fallbackSystemRoots);
-
-            // built once for the whole batch: the topper and the instruction card print
-            // the same text, and reading it twice per selection would put a file read on
-            // the hot path for nothing
-            var text = await BuildTextBlockAsync(systemId, gameSlug, selected.Details, roots);
 
             var topper = FindFirstAsset(roots, "artwork", "marquee", "topper.*");
             await _eventBus.PublishAsync(new EventEnvelope
@@ -888,6 +891,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
             var selection = BuildGameSelection(selectionSequence, frontendSystemId, systemId, gameSlug, selected, state);
             var marquee = BuildGameMarqueeMedia(roots, fallbackSystemRoots);
+            var text = await BuildTextBlockAsync(systemId, gameSlug, selected.Details, roots);
 
             await _eventBus.PublishAsync(new EventEnvelope
             {
@@ -909,6 +913,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // is. The legacy fields are untouched.
                     Assets = BuildAssetTable(roots, MarqueeAssetKinds),
                     SystemAssets = BuildAssetTable(fallbackSystemRoots, MarqueeAssetKinds),
+                    Text = text,
                     Generation = ResolveGameGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "background-generation")
                 }
