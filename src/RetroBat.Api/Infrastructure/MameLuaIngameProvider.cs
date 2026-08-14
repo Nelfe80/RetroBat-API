@@ -232,6 +232,7 @@ public sealed class MameLuaIngameProvider : IProvider
                     if (!previousValues.TryGetValue(targetId, out var oldValue))
                     {
                         previousValues[targetId] = value;
+                        await AnnounceInitialStateAsync(definition, targetId, value);
                         await EvaluateCompositesAsync(definition, targetId, previousValues, composedLast, fired);
                         continue;
                     }
@@ -367,6 +368,42 @@ public sealed class MameLuaIngameProvider : IProvider
                 fired[-1] = fired.GetValueOrDefault(-1) + 1;
                 await PublishRuleAsync(definition, rule, composed, delta);
             }
+        }
+    }
+
+    /// <summary>
+    /// Actions whose value is a STATE, not a change: they name what the player has in
+    /// hand right now. Everything else in a .MEM describes something happening — a life
+    /// lost, a score rising — and only makes sense as a transition.
+    /// </summary>
+    private static bool IsStateAnnouncement(string action)
+        => action.Equals("CHARACTER_SELECTED", StringComparison.OrdinalIgnoreCase)
+           || action.Equals("WEAPON_SELECTED", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The first sample of an address is normally swallowed: it becomes the reference the
+    /// next one is compared to. That is right for an event, and blind for a state.
+    ///
+    /// Final Fight keeps its character in a byte where 00 is GUY — which is also what the
+    /// RAM holds before anyone chooses. A player picking Guy therefore produced no
+    /// transition and no announcement, ever: the card could show Cody and Haggar but
+    /// never Guy. The same hole hits whichever character a game numbers zero.
+    ///
+    /// So the naming actions are evaluated on that first sample too, and only them:
+    /// replaying every rule at attach would fire a whole file's worth of events at launch.
+    /// </summary>
+    private async Task AnnounceInitialStateAsync(MameLuaDefinition definition, int targetId, long value)
+    {
+        foreach (var rule in definition.Rules.Where(rule => rule.TargetId == targetId && rule.TargetId != 0))
+        {
+            if (rule.NoLog || !IsStateAnnouncement(rule.Action)) continue;
+            if (rule.Condition.ToLowerInvariant() is not ("eq" or "equal" or "equals")) continue;
+            if (rule.Value is not { } expected || expected != value) continue;
+
+            _logger.LogInformation(
+                "MAME Lua: {Action} announced on attach — {Description} (player {Player}, address 0x{Address:X})",
+                rule.Action, rule.Description, rule.Player, rule.Address);
+            await PublishRuleAsync(definition, rule, value, 0);
         }
     }
 
