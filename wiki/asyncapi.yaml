@@ -94,6 +94,32 @@ channels:
       Prefixes `panel.`, `theme.` — resolved control panel of the current
       context: panel.state (retained, replayed on connect),
       cpo.panel.config.selected, panel.settings.changed.
+
+
+      Also carries, on the SAME channel because it is the same subject:
+
+
+      `panel.config.changed` (retained) — the CABINET's own description: how many
+      player panels, how many buttons each, which peripherals, and the rows they
+      sit in. Static configuration: it only moves when the user reconfigures, so
+      it is retained rather than repeated on every selection.
+
+
+      `panel.input.pressed` / `panel.input.released` — a physical press, already
+      resolved to a panel slot (player, slot, function) and never a raw button
+      index. This is what makes a wiring check possible without any LED
+      hardware: press a button, see that slot light up. START and SELECT are
+      reported as system inputs rather than as "no slot" — they are wired on
+      their own pins, outside the numbered slots. These are EVENTS, not state:
+      a consumer that coalesces snapshots must not coalesce them, or a press and
+      its release cancel each other out.
+
+
+      `panel.state` also carries `Svg`: the two drawn views of this panel (top
+      and 3D front), each with its file path, its size and WHERE each button
+      landed inside the drawing. The geometry travels with the file so a
+      consumer can light a button exactly where the artwork drew it, without
+      recomputing this renderer's layout on its side.
     messages:
       panelState:
         $ref: '#/components/messages/panelState'
