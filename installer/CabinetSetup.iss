@@ -1,4 +1,4 @@
-; ─────────────────────────────────────────────────────────────────────────────
+﻿; ─────────────────────────────────────────────────────────────────────────────
 ; APIExpose — installeur de BORNE (Inno Setup)
 ; Installe le moteur dans <RetroBat>\plugins\APIExpose : exe unique, hook de
 ; démarrage EmulationStation, configuration préservée aux mises à jour.
@@ -8,7 +8,7 @@
 ; ─────────────────────────────────────────────────────────────────────────────
 
 #define AppName "APIExpose (borne RetroBat)"
-#define AppVersion "1.5.0"
+#define AppVersion "1.6.0"
 #define AppExe "RetroBat.Api.exe"
 
 [Setup]
