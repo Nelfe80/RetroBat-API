@@ -144,11 +144,12 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
     /// the eight holes you really have, with the ones this game uses lit and the rest
     /// at 20 %.
     /// </summary>
-    private void WritePanelSvg(PanelThemeSnapshot snapshot, PanelDefinitionProjection panel)
+    private PanelSvgRenderer.WrittenPanels WritePanelSvg(PanelThemeSnapshot snapshot, PanelDefinitionProjection panel)
     {
+        var nothing = new PanelSvgRenderer.WrittenPanels(null, null, null, null);
         try
         {
-            if (string.IsNullOrWhiteSpace(snapshot.SystemId)) return;
+            if (string.IsNullOrWhiteSpace(snapshot.SystemId)) return nothing;
             var control = _options.CurrentValue.ControlManager;
 
             var buttons = new Dictionary<int, PanelSvgRenderer.Button>();
@@ -171,13 +172,35 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
                 .FirstOrDefault(i => i.DeviceType.Contains("joy", StringComparison.OrdinalIgnoreCase)
                                      && !string.IsNullOrWhiteSpace(i.Color))?.Color;
 
-            PanelSvgRenderer.Write(snapshot.SystemId, snapshot.Rom, control.ButtonsPerPlayer,
+            return PanelSvgRenderer.Write(snapshot.SystemId, snapshot.Rom, control.ButtonsPerPlayer,
                 control.ArcadeJoystick || control.AnalogJoystick, buttons, stickColor, _logger);
         }
         catch (Exception ex)
         {
             _logger?.LogDebug(ex, "Panel SVG not written for {System}/{Rom}", snapshot.SystemId, snapshot.Rom);
+            return nothing;
         }
+    }
+
+    /// <summary>
+    /// The drawn panel, as a consumer needs it to SHOW it: where the file is, how big
+    /// the drawing is, and where each button landed inside it.
+    ///
+    /// The geometry ships with the file because whoever lights a button has to put the
+    /// light exactly where the artwork drew it. Recomputing those coordinates on the
+    /// consumer's side would duplicate this renderer's layout, and the day a row moves,
+    /// the lights would land beside the buttons with nothing to explain why.
+    /// </summary>
+    private static object? DescribeSvg(string? path, PanelSvgRenderer.RenderedPanel? view)
+    {
+        if (path is null || view is null) return null;
+        return new
+        {
+            Path = path,
+            view.Width,
+            view.Height,
+            Buttons = view.Buttons.Select(b => new { b.Slot, b.Cx, b.Cy, b.R }).ToArray()
+        };
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -424,6 +447,10 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
             snapshot.Layouts.FirstOrDefault();
         var activePanel = _panelProjection.Build(snapshot, activeLayout);
 
+        // written BEFORE the payload: the drawing's geometry travels with the state, so
+        // a consumer that shows the SVG never has to guess where the buttons are
+        var drawn = WritePanelSvg(snapshot, activePanel);
+
         var payload = new
         {
             SnapshotVersion = 2,
@@ -450,6 +477,12 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
             ControlFiles = string.IsNullOrWhiteSpace(snapshot.Rom)
                 ? new PanelControlFilesSnapshot()
                 : _controlFiles.GetForRom(snapshot.Rom),
+            // the two drawn views of this very panel: seen from above, and from the front
+            Svg = new
+            {
+                Top = DescribeSvg(drawn.TopPath, drawn.Top),
+                Front = DescribeSvg(drawn.FrontPath, drawn.Front)
+            },
             Latency = new
             {
                 Trigger = envelope.Type,
@@ -460,8 +493,6 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
                 AgeMs = receivedAtUtc.HasValue ? Math.Max(0, (int)(publishedAtUtc - receivedAtUtc.Value).TotalMilliseconds) : 0
             }
         };
-
-        WritePanelSvg(snapshot, activePanel);
 
         _ = _eventBus.PublishAsync(new EventEnvelope
         {

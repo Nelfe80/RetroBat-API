@@ -35,12 +35,28 @@ public static class PanelSvgRenderer
     /// <summary>A button as it must be drawn: its slot, what it does here, its colour.</summary>
     public sealed record Button(int Slot, string Label, string Function, string Color, bool Used);
 
+    /// <summary>Where a button ENDED UP in the drawing, in viewBox units.</summary>
+    public sealed record Placement(int Slot, double Cx, double Cy, double R);
+
+    /// <summary>
+    /// One rendered view: the markup, its size, and where each button landed.
+    ///
+    /// The placements travel with the drawing on purpose. A consumer that lights a
+    /// button — the marquee panel — must put its light exactly where the artwork put
+    /// the button; recomputing that geometry on its side would be the same maths in two
+    /// places, and the day one of them moves a row, the lights land next to the buttons.
+    /// </summary>
+    public sealed record RenderedPanel(string Svg, double Width, double Height, IReadOnlyList<Placement> Buttons);
+
+    /// <summary>Both written views, with the geometry a consumer needs to light them.</summary>
+    public sealed record WrittenPanels(string? TopPath, RenderedPanel? Top, string? FrontPath, RenderedPanel? Front);
+
     /// <summary>
     /// Renders and writes both copies. Returns the canonical path, or null when nothing
     /// could be written — a theme that finds no file simply shows nothing, which is
     /// better than a half-drawn panel.
     /// </summary>
-    public static string? Write(string systemId, string? gameName, int buttonsPerPlayer,
+    public static WrittenPanels Write(string systemId, string? gameName, int buttonsPerPlayer,
         bool hasStick, IReadOnlyDictionary<int, Button> buttons, string? stickColor = null, ILogger? logger = null)
     {
         try
@@ -49,48 +65,49 @@ public static class PanelSvgRenderer
 
             // the 3D front view uses the SAME coordinates: same panel, seen from the
             // front instead of from above, so a theme can pick whichever fits its slot
-            WritePair(systemId, stem + "-3d",
-                Render(buttonsPerPlayer, hasStick, buttons, stickColor, "iso-button.svg", "iso-joystick.svg",
-                    // the artwork's perspective matches the buttons' now, so the stick is
-                    // sized for balance rather than to compensate for it
-                    stickHeightRatio: 0.45),
-                logger);
+            var front = Render(buttonsPerPlayer, hasStick, buttons, stickColor, "iso-button.svg", "iso-joystick.svg",
+                // the artwork's perspective matches the buttons' now, so the stick is
+                // sized for balance rather than to compensate for it
+                stickHeightRatio: 0.45);
+            var frontPath = WritePair(systemId, stem + "-3d", front.Svg, logger);
 
-            var svg = Render(buttonsPerPlayer, hasStick, buttons, stickColor);
+            var top = Render(buttonsPerPlayer, hasStick, buttons, stickColor);
             var relative = Path.Combine(Safe(systemId), stem + ".svg");
 
             // same two roots as the panel theme XML (PanelsCatalogService): a theme finds
             // <game>.xml and <game>.svg side by side, in the folder it already reads
             var canonical = Path.Combine(RetroBatPaths.ThemePanelsResourcesRoot, relative);
-            WriteFile(canonical, svg);
+            WriteFile(canonical, top.Svg);
 
             // the mirror is best-effort: a cabinet without EmulationStation installed
             // still gets its canonical copy
             try
             {
-                WriteFile(Path.Combine(RetroBatPaths.EmulationStationPanelsThemeRoot, relative), svg);
+                WriteFile(Path.Combine(RetroBatPaths.EmulationStationPanelsThemeRoot, relative), top.Svg);
             }
             catch (Exception ex)
             {
                 logger?.LogDebug(ex, "Panel SVG mirror not written for {System}/{Game}", systemId, gameName);
             }
 
-            return canonical;
+            return new WrittenPanels(canonical, top, frontPath, front);
         }
         catch (Exception ex)
         {
             logger?.LogWarning(ex, "Unable to render the panel SVG for {System}/{Game}", systemId, gameName);
-            return null;
+            return new WrittenPanels(null, null, null, null);
         }
     }
 
-    /// <summary>Writes one variant to both roots, best effort on the mirror.</summary>
-    private static void WritePair(string systemId, string stem, string svg, ILogger? logger)
+    /// <summary>Writes one variant to both roots, best effort on the mirror. Returns the
+    /// canonical path, or null when even that could not be written.</summary>
+    private static string? WritePair(string systemId, string stem, string svg, ILogger? logger)
     {
         try
         {
             var relative = Path.Combine(Safe(systemId), stem + ".svg");
-            WriteFile(Path.Combine(RetroBatPaths.ThemePanelsResourcesRoot, relative), svg);
+            var canonical = Path.Combine(RetroBatPaths.ThemePanelsResourcesRoot, relative);
+            WriteFile(canonical, svg);
             try
             {
                 WriteFile(Path.Combine(RetroBatPaths.EmulationStationPanelsThemeRoot, relative), svg);
@@ -99,17 +116,41 @@ public static class PanelSvgRenderer
             {
                 logger?.LogDebug(ex, "Panel SVG mirror not written for {System}/{Stem}", systemId, stem);
             }
+
+            return canonical;
         }
         catch (Exception ex)
         {
             logger?.LogDebug(ex, "Panel SVG variant not written for {System}/{Stem}", systemId, stem);
+            return null;
         }
     }
 
+    /// <summary>
+    /// Written aside, then MOVED into place. Writing straight to the file leaves it
+    /// half-written for a few milliseconds, and this file is read live: a consumer that
+    /// looks while a game is launching — exactly when the panel is rewritten — gets a
+    /// truncated SVG and shows nothing. The move is atomic, so a reader sees either the
+    /// old drawing or the new one, never half of one.
+    /// </summary>
     private static void WriteFile(string path, string svg)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, svg, new UTF8Encoding(false));
+        var folder = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(folder);
+
+        var staging = Path.Combine(folder, $".{Path.GetFileName(path)}.{Environment.CurrentManagedThreadId}.tmp");
+        try
+        {
+            File.WriteAllText(staging, svg, new UTF8Encoding(false));
+            File.Move(staging, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(staging))
+            {
+                try { File.Delete(staging); } catch { /* a leftover temp file harms nothing */ }
+            }
+        }
     }
 
     /// <summary>
@@ -117,10 +158,11 @@ public static class PanelSvgRenderer
     /// 20 % opacity — because the panel must tell the truth about the CABINET: you see
     /// your eight holes, and which of them this game speaks to.
     /// </summary>
-    public static string Render(int buttonsPerPlayer, bool hasStick, IReadOnlyDictionary<int, Button> buttons,
+    public static RenderedPanel Render(int buttonsPerPlayer, bool hasStick, IReadOnlyDictionary<int, Button> buttons,
         string? stickColor = null, string buttonFile = "top-button-v2.svg", string stickFile = "top-joystick.svg",
         double stickHeightRatio = 0)
     {
+        var placements = new List<Placement>();
         var layout = PanelLayoutConvention.RowsFor(buttonsPerPlayer);
         var columns = layout.Max(row => row.Length);
         var height = Margin * 2 + layout.Length * (ButtonRadius * 2) + (layout.Length - 1) * RowGap + 46;
@@ -224,6 +266,7 @@ public static class PanelSvgRenderer
             {
                 var slot = row[c];
                 var cx = startX + ButtonRadius + c * (ButtonRadius * 2 + ButtonGap);
+                placements.Add(new Placement(slot, cx, cy, ButtonRadius));
                 buttons.TryGetValue(slot, out var button);
                 var used = button?.Used == true;
                 var fill = used && !string.IsNullOrWhiteSpace(button!.Color) ? WebColor(button.Color) : "#3a3f4b";
@@ -253,7 +296,7 @@ public static class PanelSvgRenderer
             }
         }
 
-        return svg.Append("</svg>").ToString();
+        return new RenderedPanel(svg.Append("</svg>").ToString(), width, height, placements);
     }
 
     /// <summary>Named colours from the dynpanels ("Red", "Blue") become web colours;
