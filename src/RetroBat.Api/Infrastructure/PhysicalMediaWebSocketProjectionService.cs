@@ -342,6 +342,14 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Stream = "instruction-card",
                     Selection = selection,
                     Cards = cards,
+                    // What this game HAS to show, without a consumer having to walk the
+                    // card list to find out. Empty role = the cards at the root, kept
+                    // out of the list because it is not a name.
+                    Roles = cards.Select(card => card.Role)
+                        .Where(role => role.Length > 0)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(role => role, StringComparer.OrdinalIgnoreCase)
+                        .ToArray(),
                     Text = text,
                     // Composing a card takes more than the cards: the logo, the box, a
                     // fanart to sit behind them, and what the buttons DO.
@@ -1496,13 +1504,151 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             sourceInfo.LastWriteTimeUtc.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
+    /// <summary>
+    /// Every instruction card of a game, each stamped with the ROLE it belongs to.
+    ///
+    /// Cards used to live flat under `artwork/ic`; they are now grouped one level
+    /// deeper, one folder per role — `cody`, `items-and-weaponry`, `stage-3`. Both
+    /// layouts are read: a cabinet cartographed before the change keeps working, and
+    /// its cards simply carry the empty role.
+    ///
+    /// One level, never more: past that it is a tree to browse, not a role.
+    /// </summary>
     private IEnumerable<MediaStreamAsset> FindInstructionCards(IReadOnlyList<string> roots)
     {
-        return FindAssets(roots, "artwork", "ic", "ic*.*")
-            .Where(asset => asset.Stem.Equals("ic", StringComparison.OrdinalIgnoreCase) ||
-                asset.Stem.StartsWith("ic-", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(asset => InstructionCardOrder(asset.Stem))
+        // An image, and only an image: each card now sits next to its `.json` companion,
+        // which the `ic*.*` pattern happily matches too — every card would be published
+        // twice, once as a picture and once as its own description.
+        static bool IsCard(MediaStreamAsset asset)
+            => (asset.Stem.Equals("ic", StringComparison.OrdinalIgnoreCase)
+                || asset.Stem.StartsWith("ic-", StringComparison.OrdinalIgnoreCase))
+               && CardImageExtensions.Contains(asset.Extension);
+
+        var cards = FindAssets(roots, "artwork", "ic", "ic*.*")
+            .Where(IsCard)
+            .Select(asset => asset with { Role = string.Empty, Panels = ReadCardPanels(asset.Path) })
+            .ToList();
+
+        foreach (var role in FindCardRoles(roots))
+        {
+            cards.AddRange(FindAssets(roots, Path.Combine("artwork", "ic", role), "ic*.*")
+                .Where(IsCard)
+                .Select(asset => asset with { Role = role, Panels = ReadCardPanels(asset.Path) }));
+        }
+
+        // the default role first, then the others in alphabetical order; inside a role,
+        // the page order the file names declare
+        return cards
+            .OrderBy(asset => asset.Role.Length == 0 ? 0 : 1)
+            .ThenBy(asset => asset.Role, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(asset => InstructionCardOrder(asset.Stem))
             .ThenBy(asset => asset.FileName, StringComparer.OrdinalIgnoreCase);
+    }
+
+    // sans le point : l'asset stocke l'extension telle que CreateAsset la normalise
+    private static readonly HashSet<string> CardImageExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { "png", "jpg", "jpeg", "gif", "webp", "bmp" };
+
+    /// <summary>The role folders of a game, merged across the media roots so a user
+    /// folder can add a role the pack does not carry.</summary>
+    private static IEnumerable<string> FindCardRoles(IReadOnlyList<string> roots)
+    {
+        var seen = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in roots)
+        {
+            var directory = CombineRelative(root, Path.Combine("artwork", "ic"));
+            if (!Directory.Exists(directory))
+            {
+                continue;
+            }
+
+            foreach (var folder in Directory.EnumerateDirectories(directory))
+            {
+                seen.Add(Path.GetFileName(folder));
+            }
+        }
+
+        return seen;
+    }
+
+    // A card's companion is re-read on every selection, for every card of the game.
+    // Keyed by path AND timestamp: a file edited on disk is picked up, an unchanged one
+    // is not parsed again.
+    private static readonly Dictionary<string, IReadOnlyList<InstructionCardPanel>?> PanelCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object PanelCacheLock = new();
+
+    /// <summary>
+    /// Where each entry sits inside a card, from the `.json` written next to it. Null
+    /// when there is none — a card without a companion is still a card, it just cannot
+    /// have one of its entries framed.
+    /// </summary>
+    private static IReadOnlyList<InstructionCardPanel>? ReadCardPanels(string cardPath)
+    {
+        try
+        {
+            var companion = Path.ChangeExtension(cardPath, ".json");
+            if (!File.Exists(companion))
+            {
+                return null;
+            }
+
+            var key = companion + "|" + File.GetLastWriteTimeUtc(companion).Ticks;
+            lock (PanelCacheLock)
+            {
+                if (PanelCache.TryGetValue(key, out var cached))
+                {
+                    return cached;
+                }
+            }
+
+            var panels = new List<InstructionCardPanel>();
+            using var document = JsonDocument.Parse(File.ReadAllText(companion));
+            if (document.RootElement.TryGetProperty("panels", out var list)
+                && list.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var panel in list.EnumerateArray())
+                {
+                    var rect = new List<double>();
+                    if (panel.TryGetProperty("rect", out var bounds) && bounds.ValueKind == JsonValueKind.Array)
+                    {
+                        rect.AddRange(bounds.EnumerateArray()
+                            .Where(x => x.ValueKind == JsonValueKind.Number)
+                            .Select(x => x.GetDouble()));
+                    }
+
+                    if (rect.Count != 4)
+                    {
+                        continue; // a panel without a rectangle cannot be framed
+                    }
+
+                    panels.Add(new InstructionCardPanel(
+                        panel.TryGetProperty("role", out var role) ? role.GetString() ?? string.Empty : string.Empty,
+                        panel.TryGetProperty("kind", out var kind) ? kind.GetString() ?? string.Empty : string.Empty,
+                        panel.TryGetProperty("named", out var named) && named.ValueKind == JsonValueKind.True,
+                        panel.TryGetProperty("label", out var label) ? label.GetString() : null,
+                        rect));
+                }
+            }
+
+            IReadOnlyList<InstructionCardPanel>? result = panels.Count > 0 ? panels : null;
+            lock (PanelCacheLock)
+            {
+                if (PanelCache.Count > 512)
+                {
+                    PanelCache.Clear();
+                }
+
+                PanelCache[key] = result;
+            }
+
+            return result;
+        }
+        catch
+        {
+            // a malformed companion must never cost the card itself
+            return null;
+        }
     }
 
     private static int InstructionCardOrder(string stem)
@@ -2343,5 +2489,37 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         string Extension,
         long Length,
         DateTime LastWriteTimeUtc,
-        string Url);
+        string Url)
+    {
+        /// <summary>
+        /// For an instruction card: the folder it sits in, which IS what the card is
+        /// about — a character (`cody`), a topic (`items-and-weaponry`) or a stage
+        /// (`stage-3`). Empty for cards at the root of `artwork/ic`, the default role.
+        ///
+        /// Added rather than folded into `Kind`: a consumer that only knows the flat
+        /// list keeps working, and the role is what lets a viewer follow the character
+        /// a player just chose.
+        /// </summary>
+        public string Role { get; init; } = string.Empty;
+
+        /// <summary>Where each entry sits INSIDE the card, when a companion file says
+        /// so. Null when the card has none.</summary>
+        public IReadOnlyList<InstructionCardPanel>? Panels { get; init; }
+    }
+
+    /// <summary>
+    /// One entry of an instruction card — a weapon, a stage, a score table — and the
+    /// rectangle it occupies, in FRACTIONS of the image so a frame drawn over it
+    /// survives any scaling.
+    ///
+    /// <paramref name="Named"/> tells a name from a rank: `false` means the panel was
+    /// only measured and carries a position (`panel-2`), not an identity. Without it a
+    /// consumer would match an event against a placeholder.
+    /// </summary>
+    private sealed record InstructionCardPanel(
+        string Role,
+        string Kind,
+        bool Named,
+        string? Label,
+        IReadOnlyList<double> Rect);
 }

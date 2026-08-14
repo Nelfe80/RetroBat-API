@@ -144,6 +144,34 @@ Each event belongs to a family, with normalized sub-keys (lowercase, `snake_case
 
 Use the canonical names: `rings` and `coins` become `coins_rings`, `gold`/`rupees` become `currency`, `XP` becomes `experience`. A valid but unclassifiable value goes into `system.memory` — nothing gets thrown away.
 
+## Naming what the player is holding
+
+Two actions read differently from the rest: their `desc` carries **a name**, not a description.
+
+| Action | Family | What `desc` holds |
+|---|---|---|
+| `CHARACTER_SELECTED` | `state.player` | the character being played — `"Cody"`, `"Ryu"` |
+| `WEAPON_SELECTED` | `inventory.weapon` | the weapon in hand — `"Fire Water"`, `"Shotgun"` |
+
+That is what lets an instruction card show itself: the game announces *Cody*, the screen shows Cody's card.
+
+One entry per value, with `condition="eq"` — it only fires when the value is **entered**, so once, at the moment of the choice:
+
+```lua
+state = {
+  player = {
+    { address=0X857D, type="u8", condition="eq", value=0X00, action="CHARACTER_SELECTED", player=1, desc="Guy" },
+    { address=0X857D, type="u8", condition="eq", value=0X01, action="CHARACTER_SELECTED", player=1, desc="Cody" },
+    { address=0X857D, type="u8", condition="eq", value=0X02, action="CHARACTER_SELECTED", player=1, desc="Haggar" },
+  },
+},
+```
+
+Two rules make these entries usable:
+
+- **`player` is mandatory.** A card is shown for *one* player, and a cabinet has several. Without it, the event has nowhere to go.
+- **The name must be the one of the content it designates**, not the one from your source. If your table says `Torch` while the game's own card shows `FIRE WATER`, write `Fire Water` — otherwise the event points at a card that does not exist.
+
 ## Translating values: `map`
 
 ```lua

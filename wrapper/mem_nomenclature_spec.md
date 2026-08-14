@@ -192,7 +192,7 @@ its family. Core vocabulary by family:
 - **resources.secondary** : `RESOURCE_STATE`, `RESOURCE_GAIN`, `RESOURCE_LOSE`
 - **inventory.items** : `INVENTORY_ITEM`, `DYNAMIC_INVENTORY`, `TREASURE`,
   `KEY_GET`, `TREASURE_*`
-- **inventory.weapon** : `WEAPON_UPGRADE`, `WEAPON_STATE`
+- **inventory.weapon** : `WEAPON_UPGRADE`, `WEAPON_STATE`, `WEAPON_SELECTED`
 - **scoring.points** : `SCORE_STATE`
 - **scoring.collectibles** : `COIN_GAIN`, `COIN_LOSE`, `MONEY_STATE`,
   `AMMO_STATE`, `AMMO_GAIN`, `AMMO_LOSE`
@@ -206,7 +206,7 @@ its family. Core vocabulary by family:
   `STATUS_EFFECT_START/STOP`, `TRANSFORMATION`, `TRANSFORMATION_*`,
   `SPECIAL_ACTION`, `PLAYER_STATE_*`
 - **state.player** : `JUMPING`, `RUNNING`, `CROUCHING`, `FALLING`,
-  `SPINNING`, `SWIMMING`, `ATTACKING`
+  `SPINNING`, `SWIMMING`, `ATTACKING`, `CHARACTER_SELECTED`
 - **state.mount** : `MOUNT_START`, `MOUNT_STOP`, `MOUNT_STATE`
 - **world_interaction.objects** : `OBJECT_INTERACTION`,
   `OBJECT_INTERACTION_CHECKPOINT`, `OBJECT_DESTROYED`, `DOOR_OPENED`,
@@ -220,6 +220,34 @@ its family. Core vocabulary by family:
 Composed prefixes (`LEVEL_`, `TREASURE_`, `TRANSFORMATION_`,
 `PLAYER_STATE_`, `OBJECT_INTERACTION_`, `ENVIRONMENT_`) allow game-specific
 suffixes built from labels.
+
+### 5.1 Naming actions (`CHARACTER_SELECTED`, `WEAPON_SELECTED`)
+
+These two are read differently from every other action: their `desc` carries a
+**name**, not a description. `desc="Cody"` means the player IS Cody — a consumer
+matches that name against its own content (an instruction card, a portrait, a
+LED colour). Everywhere else, `desc` is free text meant for a human.
+
+They are therefore written one entry per value, with `condition="eq"`, so each
+fires exactly once, when the value is entered:
+
+```lua
+state = {
+  player = {
+    { address=0X857D, type="u8", condition="eq", value=0X00, action="CHARACTER_SELECTED", player=1, desc="Guy" },
+    { address=0X857D, type="u8", condition="eq", value=0X01, action="CHARACTER_SELECTED", player=1, desc="Cody" },
+  },
+},
+```
+
+Two rules make them usable:
+
+- **`player` is mandatory.** A card is shown for a player, and a cabinet has
+  several. An entry without it cannot be routed.
+- **The name must match the content it designates**, not the source it came
+  from. Where a cheat table says `Torch` and the game's own card says
+  `FIRE WATER`, the entry says `Fire Water` — otherwise the event points at a
+  card that does not exist.
 
 ---
 

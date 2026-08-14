@@ -144,6 +144,34 @@ Chaque événement se range dans une famille, avec des sous-clés normalisées (
 
 Utilisez les noms canoniques : `rings` et `coins` deviennent `coins_rings`, `gold`/`rupees` deviennent `currency`, `XP` devient `experience`. Une valeur valide mais inclassable va dans `system.memory` — on ne jette rien.
 
+## Nommer ce que le joueur a en main
+
+Deux actions se lisent autrement que les autres : leur `desc` porte **un nom**, pas une description.
+
+| Action | Famille | Ce que `desc` contient |
+|---|---|---|
+| `CHARACTER_SELECTED` | `state.player` | le personnage joué — `"Cody"`, `"Ryu"` |
+| `WEAPON_SELECTED` | `inventory.weapon` | l'arme en main — `"Fire Water"`, `"Shotgun"` |
+
+C'est ce qui permet à une carte d'instructions de s'afficher toute seule : le jeu annonce *Cody*, l'écran montre la fiche de Cody.
+
+Une entrée par valeur, en `condition="eq"` — elle ne se déclenche qu'à **l'entrée** dans la valeur, donc une fois au moment du choix :
+
+```lua
+state = {
+  player = {
+    { address=0X857D, type="u8", condition="eq", value=0X00, action="CHARACTER_SELECTED", player=1, desc="Guy" },
+    { address=0X857D, type="u8", condition="eq", value=0X01, action="CHARACTER_SELECTED", player=1, desc="Cody" },
+    { address=0X857D, type="u8", condition="eq", value=0X02, action="CHARACTER_SELECTED", player=1, desc="Haggar" },
+  },
+},
+```
+
+Deux règles rendent ces entrées utilisables :
+
+- **`player` est obligatoire.** Une carte s'affiche pour *un* joueur, et une borne en a plusieurs. Sans lui, l'événement ne sait pas où aller.
+- **Le nom doit être celui du contenu qu'il désigne**, pas celui de votre source. Si votre table dit `Torch` et que la carte du jeu affiche `FIRE WATER`, écrivez `Fire Water` — sinon l'événement pointe vers une fiche qui n'existe pas.
+
 ## Traduire les valeurs : `map`
 
 ```lua
