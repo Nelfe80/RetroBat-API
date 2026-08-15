@@ -997,9 +997,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         IReadOnlyList<string> roots)
     {
         var media = BuildMarqueeMedia(roots);
-        var themeRoots = ResolveThemeRoots(frontendSystemId, systemId, selectedSystem).ToList();
-        var fanart = ResolveSystemFanartAsset(frontendSystemId, systemId, selectedSystem, roots, themeRoots);
-        var logo = ResolveSystemLogoAsset(frontendSystemId, systemId, selectedSystem, roots, themeRoots);
+        var fanart = ResolveSystemFanartAsset(frontendSystemId, systemId, roots);
+        var logo = ResolveSystemLogoAsset(frontendSystemId, systemId, roots);
 
         return new MarqueeMediaSnapshot(
             media.Marquee,
@@ -1031,14 +1030,13 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             return;
         }
 
-        var themeRoots = ResolveThemeRoots(frontendSystemId, systemId, selectedSystem).ToList();
-        var fanartPath = ResolveSystemFanartPath(frontendSystemId, systemId, selectedSystem, roots, themeRoots);
+        var fanartPath = ResolveSystemFanartPath(frontendSystemId, systemId, roots);
         var useThemeBackground = _runtimeOptions.ShouldUseThemeBackgroundForSystemMarquee() &&
             !string.IsNullOrWhiteSpace(fanartPath) &&
             File.Exists(fanartPath);
 
         var logoPath = await EnsureSystemLogoCachedAsync(frontendSystemId, systemId, selectedSystem, cancellationToken) ??
-            ResolveSystemLogoPath(frontendSystemId, systemId, selectedSystem, roots, themeRoots);
+            ResolveSystemLogoPath(frontendSystemId, systemId, roots);
         var deleteLogoPath = false;
         if (string.IsNullOrWhiteSpace(logoPath) || !File.Exists(logoPath))
         {
@@ -1154,14 +1152,13 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             return;
         }
 
-        var themeRoots = ResolveThemeRoots(frontendSystemId, systemId, selectedSystem).ToList();
-        var fanartPath = ResolveSystemFanartPath(frontendSystemId, systemId, selectedSystem, roots, themeRoots);
+        var fanartPath = ResolveSystemFanartPath(frontendSystemId, systemId, roots);
         var useThemeBackground = _runtimeOptions.ShouldUseThemeBackgroundForSystemMarquee() &&
             !string.IsNullOrWhiteSpace(fanartPath) &&
             File.Exists(fanartPath);
 
         var logoPath = await EnsureSystemLogoCachedAsync(frontendSystemId, systemId, selectedSystem, cancellationToken) ??
-            ResolveSystemLogoPath(frontendSystemId, systemId, selectedSystem, roots, themeRoots);
+            ResolveSystemLogoPath(frontendSystemId, systemId, roots);
         var deleteLogoPath = false;
         if (string.IsNullOrWhiteSpace(logoPath) || !File.Exists(logoPath))
         {
@@ -1374,8 +1371,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         var markerPath = destinationPath + ".apiexpose-cache";
 
         var roots = ResolveSystemRoots(systemId).ToList();
-        var themeRoots = ResolveThemeRoots(frontendSystemId, systemId, selectedSystem).ToList();
-        var sourcePath = ResolveSystemLogoPath(frontendSystemId, systemId, selectedSystem, roots, themeRoots);
+        var sourcePath = ResolveSystemLogoPath(frontendSystemId, systemId, roots);
         var deleteSourcePath = false;
         if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
         {
@@ -2104,119 +2100,35 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         };
     }
 
-    private static MediaStreamAsset? ResolveSystemFanartAsset(
-        string frontendSystemId,
-        string systemId,
-        SystemDetails? selectedSystem,
-        IReadOnlyList<string> roots,
-        IReadOnlyList<string> themeRoots)
+    /// <summary>System logo/fanart shipped by the themes (active theme, then es-theme-carbon),
+    /// as an O(1) in-memory lookup built once from the theme-set roots — replaces the
+    /// per-selection theme glob. Built lazily on first system fanart/logo resolution, cached
+    /// for the process. See docs §27.</summary>
+    private static readonly Lazy<ThemeSystemArtIndex> _themeArt =
+        new(() => ThemeSystemArtIndex.Build(ResolveThemeSetRoots().ToList()));
+
+    private MediaStreamAsset? ResolveSystemFanartAsset(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
     {
-        return FindFirstAsset(roots, SystemFanartSearches) ??
-            FindFirstAsset(themeRoots, BuildThemeFanartSearches(frontendSystemId, systemId, selectedSystem));
+        return FindFirstAsset(roots, SystemFanartSearches)
+            ?? (_themeArt.Value.ResolveFanartPath(systemId, frontendSystemId) is { } path ? CreateAsset(path) : null);
     }
 
-    private static string? ResolveSystemFanartPath(
-        string frontendSystemId,
-        string systemId,
-        SystemDetails? selectedSystem,
-        IReadOnlyList<string> roots,
-        IReadOnlyList<string> themeRoots)
+    private string? ResolveSystemFanartPath(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
     {
-        return FindFirstPhysicalPath(roots, SystemFanartSearches) ??
-            FindFirstPhysicalPath(themeRoots, BuildThemeFanartSearches(frontendSystemId, systemId, selectedSystem));
+        return FindFirstPhysicalPath(roots, SystemFanartSearches)
+            ?? _themeArt.Value.ResolveFanartPath(systemId, frontendSystemId);
     }
 
-    private static MediaStreamAsset? ResolveSystemLogoAsset(
-        string frontendSystemId,
-        string systemId,
-        SystemDetails? selectedSystem,
-        IReadOnlyList<string> roots,
-        IReadOnlyList<string> themeRoots)
+    private MediaStreamAsset? ResolveSystemLogoAsset(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
     {
-        return FindFirstAsset(roots, SystemLogoSearches) ??
-            FindFirstAsset(themeRoots, BuildThemeLogoSearches(frontendSystemId, systemId, selectedSystem));
+        return FindFirstAsset(roots, SystemLogoSearches)
+            ?? (_themeArt.Value.ResolveLogoPath(systemId, frontendSystemId, ResolveEsLanguage()) is { } path ? CreateAsset(path) : null);
     }
 
-    private static string? ResolveSystemLogoPath(
-        string frontendSystemId,
-        string systemId,
-        SystemDetails? selectedSystem,
-        IReadOnlyList<string> roots,
-        IReadOnlyList<string> themeRoots)
+    private string? ResolveSystemLogoPath(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
     {
-        return FindFirstPhysicalPath(roots, SystemLogoSearches) ??
-            FindFirstPhysicalPath(themeRoots, BuildThemeLogoSearches(frontendSystemId, systemId, selectedSystem));
-    }
-
-    private static AssetSearch[] BuildThemeFanartSearches(string frontendSystemId, string systemId, SystemDetails? selectedSystem)
-    {
-        return BuildSystemNames(frontendSystemId, systemId, selectedSystem)
-            .SelectMany(name => new[]
-            {
-                new AssetSearch("art/background", name + ".*"),
-                new AssetSearch("background", name + ".*"),
-                new AssetSearch("_systemmedia/fanartsyst", name + ".*"),
-                new AssetSearch("_systemmedia/background", name + ".*")
-            })
-            .ToArray();
-    }
-
-    private static AssetSearch[] BuildThemeLogoSearches(string frontendSystemId, string systemId, SystemDetails? selectedSystem)
-    {
-        return BuildSystemNames(frontendSystemId, systemId, selectedSystem)
-            .SelectMany(name => new[]
-            {
-                new AssetSearch("_systemmedia/_logosyst/clearlogos", name + "-w.*"),
-                new AssetSearch("_systemmedia/_logosyst/clearlogos", name + ".*"),
-                new AssetSearch("_systemmedia/_logosyst", name + "-w.*"),
-                new AssetSearch("_systemmedia/_logosyst", name + ".*"),
-                new AssetSearch("art/logos", name + "-w.*"),
-                new AssetSearch("art/logos", name + ".*"),
-                new AssetSearch("art/logo", name + "-w.*"),
-                new AssetSearch("art/logo", name + ".*"),
-                new AssetSearch("art/wheels", name + "-w.*"),
-                new AssetSearch("art/wheels", name + ".*"),
-                new AssetSearch("logos", name + "-w.*"),
-                new AssetSearch("logos", name + ".*"),
-                new AssetSearch("wheels", name + "-w.*"),
-                new AssetSearch("wheels", name + ".*"),
-                new AssetSearch("_systemmedia/logos", name + "-w.*"),
-                new AssetSearch("_systemmedia/logos", name + ".*"),
-                new AssetSearch("_systemmedia/wheels", name + "-w.*"),
-                new AssetSearch("_systemmedia/wheels", name + ".*")
-            })
-            .ToArray();
-    }
-
-    private static IEnumerable<string> BuildSystemNames(string frontendSystemId, string systemId, SystemDetails? selectedSystem)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var value in new[] { selectedSystem?.Theme, frontendSystemId, systemId, selectedSystem?.Name })
-        {
-            var normalized = (value ?? string.Empty).Trim();
-            if (!string.IsNullOrWhiteSpace(normalized) && seen.Add(normalized))
-            {
-                yield return normalized;
-            }
-        }
-    }
-
-    private static IEnumerable<string> ResolveThemeRoots(string frontendSystemId, string systemId, SystemDetails? selectedSystem)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var themeRoot in ResolveThemeSetRoots())
-        {
-            foreach (var systemFolder in new[] { selectedSystem?.Theme, frontendSystemId, systemId, string.Empty })
-            {
-                var root = string.IsNullOrWhiteSpace(systemFolder)
-                    ? themeRoot
-                    : Path.Combine(themeRoot, systemFolder.Trim());
-                if (Directory.Exists(root) && seen.Add(Path.GetFullPath(root)))
-                {
-                    yield return root;
-                }
-            }
-        }
+        return FindFirstPhysicalPath(roots, SystemLogoSearches)
+            ?? _themeArt.Value.ResolveLogoPath(systemId, frontendSystemId, ResolveEsLanguage());
     }
 
     private static IEnumerable<string> ResolveThemeSetRoots()
