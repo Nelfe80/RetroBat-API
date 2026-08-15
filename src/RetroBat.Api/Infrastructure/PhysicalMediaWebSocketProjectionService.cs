@@ -1036,7 +1036,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             File.Exists(fanartPath);
 
         var logoPath = await EnsureSystemLogoCachedAsync(frontendSystemId, systemId, selectedSystem, cancellationToken) ??
-            ResolveSystemLogoPath(frontendSystemId, systemId, roots);
+            ResolveSystemLogoPath(frontendSystemId, systemId, selectedSystem, roots);
         var deleteLogoPath = false;
         if (string.IsNullOrWhiteSpace(logoPath) || !File.Exists(logoPath))
         {
@@ -1158,7 +1158,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             File.Exists(fanartPath);
 
         var logoPath = await EnsureSystemLogoCachedAsync(frontendSystemId, systemId, selectedSystem, cancellationToken) ??
-            ResolveSystemLogoPath(frontendSystemId, systemId, roots);
+            ResolveSystemLogoPath(frontendSystemId, systemId, selectedSystem, roots);
         var deleteLogoPath = false;
         if (string.IsNullOrWhiteSpace(logoPath) || !File.Exists(logoPath))
         {
@@ -1371,7 +1371,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         var markerPath = destinationPath + ".apiexpose-cache";
 
         var roots = ResolveSystemRoots(systemId).ToList();
-        var sourcePath = ResolveSystemLogoPath(frontendSystemId, systemId, roots);
+        var sourcePath = ResolveSystemLogoPath(frontendSystemId, systemId, selectedSystem, roots);
         var deleteSourcePath = false;
         if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
         {
@@ -2110,26 +2110,41 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     private MediaStreamAsset? ResolveSystemFanartAsset(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
     {
         return FindFirstAsset(roots, SystemFanartSearches)
-            ?? (_themeArt.Value.ResolveFanartPath(systemId, frontendSystemId) is { } path ? CreateAsset(path) : null);
+            ?? (_themeArt.Value.ResolveFanartPath(SystemFanartNames(frontendSystemId, systemId)) is { } path ? CreateAsset(path) : null);
     }
 
     private string? ResolveSystemFanartPath(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
     {
         return FindFirstPhysicalPath(roots, SystemFanartSearches)
-            ?? _themeArt.Value.ResolveFanartPath(systemId, frontendSystemId);
+            ?? _themeArt.Value.ResolveFanartPath(SystemFanartNames(frontendSystemId, systemId));
     }
 
+    // The system logo the marquee SNAPSHOT carries must be a raster — MarqueeManager renders
+    // SVG only for panels, not for media — so it is the media-store PNG. That PNG IS the cache
+    // produced from the source resolved below and refreshed by EnsureSystemLogoCachedAsync,
+    // then republished; a first visit before the cache exists simply carries no system logo.
     private MediaStreamAsset? ResolveSystemLogoAsset(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
     {
-        return FindFirstAsset(roots, SystemLogoSearches)
-            ?? (_themeArt.Value.ResolveLogoPath(systemId, frontendSystemId, ResolveEsLanguage()) is { } path ? CreateAsset(path) : null);
+        return FindFirstAsset(roots, SystemLogoSearches);
     }
 
-    private string? ResolveSystemLogoPath(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
+    // The logo SOURCE to convert/compose (svg is fine here — imagemagick handles it): the
+    // theme's per-system logo FIRST (canonical, and it keeps fbneo/mame distinct via the
+    // specific frontend id, where the media store is keyed by the collapsed "arcade" id),
+    // then the media store as a fallback for systems carbon does not ship.
+    private string? ResolveSystemLogoPath(string frontendSystemId, string systemId, SystemDetails? selectedSystem, IReadOnlyList<string> roots)
     {
-        return FindFirstPhysicalPath(roots, SystemLogoSearches)
-            ?? _themeArt.Value.ResolveLogoPath(systemId, frontendSystemId, ResolveEsLanguage());
+        return _themeArt.Value.ResolveLogoPath(SystemLogoNames(frontendSystemId, systemId, selectedSystem), ResolveEsLanguage())
+            ?? FindFirstPhysicalPath(roots, SystemLogoSearches);
     }
+
+    /// <summary>Logo candidate names, most specific first: the frontend id (keeps arcade
+    /// sub-systems distinct), the es_systems theme, the normalised id, the display name.</summary>
+    private static IReadOnlyList<string?> SystemLogoNames(string frontendSystemId, string systemId, SystemDetails? selectedSystem)
+        => new[] { frontendSystemId, selectedSystem?.Theme, systemId, selectedSystem?.Name };
+
+    private static IReadOnlyList<string?> SystemFanartNames(string frontendSystemId, string systemId)
+        => new string?[] { frontendSystemId, systemId };
 
     private static IEnumerable<string> ResolveThemeSetRoots()
     {

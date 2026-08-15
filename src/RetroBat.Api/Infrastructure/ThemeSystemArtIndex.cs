@@ -53,13 +53,15 @@ internal sealed class ThemeSystemArtIndex
         return new ThemeSystemArtIndex(themes);
     }
 
-    /// <summary>Logo path for a system/collection, honouring the alias table, the <c>-w</c>
-    /// white preference and the collection language suffix. Null when no theme carries one.</summary>
-    public string? ResolveLogoPath(string? systemId, string? frontendSystemId, string? language)
+    /// <summary>Logo path for a system/collection. The caller supplies candidate names in
+    /// priority order (e.g. the specific frontend id, the es_systems theme, the normalised
+    /// id, the display name); each is alias-mapped, then tried with the <c>-w</c> white
+    /// preference and the collection language suffix. Null when no theme carries one.</summary>
+    public string? ResolveLogoPath(IReadOnlyList<string?> names, string? language)
     {
         foreach (var theme in _themes)
         {
-            foreach (var name in Names(systemId, frontendSystemId))
+            foreach (var name in AliasedDistinct(names))
             {
                 foreach (var key in LogoKeys(name, language))
                 {
@@ -74,12 +76,13 @@ internal sealed class ThemeSystemArtIndex
         return null;
     }
 
-    /// <summary>Fanart (background) path for a system — no white variant, no language.</summary>
-    public string? ResolveFanartPath(string? systemId, string? frontendSystemId)
+    /// <summary>Fanart (background) path — candidate names in priority order, no white
+    /// variant, no language. Null when no theme carries one.</summary>
+    public string? ResolveFanartPath(IReadOnlyList<string?> names)
     {
         foreach (var theme in _themes)
         {
-            foreach (var name in Names(systemId, frontendSystemId))
+            foreach (var name in AliasedDistinct(names))
             {
                 if (theme.Fanart.TryGetValue(name, out var path))
                 {
@@ -91,10 +94,11 @@ internal sealed class ThemeSystemArtIndex
         return null;
     }
 
-    private static IEnumerable<string> Names(string? systemId, string? frontendSystemId)
+    /// <summary>The caller's candidate names, alias-mapped and de-duplicated, order preserved.</summary>
+    private static IEnumerable<string> AliasedDistinct(IReadOnlyList<string?> names)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var raw in new[] { frontendSystemId, systemId })
+        foreach (var raw in names)
         {
             var id = (raw ?? string.Empty).Trim();
             if (id.Length == 0)

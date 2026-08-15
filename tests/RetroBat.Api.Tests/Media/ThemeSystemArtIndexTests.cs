@@ -6,7 +6,8 @@ namespace RetroBat.Api.Tests.Media;
 /// <summary>
 /// Resolution logic for the carbon/active-theme system logo &amp; fanart index: alias table,
 /// "-w" white preference, collection language suffix, active-theme-before-carbon priority,
-/// and the fanart differences (no white, no language). Fixture-based, machine-independent.
+/// candidate-order, and the fanart differences (no white, no language). Fixture-based,
+/// machine-independent.
 /// </summary>
 public class ThemeSystemArtIndexTests
 {
@@ -39,9 +40,9 @@ public class ThemeSystemArtIndexTests
         var index = BuildFixture(tree);
 
         Assert.EndsWith(Path.Combine("active", "art", "logos", "snes.svg"),
-            index.ResolveLogoPath("snes", "snes", null));
+            index.ResolveLogoPath(new[] { "snes" }, null));
         Assert.EndsWith(Path.Combine("es-theme-carbon", "art", "logos", "carbononly.svg"),
-            index.ResolveLogoPath("carbononly", "carbononly", null));
+            index.ResolveLogoPath(new[] { "carbononly" }, null));
     }
 
     [Fact]
@@ -50,7 +51,7 @@ public class ThemeSystemArtIndexTests
         using var tree = new MediaTree();
         var index = BuildFixture(tree);
 
-        Assert.EndsWith("mame-w.svg", index.ResolveLogoPath("mame", "mame", null));
+        Assert.EndsWith("mame-w.svg", index.ResolveLogoPath(new[] { "mame" }, null));
     }
 
     [Fact]
@@ -59,7 +60,19 @@ public class ThemeSystemArtIndexTests
         using var tree = new MediaTree();
         var index = BuildFixture(tree);
 
-        Assert.EndsWith("atarijaguar.svg", index.ResolveLogoPath("jaguar", "jaguar", null));
+        Assert.EndsWith("atarijaguar.svg", index.ResolveLogoPath(new[] { "jaguar" }, null));
+    }
+
+    [Fact]
+    public void First_matching_candidate_in_the_list_wins()
+    {
+        using var tree = new MediaTree();
+        var index = BuildFixture(tree);
+
+        // The specific candidate comes first: "mame" (present) beats the later "snes".
+        Assert.EndsWith("mame-w.svg", index.ResolveLogoPath(new[] { "mame", "snes" }, null));
+        // An absent first candidate falls through to the next.
+        Assert.EndsWith("snes.svg", index.ResolveLogoPath(new[] { "does-not-exist", "snes" }, null));
     }
 
     [Theory]
@@ -71,7 +84,7 @@ public class ThemeSystemArtIndexTests
         using var tree = new MediaTree();
         var index = BuildFixture(tree);
 
-        Assert.EndsWith(expectedFile, index.ResolveLogoPath("auto-verticalarcade", "auto-verticalarcade", language));
+        Assert.EndsWith(expectedFile, index.ResolveLogoPath(new[] { "auto-verticalarcade" }, language));
     }
 
     [Fact]
@@ -81,7 +94,7 @@ public class ThemeSystemArtIndexTests
         var index = BuildFixture(tree);
 
         Assert.EndsWith(Path.Combine("active", "art", "background", "atarijaguar.jpg"),
-            index.ResolveFanartPath("jaguar", "jaguar"));
+            index.ResolveFanartPath(new[] { "jaguar" }));
     }
 
     [Fact]
@@ -90,8 +103,8 @@ public class ThemeSystemArtIndexTests
         using var tree = new MediaTree();
         var index = BuildFixture(tree);
 
-        Assert.Null(index.ResolveLogoPath("does-not-exist", "does-not-exist", "fr"));
-        Assert.Null(index.ResolveFanartPath("does-not-exist", null));
+        Assert.Null(index.ResolveLogoPath(new[] { "does-not-exist" }, "fr"));
+        Assert.Null(index.ResolveFanartPath(new[] { "does-not-exist" }));
     }
 
     [Fact]
@@ -99,7 +112,7 @@ public class ThemeSystemArtIndexTests
     {
         var index = ThemeSystemArtIndex.Build(Array.Empty<string>());
 
-        Assert.Null(index.ResolveLogoPath("snes", "snes", null));
-        Assert.Null(index.ResolveFanartPath("snes", null));
+        Assert.Null(index.ResolveLogoPath(new[] { "snes" }, null));
+        Assert.Null(index.ResolveFanartPath(new[] { "snes" }));
     }
 }
