@@ -394,9 +394,24 @@ public sealed class MameLuaIngameProvider : IProvider
     /// </summary>
     private async Task AnnounceInitialStateAsync(MameLuaDefinition definition, int targetId, long value)
     {
-        foreach (var rule in definition.Rules.Where(rule => rule.TargetId == targetId && rule.TargetId != 0))
+        var naming = definition.Rules
+            .Where(rule => rule.TargetId == targetId && rule.TargetId != 0 && IsStateAnnouncement(rule.Action))
+            .ToList();
+
+        // What the address HOLDS, said out loud once per session. Writing a .MEM means
+        // guessing where a game keeps its character; without this line, a wrong guess and
+        // a silent game look exactly the same from the outside.
+        if (naming.Count > 0)
         {
-            if (rule.NoLog || !IsStateAnnouncement(rule.Action)) continue;
+            _logger.LogInformation(
+                "MAME Lua: state address 0x{Address:X} first read = 0x{Value:X} — known values {Values}",
+                naming[0].Address, value,
+                string.Join(", ", naming.Select(r => $"0x{r.Value:X}={r.Description}")));
+        }
+
+        foreach (var rule in naming)
+        {
+            if (rule.NoLog) continue;
             if (rule.Condition.ToLowerInvariant() is not ("eq" or "equal" or "equals")) continue;
             if (rule.Value is not { } expected || expected != value) continue;
 
@@ -409,6 +424,16 @@ public sealed class MameLuaIngameProvider : IProvider
 
     private async Task EvaluateTargetAsync(MameLuaDefinition definition, int targetId, long oldValue, long value)
     {
+        // An address that names what the player holds moves a handful of times per game:
+        // following it costs nothing and shows whether the byte lives at all.
+        var named = definition.Rules.FirstOrDefault(rule =>
+            rule.TargetId == targetId && rule.TargetId != 0 && IsStateAnnouncement(rule.Action));
+        if (named != null)
+        {
+            _logger.LogInformation("MAME Lua: state address 0x{Address:X} 0x{Old:X} → 0x{New:X}",
+                named.Address, oldValue, value);
+        }
+
         foreach (var rule in definition.Rules.Where(rule => rule.TargetId == targetId && rule.TargetId != 0))
         {
             var trigger = ShouldTrigger(rule, oldValue, value, out var emittedValue, out var rate);
