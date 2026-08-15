@@ -104,6 +104,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         var perf = Stopwatch.StartNew();
         try
         {
+            using var inventoryScope = BeginInventoryScope();
             if (IsStaleSelectionSequence(selectionSequence))
             {
                 _logger?.LogDebug(
@@ -213,6 +214,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         var perf = Stopwatch.StartNew();
         try
         {
+            using var inventoryScope = BeginInventoryScope();
             if (IsStaleSelectionSequence(selectionSequence))
             {
                 _logger?.LogDebug(
@@ -1667,7 +1669,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         return int.MaxValue;
     }
 
-    private static MediaStreamAsset? FindFirstAsset(IReadOnlyList<string> roots, string directory1, string directory2, string pattern)
+    internal static MediaStreamAsset? FindFirstAsset(IReadOnlyList<string> roots, string directory1, string directory2, string pattern)
     {
         return FindAssets(roots, directory1, directory2, pattern).FirstOrDefault();
     }
@@ -1691,9 +1693,10 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         return FindAssets(roots, Path.Combine(directory1, directory2), pattern);
     }
 
-    private static IEnumerable<MediaStreamAsset> FindAssets(IReadOnlyList<string> roots, string relativeDirectory, string pattern)
+    internal static IEnumerable<MediaStreamAsset> FindAssets(IReadOnlyList<string> roots, string relativeDirectory, string pattern)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var metrics = _metrics.Value;
         foreach (var root in roots)
         {
             var directory = CombineRelative(root, relativeDirectory);
@@ -1702,9 +1705,11 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                 continue;
             }
 
+            if (metrics != null) metrics.DirectoryEnumerations++;
             foreach (var path in Directory.EnumerateFiles(directory, pattern, SearchOption.TopDirectoryOnly)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
             {
+                if (metrics != null) metrics.PatternFilesVisited++;
                 var fullPath = Path.GetFullPath(path);
                 if (!seen.Add(fullPath))
                 {
@@ -1757,45 +1762,146 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         return current;
     }
 
+    // ── HP0 baseline instrumentation ─────────────────────────────────────────────
+    // The recursive AllDirectories scan of a system root is the dominant cost this
+    // patch removes; these counters make the "before" measurable and testable. The
+    // accumulator is null unless a scope is opened, so production pays nothing until
+    // asked. HP1/HP2 replace the scan and these numbers collapse — this block goes
+    // with it.
+    internal sealed class MediaDiscoveryMetrics
+    {
+        public int RecursiveScans;         // BuildAssetTable roots actually walked recursively
+        public long RecursiveFilesVisited; // files those recursive walks enumerate
+        public int DirectoryEnumerations;  // FindAssets TopDirectoryOnly enumerations
+        public long PatternFilesVisited;   // files those pattern searches enumerate
+    }
+
+    private static readonly AsyncLocal<MediaDiscoveryMetrics?> _metrics = new();
+
+    /// <summary>Begins a per-publication discovery-metrics scope for the current async
+    /// flow. Tests read the accumulator to assert the enumeration cost before/after the
+    /// refactor; production leaves it unset, so the counters stay no-ops.</summary>
+    internal static MediaDiscoveryMetrics BeginMetricsScope()
+    {
+        var metrics = new MediaDiscoveryMetrics();
+        _metrics.Value = metrics;
+        return metrics;
+    }
+
+    // ── HP2 shared inventory ─────────────────────────────────────────────────────
+    // A one-shot listing of the recognised media directories under a set of roots, built
+    // once and reused by every surface of a publication (marquee, topper, card, screen)
+    // so a game selection enumerates each directory ONCE instead of a dozen times.
+    // Purely physical: qualification stays in FromRelativePath / BuildAssetTable.
+    internal sealed class MediaInventory
+    {
+        private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _byDirectory;
+
+        internal MediaInventory(IReadOnlyDictionary<string, IReadOnlyList<string>> byDirectory)
+            => _byDirectory = byDirectory;
+
+        /// <summary>Full file paths in a recognised directory — roots in priority order,
+        /// then top-directory enumeration order. Empty when the directory is absent.</summary>
+        public IReadOnlyList<string> Files(string relativeDirectory)
+            => _byDirectory.TryGetValue(relativeDirectory, out var files) ? files : Array.Empty<string>();
+
+        public IEnumerable<KeyValuePair<string, IReadOnlyList<string>>> Directories => _byDirectory;
+    }
+
+    private static readonly AsyncLocal<System.Collections.Concurrent.ConcurrentDictionary<string, MediaInventory>?> _inventoryScope = new();
+
+    /// <summary>Begins a per-publication inventory scope: within it, repeated inventory
+    /// requests for the same roots reuse a single disk listing. Dispose ends the scope —
+    /// each publication is fresh, nothing is kept across events (that is HP3).</summary>
+    internal static IDisposable BeginInventoryScope()
+    {
+        _inventoryScope.Value = new System.Collections.Concurrent.ConcurrentDictionary<string, MediaInventory>(StringComparer.Ordinal);
+        return new InventoryScope();
+    }
+
+    private sealed class InventoryScope : IDisposable
+    {
+        public void Dispose() => _inventoryScope.Value = null;
+    }
+
+    /// <summary>The recognised-directory listing for these roots, memoised within the
+    /// current publication scope when one is open, built fresh otherwise.</summary>
+    internal static MediaInventory BuildInventory(IReadOnlyList<string> roots)
+    {
+        var scope = _inventoryScope.Value;
+        if (scope == null) return BuildInventoryUncached(roots);
+        return scope.GetOrAdd(string.Join("\0", roots), _ => BuildInventoryUncached(roots));
+    }
+
+    private static MediaInventory BuildInventoryUncached(IReadOnlyList<string> roots)
+    {
+        var metrics = _metrics.Value;
+        var byDirectory = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+
+        // Enumerate ONLY the directories the qualifier can recognise (never the whole
+        // subtree, and never games/), each once and top-level only. First root wins, so
+        // the media/user override keeps its priority.
+        foreach (var relativeDirectory in MediaKinds.RecognisedMediaDirectories)
+        {
+            List<string>? files = null;
+            foreach (var root in roots)
+            {
+                if (!Directory.Exists(root)) continue;
+                var directory = CombineRelative(root, relativeDirectory);
+                if (!Directory.Exists(directory)) continue;
+
+                IEnumerable<string> found;
+                try
+                {
+                    found = Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    continue; // unreadable directory: the others may still answer
+                }
+
+                if (metrics != null) metrics.DirectoryEnumerations++;
+                foreach (var path in found)
+                {
+                    if (metrics != null) metrics.PatternFilesVisited++;
+                    (files ??= new List<string>()).Add(path);
+                }
+            }
+
+            if (files != null) byDirectory[relativeDirectory] = files;
+        }
+
+        return new MediaInventory(byDirectory);
+    }
+
     /// <summary>
     /// Every recognised medium under these roots, keyed by canonical
-    /// <see cref="MediaKinds"/>. ONE enumeration per root instead of a dozen pattern
-    /// searches that could only find what they already knew to ask for — and the first
-    /// root wins, so the media/user override keeps its priority.
+    /// <see cref="MediaKinds"/>. Backed by the shared inventory (one enumeration per
+    /// directory), and the first root wins so the media/user override keeps its priority.
     ///
     /// <paramref name="allowed"/> curates the table for the surface being served: a
     /// stream carries what its surface can display, not everything on disk. A key only
     /// exists when the file exists; absence IS the answer.
     /// </summary>
-    private static IReadOnlyDictionary<string, MediaStreamAsset> BuildAssetTable(
+    internal static IReadOnlyDictionary<string, MediaStreamAsset> BuildAssetTable(
         IReadOnlyList<string> roots,
+        IReadOnlySet<string> allowed)
+        => BuildAssetTable(BuildInventory(roots), allowed);
+
+    /// <summary>Same table, from an already-built inventory: no disk I/O, so every surface
+    /// of a publication filters the one listing in memory.</summary>
+    internal static IReadOnlyDictionary<string, MediaStreamAsset> BuildAssetTable(
+        MediaInventory inventory,
         IReadOnlySet<string> allowed)
     {
         var table = new Dictionary<string, MediaStreamAsset>(StringComparer.OrdinalIgnoreCase);
-        foreach (var root in roots)
+        foreach (var (relativeDirectory, files) in inventory.Directories)
         {
-            if (!Directory.Exists(root)) continue;
-            IEnumerable<string> files;
-            try
-            {
-                files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                continue; // unreadable root: the next one may still answer
-            }
-
             foreach (var path in files)
             {
-                string relative;
-                try
-                {
-                    relative = Path.GetRelativePath(root, path);
-                }
-                catch (ArgumentException)
-                {
-                    continue;
-                }
+                var relative = relativeDirectory.Length == 0
+                    ? Path.GetFileName(path)
+                    : relativeDirectory + "/" + Path.GetFileName(path);
 
                 if (MediaKinds.FromRelativePath(relative) is not { Length: > 0 } kind) continue;
                 if (!allowed.Contains(kind) || table.ContainsKey(kind)) continue;
@@ -2480,7 +2586,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         string Fanart,
         string State);
 
-    private sealed record MediaStreamAsset(
+    internal sealed record MediaStreamAsset(
         string Kind,
         string Origin,
         string Path,
@@ -2516,7 +2622,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// only measured and carries a position (`panel-2`), not an identity. Without it a
     /// consumer would match an event against a placeholder.
     /// </summary>
-    private sealed record InstructionCardPanel(
+    internal sealed record InstructionCardPanel(
         string Role,
         string Kind,
         bool Named,

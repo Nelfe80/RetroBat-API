@@ -81,6 +81,35 @@ public static class MediaKinds
     public const string InstructionCard = "instruction-card";
 
     /// <summary>
+    /// The directories <see cref="FromRelativePath"/> can qualify a file in, RELATIVE to
+    /// a game or system media root (<c>""</c> is the root itself, where video lives).
+    ///
+    /// This is the single source of truth for a TARGETED media inventory: instead of
+    /// walking a whole subtree (and everything under <c>games/</c>) then discarding what
+    /// does not qualify, the inventory lists exactly these directories. It therefore MUST
+    /// move in lock-step with the switch in <see cref="FromRelativePath"/> — a qualifier
+    /// case with no directory here would make its media silently vanish from snapshots.
+    /// A guard test asserts every entry qualifies, and the FromRelativePath
+    /// characterisation tests prove nothing qualifies OUTSIDE this set.
+    /// </summary>
+    public static readonly IReadOnlySet<string> RecognisedMediaDirectories =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "",
+            "artwork",
+            "artwork/box",
+            "artwork/mix",
+            "artwork/bezels",
+            "artwork/marquee",
+            "artwork/ic",
+            "ui",
+            "ui/wheels",
+            "ui/logos",
+            "documents",
+            "themes",
+        };
+
+    /// <summary>
     /// The kind a file stands for, from its path RELATIVE to a game or system media
     /// root ("artwork/box/3d.png" → box-3d). Naming by file stem alone cannot do this:
     /// "3d.png" and "front.png" only mean something under "artwork/box/", and

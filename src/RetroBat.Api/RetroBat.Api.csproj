@@ -30,4 +30,10 @@
     <ProjectReference Include="..\RetroBat.Providers.Hi2Txt\RetroBat.Providers.Hi2Txt.csproj" />
     <ProjectReference Include="..\RetroBat.Providers.RetroArchWrapper\RetroBat.Providers.RetroArchWrapper.csproj" />
   </ItemGroup>
+
+  <!-- Media discovery internals (BuildAssetTable, MediaStreamAsset) are exercised by
+       golden/parity tests that guard the Hotpath refactor; nothing behavioural changes. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="RetroBat.Api.Tests" />
+  </ItemGroup>
 </Project>
