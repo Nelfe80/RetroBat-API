@@ -42,7 +42,7 @@ $ex = @(
     "-x!$name\tools\mem-curator\.source-base.local", "-x!$name\tools\mem-curator\.gitignore",
     "-x!$name\tools\mem-curator\baseline_*.json", "-x!$name\tools\mem-curator\staging*",
     "-x!$name\state",
-    "-x!$name\docs", "-x!$name\src", "-x!$name\artifacts",
+    "-x!$name\docs", "-x!$name\src", "-x!$name\tests", "-x!$name\artifacts",
     # dist = installeur Inno compile (des centaines de Mo) ; installer = sources .iss.
     # Ni l'un ni l'autre ne va dans le pack runtime (sinon l'update.7z explose).
     "-x!$name\dist", "-x!$name\installer",
@@ -90,7 +90,7 @@ $listing = & $sz l $full
 # tools\*.py, resources\ra et ScreenScraper.html sont passes au travers. Il couvre
 # desormais ce que les exclusions ci-dessus retirent, pour que les deux listes se
 # contredisent bruyamment si l'une d'elles derive.
-$leaks = $listing | Select-String '\.env|\.bak|\.ps1$|\.py$|\\media\\|\\src\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db|\\resources\\ra\\|ScreenScraper\.html|\\tools\\(ffmpeg|imagemagick|translateLocally)\\'
+$leaks = $listing | Select-String '\.env|\.bak|\.ps1$|\.py$|\\media\\|\\src\\|\\tests\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db|\\resources\\ra\\|ScreenScraper\.html|\\tools\\(ffmpeg|imagemagick|translateLocally)\\'
 if ($leaks) { throw "FUITE DETECTEE dans l'archive : $($leaks[0])" }
 # La cle API de la borne ne doit JAMAIS etre committee/distribuee : le defaut reste vide
 # (chaque borne genere la sienne au 1er run). On bloque si une valeur traine.
