@@ -232,7 +232,10 @@ public sealed class MameLuaIngameProvider : IProvider
                     if (!previousValues.TryGetValue(targetId, out var oldValue))
                     {
                         previousValues[targetId] = value;
-                        await AnnounceInitialStateAsync(definition, targetId, value);
+                        LogInitialState(definition, targetId, value);
+                        // Un etat deja etabli au moment ou l'on s'attache doit se dire :
+                        // le personnage que le joueur tient deja, le drapeau deja leve.
+                        await EvaluateTargetAsync(definition, targetId, value, value, initialized: false);
                         await EvaluateCompositesAsync(definition, targetId, previousValues, composedLast, fired);
                         continue;
                     }
@@ -244,7 +247,7 @@ public sealed class MameLuaIngameProvider : IProvider
 
                     previousValues[targetId] = value;
                     fired[targetId] = fired.GetValueOrDefault(targetId) + 1;
-                    await EvaluateTargetAsync(definition, targetId, oldValue, value);
+                    await EvaluateTargetAsync(definition, targetId, oldValue, value, initialized: true);
                     await EvaluateCompositesAsync(definition, targetId, previousValues, composedLast, fired);
                 }
                 else if (command.Equals("BYE", StringComparison.OrdinalIgnoreCase))
@@ -381,48 +384,27 @@ public sealed class MameLuaIngameProvider : IProvider
            || action.Equals("WEAPON_SELECTED", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The first sample of an address is normally swallowed: it becomes the reference the
-    /// next one is compared to. That is right for an event, and blind for a state.
+    /// What an address that NAMES something holds when we attach, said out loud once per
+    /// session. Writing a .MEM means guessing where a game keeps its character; without
+    /// this line, a wrong guess and a silent game look exactly the same from outside.
     ///
-    /// Final Fight keeps its character in a byte where 00 is GUY — which is also what the
-    /// RAM holds before anyone chooses. A player picking Guy therefore produced no
-    /// transition and no announcement, ever: the card could show Cody and Haggar but
-    /// never Guy. The same hole hits whichever character a game numbers zero.
-    ///
-    /// So the naming actions are evaluated on that first sample too, and only them:
-    /// replaying every rule at attach would fire a whole file's worth of events at launch.
+    /// Diagnostic only: the announcement itself now goes through the ordinary rule
+    /// evaluation, which no longer requires a transition for a state.
     /// </summary>
-    private async Task AnnounceInitialStateAsync(MameLuaDefinition definition, int targetId, long value)
+    private void LogInitialState(MameLuaDefinition definition, int targetId, long value)
     {
         var naming = definition.Rules
             .Where(rule => rule.TargetId == targetId && rule.TargetId != 0 && IsStateAnnouncement(rule.Action))
             .ToList();
+        if (naming.Count == 0) return;
 
-        // What the address HOLDS, said out loud once per session. Writing a .MEM means
-        // guessing where a game keeps its character; without this line, a wrong guess and
-        // a silent game look exactly the same from the outside.
-        if (naming.Count > 0)
-        {
-            _logger.LogInformation(
-                "MAME Lua: state address 0x{Address:X} first read = 0x{Value:X} — known values {Values}",
-                naming[0].Address, value,
-                string.Join(", ", naming.Select(r => $"0x{r.Value:X}={r.Description}")));
-        }
-
-        foreach (var rule in naming)
-        {
-            if (rule.NoLog) continue;
-            if (rule.Condition.ToLowerInvariant() is not ("eq" or "equal" or "equals")) continue;
-            if (rule.Value is not { } expected || expected != value) continue;
-
-            _logger.LogInformation(
-                "MAME Lua: {Action} announced on attach — {Description} (player {Player}, address 0x{Address:X})",
-                rule.Action, rule.Description, rule.Player, rule.Address);
-            await PublishRuleAsync(definition, rule, value, 0);
-        }
+        _logger.LogInformation(
+            "MAME Lua: state address 0x{Address:X} first read = 0x{Value:X} — known values {Values}",
+            naming[0].Address, value,
+            string.Join(", ", naming.Select(r => $"0x{r.Value:X}={r.Description}")));
     }
 
-    private async Task EvaluateTargetAsync(MameLuaDefinition definition, int targetId, long oldValue, long value)
+    private async Task EvaluateTargetAsync(MameLuaDefinition definition, int targetId, long oldValue, long value, bool initialized)
     {
         // An address that names what the player holds moves a handful of times per game:
         // following it costs nothing and shows whether the byte lives at all.
@@ -436,7 +418,7 @@ public sealed class MameLuaIngameProvider : IProvider
 
         foreach (var rule in definition.Rules.Where(rule => rule.TargetId == targetId && rule.TargetId != 0))
         {
-            var trigger = ShouldTrigger(rule, oldValue, value, out var emittedValue, out var rate);
+            var trigger = ShouldTrigger(rule, oldValue, value, initialized, out var emittedValue, out var rate);
             if (!trigger || rule.NoLog)
             {
                 continue;
@@ -498,7 +480,7 @@ public sealed class MameLuaIngameProvider : IProvider
         }
     }
 
-    private static bool ShouldTrigger(MameLuaRule rule, long oldValue, long value, out long emittedValue, out long rate)
+    private static bool ShouldTrigger(MameLuaRule rule, long oldValue, long value, bool initialized, out long emittedValue, out long rate)
     {
         // Aligne sur wrapper.cpp : le mask est applique a la valeur lue pour
         // toutes les conditions (les conditions bit_* comparent sur le mask brut).
@@ -545,19 +527,56 @@ public sealed class MameLuaIngameProvider : IProvider
             return true;
         }
 
-        return condition switch
+        // Table alignee sur wrapper.cpp, qui fait contrat. La ligne de partage y est
+        // deliberee : une VARIATION (change, increase, decrease) exige une lecture
+        // precedente, un ETAT (eq, neq, bit_*) n'en a pas besoin — il est vrai ou faux
+        // des la premiere lecture. Le pont exigeait une transition partout, et rendait
+        // donc invisible tout etat deja etabli quand la partie commence.
+        var magnitude = Math.Abs(rate);
+        var deltaInRange = (!rule.Min.HasValue || magnitude >= rule.Min.Value)
+                           && (!rule.Max.HasValue || magnitude <= rule.Max.Value);
+
+        switch (condition)
         {
-            "any" or "change" => value != oldValue,
-            "increase" => value > oldValue,
-            "decrease" => value < oldValue,
-            "eq" or "equal" or "equals" => rule.Value.HasValue && value == rule.Value.Value && oldValue != rule.Value.Value,
-            "neq" or "ne" or "not_equal" => rule.Value.HasValue && value != rule.Value.Value && value != oldValue,
-            "gt" => rule.Value.HasValue && value > rule.Value.Value,
-            "lt" => rule.Value.HasValue && value < rule.Value.Value,
-            "bit_true" => rule.Mask is long mask && (value & mask) == mask && (oldValue & mask) != mask,
-            "bit_false" => rule.Mask is long mask && (value & mask) == 0 && (oldValue & mask) != 0,
-            _ => value != oldValue
-        };
+            case "any":
+            case "change":
+            case "color": // reservee par le contrat : un changement de valeur
+                // `value` present et non nul restreint le declenchement a cette valeur
+                return initialized && value != oldValue && deltaInRange
+                       && (rule.Value is not { } wanted || wanted == 0 || value == wanted);
+
+            case "increase":
+                return initialized && value > oldValue && deltaInRange;
+
+            case "decrease":
+                return initialized && value < oldValue && deltaInRange;
+
+            case "eq":
+            case "equal":
+            case "equals":
+                return rule.Value.HasValue && value == rule.Value.Value
+                                           && (value != oldValue || !initialized);
+
+            case "neq":
+            case "ne":
+            case "not_equal":
+                return rule.Value.HasValue && value != rule.Value.Value
+                                           && (value != oldValue || !initialized);
+
+            case "bit_true":
+                return rule.Mask is long trueMask && (value & trueMask) == trueMask
+                                                  && ((oldValue & trueMask) != trueMask || !initialized);
+
+            case "bit_false":
+                return rule.Mask is long falseMask && (value & falseMask) == 0
+                                                   && ((oldValue & falseMask) != 0 || !initialized);
+
+            default:
+                // Le wrapper ne declenche rien sur une condition qu'il ne connait pas.
+                // Se rabattre sur "change" faisait vivre sur arcade des entrees mortes
+                // sur console — deux comportements pour un meme fichier.
+                return false;
+        }
     }
 
     private static long ToBcdLikeInt(long value)

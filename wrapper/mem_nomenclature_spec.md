@@ -146,8 +146,27 @@ Recognized by `wrapper.cpp` (`ParseCondType`); anything else never triggers:
 
 `any` is NOT a valid condition; the generator normalizes it to `change`.
 
-C# provider nuances: it additionally accepts `ne`, `gt`, `lt`; entries with
-`min`/`max` are evaluated as positive BCD-like deltas.
+### The first reading
+
+A **variation** — `change`, `increase`, `decrease` — needs a previous reading, so it
+never fires on the first one: there is nothing to compare it to.
+
+A **state** — `eq`, `neq`, `bit_true`, `bit_false` — does not. It is true or false on
+the very first reading, and it fires there if it is true. That is what lets a listener
+attaching to a running game learn what is already the case: the character the player
+holds, the flag already raised.
+
+The distinction is not cosmetic. Final Fight numbers its first character `0x00`, which
+is also what the RAM holds before anyone chooses: demanding a transition made that
+character impossible to announce, ever. The same hole hits whichever character or
+weapon a game numbers zero.
+
+Both listeners follow this rule. The C# provider required a transition everywhere until
+it was aligned on `wrapper.cpp`, which has always made the distinction.
+
+C# provider nuances: entries with `min`/`max` are evaluated as positive BCD-like
+deltas. It no longer accepts `gt`/`lt`, which the contract never defined and no `.MEM`
+ever used — a file must behave the same on both listeners.
 
 ---
 
