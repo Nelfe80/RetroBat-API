@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using RetroBat.Api.Media;
 using RetroBat.Domain.Events;
@@ -11,7 +12,11 @@ namespace RetroBat.Api.Infrastructure;
 
 public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, IDisposable
 {
-    private const string SystemLogoCacheVersion = "system-logo-cache-v4-png32-srgb";
+    // v5: SVG filter references are stripped before rasterisation (librsvg drops filtered
+    // elements — the gx4000 "GX 4000" lettering vanished), and arcade sub-systems now key
+    // their wheel on the frontend id. Bumping the version regenerates every cached logo so
+    // both land without a manual purge.
+    private const string SystemLogoCacheVersion = "system-logo-cache-v5-png32-srgb";
     private readonly ILocalizedTextStore _localizedText;
     private readonly IEsSettingsStore _esSettings;
     private const int SelectionSnapshotDebounceMs = 35;
@@ -159,7 +164,12 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Media = marquee,
                     // Additive: the legacy Media fields keep their shape and their
                     // fallbacks, Assets says exactly what THIS entry owns.
-                    Assets = BuildAssetTable(roots, MarqueeAssetKinds),
+                    // The gabarit's logo layer resolves the "wheel" kind from the PLAIN
+                    // asset table (its layer key is "wheel", not "systemwheel"), so the
+                    // per-frontend pin must sit on BOTH tables — otherwise fbneo's gabarit
+                    // reads the shared arcade wheel and overwrites the correct logo.
+                    Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, MarqueeAssetKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, MarqueeAssetKinds),
                     Generation = ResolveSystemGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
@@ -186,7 +196,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     {
                         marquee.Topper
                     },
-                    Assets = BuildAssetTable(roots, TopperAssetKinds),
+                    Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, TopperAssetKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, TopperAssetKinds),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
             });
@@ -295,7 +306,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // only what that scope really owns, and a key is absent when the file
                     // is. The legacy fields are untouched.
                     Assets = BuildAssetTable(roots, MarqueeAssetKinds),
-                    SystemAssets = BuildAssetTable(fallbackSystemRoots, MarqueeAssetKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, MarqueeAssetKinds),
                     Text = text,
                     Generation = ResolveGameGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
@@ -324,7 +335,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // printed matter that used to sit above the cabinet. Self-sufficient
                     // stream — no second subscription to dress this surface.
                     Assets = BuildAssetTable(roots, TopperAssetKinds),
-                    SystemAssets = BuildAssetTable(fallbackSystemRoots, TopperAssetKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, TopperAssetKinds),
                     Text = text,
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
@@ -849,7 +860,12 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Media = marquee,
                     // Additive: the legacy Media fields keep their shape and their
                     // fallbacks, Assets says exactly what THIS entry owns.
-                    Assets = BuildAssetTable(roots, MarqueeAssetKinds),
+                    // The gabarit's logo layer resolves the "wheel" kind from the PLAIN
+                    // asset table (its layer key is "wheel", not "systemwheel"), so the
+                    // per-frontend pin must sit on BOTH tables — otherwise fbneo's gabarit
+                    // reads the shared arcade wheel and overwrites the correct logo.
+                    Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, MarqueeAssetKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, MarqueeAssetKinds),
                     Generation = ResolveSystemGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "background-generation")
                 }
@@ -922,7 +938,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // only what that scope really owns, and a key is absent when the file
                     // is. The legacy fields are untouched.
                     Assets = BuildAssetTable(roots, MarqueeAssetKinds),
-                    SystemAssets = BuildAssetTable(fallbackSystemRoots, MarqueeAssetKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, MarqueeAssetKinds),
                     Text = text,
                     Generation = ResolveGameGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "background-generation")
@@ -999,10 +1015,11 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         var media = BuildMarqueeMedia(roots);
         var fanart = ResolveSystemFanartAsset(frontendSystemId, systemId, roots);
         var logo = ResolveSystemLogoAsset(frontendSystemId, systemId, roots);
+        var generatedMarquee = ResolveSystemGeneratedMarqueeAsset(frontendSystemId, systemId, roots);
 
         return new MarqueeMediaSnapshot(
             media.Marquee,
-            media.GeneratedMarquee,
+            generatedMarquee,
             media.ScreenMarquee,
             media.ScreenMarqueeSmall,
             media.Dmd,
@@ -1057,7 +1074,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
         var destinationDirectory = Path.Combine(RetroBatPaths.MediaSystemsRoot, systemId, "artwork", "marquee");
         Directory.CreateDirectory(destinationDirectory);
-        var outputPath = Path.Combine(destinationDirectory, "generated-system-marquee.png");
+        var outputPath = Path.Combine(destinationDirectory, FrontendScopedFileName("generated-system-marquee", ".png", frontendSystemId, systemId));
         var tempDirectory = Path.Combine(RetroBatPaths.RuntimeTempRoot, "marquee-autogen");
         Directory.CreateDirectory(tempDirectory);
         var tempBasePath = Path.Combine(tempDirectory, Guid.NewGuid().ToString("N") + "-system-base.png");
@@ -1367,7 +1384,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         CancellationToken cancellationToken = default)
     {
         var destinationDirectory = Path.Combine(RetroBatPaths.MediaSystemsRoot, systemId, "ui", "wheels");
-        var destinationPath = Path.Combine(destinationDirectory, "wheel.png");
+        var destinationPath = Path.Combine(destinationDirectory, FrontendScopedFileName("wheel", ".png", frontendSystemId, systemId));
         var markerPath = destinationPath + ".apiexpose-cache";
 
         var roots = ResolveSystemRoots(systemId).ToList();
@@ -1395,10 +1412,21 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             var convertPath = Path.Combine(RetroBatPaths.ToolsRoot, "imagemagick", "convert.exe");
             if (File.Exists(convertPath))
             {
-                await RunConvertAsync(
-                    convertPath,
-                    BuildSystemLogoConvertArguments(sourcePath, destinationPath),
-                    cancellationToken);
+                var conversionSource = PrepareLogoConversionSource(sourcePath, out var strippedTemp);
+                try
+                {
+                    await RunConvertAsync(
+                        convertPath,
+                        BuildSystemLogoConvertArguments(conversionSource, destinationPath),
+                        cancellationToken);
+                }
+                finally
+                {
+                    if (strippedTemp != null)
+                    {
+                        TryDelete(strippedTemp);
+                    }
+                }
             }
             else if (Path.GetExtension(sourcePath).Equals(".png", StringComparison.OrdinalIgnoreCase))
             {
@@ -1424,6 +1452,52 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             {
                 TryDelete(sourcePath);
             }
+        }
+    }
+
+    // filter:url(#id) inside a style attribute (with an optional trailing ;), or
+    // filter="url(#id)" as its own attribute.
+    private static readonly Regex SvgFilterReference = new(
+        @"filter\s*:\s*url\(#[^)]*\)\s*;?|filter\s*=\s*""url\(#[^""]*\)""",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// imagemagick's SVG rasteriser (librsvg) silently DROPS any element carrying an SVG
+    /// filter it does not implement — feConvolveMatrix among them — so a themed logo like
+    /// gx4000, whose "GX 4000" lettering sits under such a filter, loses its text entirely
+    /// and only the surrounding artwork survives. The filter is a cosmetic sharpen; removing
+    /// only the REFERENCE (never the geometry, never the &lt;defs&gt;) lets the letters render.
+    /// A throwaway copy is written so the theme file is never touched. Non-SVG sources, and
+    /// SVGs without a filter, are converted in place. Best effort: any read/write trouble
+    /// falls back to the original source.
+    /// </summary>
+    private static string PrepareLogoConversionSource(string sourcePath, out string? tempPath)
+    {
+        tempPath = null;
+        if (!Path.GetExtension(sourcePath).Equals(".svg", StringComparison.OrdinalIgnoreCase))
+        {
+            return sourcePath;
+        }
+
+        try
+        {
+            var svg = File.ReadAllText(sourcePath);
+            var stripped = SvgFilterReference.Replace(svg, string.Empty);
+            if (string.Equals(stripped, svg, StringComparison.Ordinal))
+            {
+                return sourcePath;
+            }
+
+            Directory.CreateDirectory(RetroBatPaths.RuntimeTempRoot);
+            var temp = Path.Combine(RetroBatPaths.RuntimeTempRoot, "logo-nofilter-" + Guid.NewGuid().ToString("N") + ".svg");
+            File.WriteAllText(temp, stripped);
+            tempPath = temp;
+            return temp;
+        }
+        catch
+        {
+            tempPath = null;
+            return sourcePath;
         }
     }
 
@@ -2125,18 +2199,111 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     // then republished; a first visit before the cache exists simply carries no system logo.
     private MediaStreamAsset? ResolveSystemLogoAsset(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
     {
-        return FindFirstAsset(roots, SystemLogoSearches);
+        // Resolve the EXACT file EnsureSystemLogoCached writes: wheel.png for 1:1 systems
+        // (snes, and the arcade AGGREGATE) and wheel.<frontend>.png for the collapsed arcade
+        // sub-systems. Using the exact name — never the "wheel.*" glob — is what stops the
+        // arcade aggregate from grabbing an alphabetically-earlier sibling (wheel.fbneo.png),
+        // and stops fbneo from grabbing the shared wheel. roots put media/user first, so this
+        // already honours an operator override.
+        var scoped = FindFirstAsset(roots, "ui", "wheels", FrontendScopedFileName("wheel", ".png", frontendSystemId, systemId));
+        if (scoped != null)
+        {
+            return scoped;
+        }
+
+        // No generated wheel yet: a 1:1 system may still own a logo elsewhere (ui/logos,
+        // artwork/logo, a scraped wheel.jpg); a collapsed sub-system accepts only an operator
+        // override, never a sibling frontend's shared file.
+        return string.Equals(frontendSystemId, systemId, StringComparison.OrdinalIgnoreCase)
+            ? FindFirstAsset(roots, SystemLogoSearches)
+            : FindFirstAsset(UserRootsOf(roots), SystemLogoSearches);
     }
 
-    // The logo SOURCE to convert/compose (svg is fine here — imagemagick handles it): the
-    // theme's per-system logo FIRST (canonical, and it keeps fbneo/mame distinct via the
-    // specific frontend id, where the media store is keyed by the collapsed "arcade" id),
-    // then the media store as a fallback for systems carbon does not ship.
+    /// <summary>The composited system marquee for the snapshot: frontend-scoped for the
+    /// collapsed arcade sub-systems (so fbneo and mame keep distinct compositions, null
+    /// until the first background generation), the shared file for 1:1 systems.</summary>
+    private MediaStreamAsset? ResolveSystemGeneratedMarqueeAsset(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
+    {
+        // Exact frontend-scoped name, same reason as the wheel: the arcade aggregate must
+        // not grab a sibling's generated-system-marquee.<frontend>.png via a glob.
+        var scoped = FindFirstAsset(roots, "artwork", "marquee", FrontendScopedFileName("generated-system-marquee", ".png", frontendSystemId, systemId));
+        return scoped
+            ?? (string.Equals(frontendSystemId, systemId, StringComparison.OrdinalIgnoreCase)
+                ? FindFirstAsset(roots, "artwork", "marquee", "generated-marquee.*")
+                : null);
+    }
+
+    /// <summary>
+    /// The system asset table the GABARIT reads — published as <c>SystemAssets</c>, which
+    /// MarqueeManager exposes under the snapshot's "system:*" keys and a gabarit's
+    /// "systemwheel"/"systemmarquee" layers resolve against (never Media.Logo). The generic
+    /// table enumerates the shared media dir, where arcade collapses several frontends'
+    /// wheels and marquees together and the first-wins pick is arbitrary. Pinning the wheel
+    /// and the generated marquee to the per-frontend files is what makes a gabarit show
+    /// fbneo on fbneo and mame on mame.
+    /// </summary>
+    private IReadOnlyDictionary<string, MediaStreamAsset> BuildSystemAssetTable(
+        string frontendSystemId, string systemId, IReadOnlyList<string> roots, IReadOnlySet<string> allowed)
+    {
+        var table = new Dictionary<string, MediaStreamAsset>(BuildAssetTable(roots, allowed), StringComparer.OrdinalIgnoreCase);
+        PinAsset(table, MediaKinds.Wheel, ResolveSystemLogoAsset(frontendSystemId, systemId, roots), allowed);
+        PinAsset(table, MediaKinds.GeneratedMarquee, ResolveSystemGeneratedMarqueeAsset(frontendSystemId, systemId, roots), allowed);
+        return table;
+    }
+
+    /// <summary>Force one kind to a specific asset (or drop it when there is none), so the
+    /// generic first-wins enumeration cannot leak a sibling frontend's file.</summary>
+    private static void PinAsset(Dictionary<string, MediaStreamAsset> table, string kind, MediaStreamAsset? asset, IReadOnlySet<string> allowed)
+    {
+        if (!allowed.Contains(kind))
+        {
+            return;
+        }
+
+        if (asset != null)
+        {
+            table[kind] = asset with { Kind = kind };
+        }
+        else
+        {
+            table.Remove(kind);
+        }
+    }
+
+    // The logo SOURCE to convert/compose (svg is fine here — imagemagick handles it):
+    //  1. a logo the operator dropped under media/user ALWAYS wins — it is a deliberate
+    //     per-cabinet override, and it must never be shadowed by a theme;
+    //  2. then the theme's per-system logo (canonical, and it keeps fbneo/mame distinct via
+    //     the specific frontend id, where the media store is keyed by the collapsed "arcade"
+    //     id — this is what beats the wrong "arcade" logo the scraped store carries);
+    //  3. then the rest of the media store, for systems no theme ships.
     private string? ResolveSystemLogoPath(string frontendSystemId, string systemId, SystemDetails? selectedSystem, IReadOnlyList<string> roots)
     {
-        return _themeArt.Value.ResolveLogoPath(SystemLogoNames(frontendSystemId, systemId, selectedSystem), ResolveEsLanguage())
+        var userRoots = UserRootsOf(roots);
+        return (userRoots.Count > 0 ? FindFirstPhysicalPath(userRoots, SystemLogoSearches) : null)
+            ?? _themeArt.Value.ResolveLogoPath(SystemLogoNames(frontendSystemId, systemId, selectedSystem), ResolveEsLanguage())
             ?? FindFirstPhysicalPath(roots, SystemLogoSearches);
     }
+
+    /// <summary>The operator-override roots (media/user/systems/…) among a system's roots,
+    /// identified by prefix so it does not depend on their order.</summary>
+    private static List<string> UserRootsOf(IReadOnlyList<string> roots)
+        => roots
+            .Where(r => r.StartsWith(RetroBatPaths.MediaUserSystemsRoot, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+    /// <summary>
+    /// Arcade collapses mame/fbneo/fba/hbmame onto ONE systemId ("arcade"), yet each ES
+    /// system carries its OWN logo. The GENERATED caches (the rasterised wheel, the
+    /// composited marquee) therefore key on the FRONTEND id, so fbneo and mame no longer
+    /// overwrite each other's single file under media/systems/arcade. A system whose
+    /// frontend id already equals its systemId (snes, and the jaguar-style 1:1 renames)
+    /// keeps the plain name — no new files, no migration, no behaviour change.
+    /// </summary>
+    internal static string FrontendScopedFileName(string baseName, string extension, string frontendSystemId, string systemId)
+        => string.Equals(frontendSystemId, systemId, StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(frontendSystemId)
+            ? baseName + extension
+            : $"{baseName}.{frontendSystemId}{extension}";
 
     /// <summary>Logo candidate names, most specific first: the frontend id (keeps arcade
     /// sub-systems distinct), the es_systems theme, the normalised id, the display name.</summary>
