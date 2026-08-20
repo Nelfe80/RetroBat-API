@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.IO.Enumeration;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Microsoft.Extensions.Options;
 using RetroBat.Api.Media;
 using RetroBat.Domain.Events;
 using RetroBat.Domain.Interfaces;
@@ -36,6 +38,13 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     private readonly object _latestSelectionLock = new();
     private long _latestSelectionSequence;
     private IDisposable? _subscription;
+    private IDisposable? _optionsChange;
+
+    /// <summary>HP3 — cross-publication directory-listing cache. Static because the enumeration
+    /// helpers it backs are static; a single hosted-service instance configures it from options.
+    /// Off by default (<see cref="MediaDirectoryListingCache.Disabled"/>), so the projection path
+    /// is byte-for-byte unchanged until the canary flips DirectoryCacheEnabled.</summary>
+    internal static readonly MediaDirectoryListingCache DirectoryCache = new();
 
     public PhysicalMediaWebSocketProjectionService(
         IEventBus eventBus,
@@ -46,6 +55,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         ApiExposeRuntimeOptionsService runtimeOptions,
         ILocalizedTextStore localizedText,
         IEsSettingsStore esSettings,
+        IOptionsMonitor<ApiExposeOptions> options,
         ILogger<PhysicalMediaWebSocketProjectionService>? logger = null)
     {
         _localizedText = localizedText;
@@ -57,6 +67,19 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         _mediaAliasStore = mediaAliasStore;
         _runtimeOptions = runtimeOptions;
         _logger = logger;
+
+        ApplyDiscoveryOptions(options.CurrentValue);
+        _optionsChange = options.OnChange(ApplyDiscoveryOptions);
+    }
+
+    private static void ApplyDiscoveryOptions(ApiExposeOptions options)
+    {
+        var media = options.MediaDiscovery ?? new ApiExposeOptions.MediaDiscoveryOptions();
+        DirectoryCache.Configure(new MediaDirectoryListingCache.Config(
+            Enabled: media.DirectoryCacheEnabled,
+            SafetyTtlSeconds: media.SafetyTtlSeconds,
+            NegativeTtlSeconds: media.NegativeTtlSeconds,
+            MaxDirectories: media.MaxCachedDirectories));
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -74,6 +97,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     public void Dispose()
     {
         _subscription?.Dispose();
+        _optionsChange?.Dispose();
     }
 
     private void OnEvent(EventEnvelope envelope)
@@ -382,6 +406,17 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                 systemId,
                 gameSlug,
                 (int)perf.Elapsed.TotalMilliseconds);
+
+            if (DirectoryCache.Current.Enabled)
+            {
+                // Canary observability (§14): only emitted while the cache is on, so the
+                // shipped default-off state adds no noise. On a hot revisit, hits climb while
+                // enum stays flat — the "0 EnumerateFiles on revisit" exit criterion, visible.
+                var cache = DirectoryCache.Metrics();
+                _logger?.LogInformation(
+                    "media discovery cache: hits={Hits}, misses={Misses}, enum={Enum}, invalidations={Inval}, entries={Entries}",
+                    cache.Hits, cache.Misses, cache.Enumerations, cache.Invalidations, cache.Entries);
+            }
 
             _ = GenerateGameMediaAndPublishAsync(trigger, selected, frontendSystemId, systemId, gameSlug, state, selectionSequence);
         }
@@ -1770,14 +1805,14 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         foreach (var root in roots)
         {
             var directory = CombineRelative(root, relativeDirectory);
-            if (!Directory.Exists(directory))
-            {
-                continue;
-            }
 
-            if (metrics != null) metrics.DirectoryEnumerations++;
-            foreach (var path in Directory.EnumerateFiles(directory, pattern, SearchOption.TopDirectoryOnly)
-                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            // HP3: filter the cached full listing by the search pattern in memory.
+            // FileSystemName.MatchesSimpleExpression is exactly what EnumerateFiles(dir, pattern)
+            // applies under its default MatchType.Simple, so the set of matched files is identical.
+            foreach (var path in DirectoryCache
+                .List(directory, metrics != null ? () => metrics.DirectoryEnumerations++ : null)
+                .Where(candidate => FileSystemName.MatchesSimpleExpression(pattern, Path.GetFileName(candidate)))
+                .OrderBy(candidate => candidate, StringComparer.OrdinalIgnoreCase))
             {
                 if (metrics != null) metrics.PatternFilesVisited++;
                 var fullPath = Path.GetFullPath(path);
@@ -1798,13 +1833,11 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             foreach (var root in roots)
             {
                 var directory = CombineRelative(root, search.RelativeDirectory);
-                if (!Directory.Exists(directory))
-                {
-                    continue;
-                }
 
-                var path = Directory.EnumerateFiles(directory, search.Pattern, SearchOption.TopDirectoryOnly)
-                    .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                // HP3: same cached-listing + in-memory pattern filter as FindAssets.
+                var path = DirectoryCache.List(directory)
+                    .Where(candidate => FileSystemName.MatchesSimpleExpression(search.Pattern, Path.GetFileName(candidate)))
+                    .OrderBy(candidate => candidate, StringComparer.OrdinalIgnoreCase)
                     .FirstOrDefault();
                 if (!string.IsNullOrWhiteSpace(path))
                 {
@@ -1918,19 +1951,14 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             {
                 if (!Directory.Exists(root)) continue;
                 var directory = CombineRelative(root, relativeDirectory);
-                if (!Directory.Exists(directory)) continue;
 
-                IEnumerable<string> found;
-                try
-                {
-                    found = Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    continue; // unreadable directory: the others may still answer
-                }
-
-                if (metrics != null) metrics.DirectoryEnumerations++;
+                // HP3: the listing comes from the cross-publication cache — a straight
+                // pass-through enumeration when the cache is off, a validated hit otherwise. The
+                // onEnumerate callback fires only on a real disk read, so the baseline metric
+                // still counts enumerations and not cache hits.
+                var found = DirectoryCache.List(
+                    directory,
+                    metrics != null ? () => metrics.DirectoryEnumerations++ : null);
                 foreach (var path in found)
                 {
                     if (metrics != null) metrics.PatternFilesVisited++;

@@ -35,6 +35,7 @@ public class EsProjectionService
     private readonly ApiContext _context;
     private readonly IEmulationStationNotificationService _notificationService;
     private readonly InterfaceTextService _interfaceTextService;
+    private readonly IMediaDiscoveryInvalidator _discoveryInvalidator;
     private readonly ILogger<EsProjectionService>? _logger;
     private readonly HttpClient _esHttpClient = new()
     {
@@ -53,6 +54,7 @@ public class EsProjectionService
         ApiContext context,
         IEmulationStationNotificationService notificationService,
         InterfaceTextService interfaceTextService,
+        IMediaDiscoveryInvalidator discoveryInvalidator,
         ILogger<EsProjectionService>? logger = null)
     {
         _aliasStore = aliasStore;
@@ -65,6 +67,7 @@ public class EsProjectionService
         _context = context;
         _notificationService = notificationService;
         _interfaceTextService = interfaceTextService;
+        _discoveryInvalidator = discoveryInvalidator;
         _logger = logger;
     }
 
@@ -157,6 +160,12 @@ public class EsProjectionService
             need.ImportedPath = effectivePath;
             need.ExistingPath = effectivePath;
             need.IsMissing = false;
+            if (!string.Equals(Path.GetFullPath(effectivePath), Path.GetFullPath(sourcePath), StringComparison.OrdinalIgnoreCase))
+            {
+                // HP4: a copy landed the file under the canonical layout, maybe in a new
+                // directory; drop the stale listing so it is seen immediately.
+                _discoveryInvalidator.InvalidatePath(effectivePath);
+            }
             await _aliasStore.RecordMediaHashAsync(systemId, need.Kind, contentHash, effectivePath, cancellationToken);
             await ApplyImportedMediaDeploymentsAsync(systemId, frontendSystemId ?? systemId, gameSlug, need, effectivePath, gamePath, esGameId, notifyThemeHbScrape, cancellationToken);
             return effectivePath;
@@ -175,6 +184,10 @@ public class EsProjectionService
 
             await CopyFileAtomicallyAsync(sourcePath, canonicalPath, cancellationToken);
             need.WasImported = true;
+            // HP4: the file — and possibly its directory — is new, the one case the cache's
+            // mtime check cannot catch on its own; invalidate so the next publication lists it
+            // at once rather than after the short negative TTL.
+            _discoveryInvalidator.InvalidatePath(canonicalPath);
         }
 
         if (File.Exists(canonicalPath))

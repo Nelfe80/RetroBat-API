@@ -6,6 +6,7 @@ public class ApiExposeOptions
     public TestModeOptions TestMode { get; set; } = new();
     public LocalMediaManagerOptions LocalMediaManager { get; set; } = new();
     public MediaAllocationOptions MediaAllocation { get; set; } = new();
+    public MediaDiscoveryOptions MediaDiscovery { get; set; } = new();
     public ApiSettingsOptions ApiSettings { get; set; } = new();
     public LocalizedGamelistCacheOptions LocalizedGamelistCache { get; set; } = new();
     public ScrapingOptions Scraping { get; set; } = new();
@@ -186,6 +187,29 @@ public class ApiExposeOptions
         public string MediaRegionMode { get; set; } = "match_rom_region";
         public string LogoRegionMode { get; set; } = "user_language";
         public string UserRegion { get; set; } = "auto";
+    }
+
+    /// <summary>
+    /// HP3 media-discovery tuning. The directory-listing cache is OFF by default: HP1/HP2 already
+    /// list each recognised directory once per publication, and this only removes the enumeration
+    /// on a hot REVISIT. Turned on by the canary (see PLAN_DEV_PATCH_HOTPATH_MEDIA_DISCOVERY §12).
+    /// </summary>
+    public class MediaDiscoveryOptions
+    {
+        /// <summary>Reuse a directory's file listing between publications (validated by the
+        /// directory mtime, backstopped by <see cref="SafetyTtlSeconds"/>).</summary>
+        public bool DirectoryCacheEnabled { get; set; } = false;
+
+        /// <summary>Upper bound on how long a positive listing is trusted even if the directory
+        /// mtime never moved — the guard for filesystems that don't update it.</summary>
+        public int SafetyTtlSeconds { get; set; } = 5;
+
+        /// <summary>How long an absent directory is remembered as absent (it has no mtime to
+        /// trust); a writer creating it invalidates explicitly for immediacy.</summary>
+        public int NegativeTtlSeconds { get; set; } = 1;
+
+        /// <summary>LRU ceiling on cached directories.</summary>
+        public int MaxCachedDirectories { get; set; } = 4096;
     }
 
     public class ApiSettingsOptions
