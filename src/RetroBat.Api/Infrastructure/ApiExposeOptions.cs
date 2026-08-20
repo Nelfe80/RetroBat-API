@@ -190,15 +190,16 @@ public class ApiExposeOptions
     }
 
     /// <summary>
-    /// HP3 media-discovery tuning. The directory-listing cache is OFF by default: HP1/HP2 already
-    /// list each recognised directory once per publication, and this only removes the enumeration
-    /// on a hot REVISIT. Turned on by the canary (see PLAN_DEV_PATCH_HOTPATH_MEDIA_DISCOVERY §12).
+    /// HP3 media-discovery tuning. The directory-listing cache is ON by default since 1.6.4:
+    /// a real-cabinet canary removed ~97% of directory enumerations on navigation with no media
+    /// regression (validated by the directory mtime + a short safety TTL). Set
+    /// DirectoryCacheEnabled=false to fall back to the HP1/HP2 per-publication listing.
     /// </summary>
     public class MediaDiscoveryOptions
     {
         /// <summary>Reuse a directory's file listing between publications (validated by the
         /// directory mtime, backstopped by <see cref="SafetyTtlSeconds"/>).</summary>
-        public bool DirectoryCacheEnabled { get; set; } = false;
+        public bool DirectoryCacheEnabled { get; set; } = true;
 
         /// <summary>Upper bound on how long a positive listing is trusted even if the directory
         /// mtime never moved — the guard for filesystems that don't update it.</summary>

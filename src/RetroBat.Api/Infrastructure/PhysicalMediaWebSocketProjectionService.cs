@@ -42,8 +42,9 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
     /// <summary>HP3 — cross-publication directory-listing cache. Static because the enumeration
     /// helpers it backs are static; a single hosted-service instance configures it from options.
-    /// Off by default (<see cref="MediaDirectoryListingCache.Disabled"/>), so the projection path
-    /// is byte-for-byte unchanged until the canary flips DirectoryCacheEnabled.</summary>
+    /// Initialised <see cref="MediaDirectoryListingCache.Disabled"/> and configured by the
+    /// constructor from options (on by default since 1.6.4); DirectoryCacheEnabled=false restores
+    /// the byte-for-byte HP1/HP2 path.</summary>
     internal static readonly MediaDirectoryListingCache DirectoryCache = new();
 
     public PhysicalMediaWebSocketProjectionService(
@@ -409,11 +410,11 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
             if (DirectoryCache.Current.Enabled)
             {
-                // Canary observability (§14): only emitted while the cache is on, so the
-                // shipped default-off state adds no noise. On a hot revisit, hits climb while
-                // enum stays flat — the "0 EnumerateFiles on revisit" exit criterion, visible.
+                // §14 observability, at Debug so the on-by-default cache adds no per-navigation
+                // noise in production: a cabinet that wants a look raises the level and sees hits
+                // climb while enum stays flat — the "0 EnumerateFiles on revisit" criterion.
                 var cache = DirectoryCache.Metrics();
-                _logger?.LogInformation(
+                _logger?.LogDebug(
                     "media discovery cache: hits={Hits}, misses={Misses}, enum={Enum}, invalidations={Inval}, entries={Entries}",
                     cache.Hits, cache.Misses, cache.Enumerations, cache.Invalidations, cache.Entries);
             }

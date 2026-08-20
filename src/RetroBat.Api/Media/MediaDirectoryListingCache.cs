@@ -7,9 +7,10 @@ namespace RetroBat.Api.Media;
 ///
 /// HP1/HP2 already list every recognised media directory once per publication; this cache
 /// keeps those listings BETWEEN publications so a hot revisit (navigating back to a game or
-/// system already seen) re-enumerates nothing. It is deliberately gated OFF by default: with
-/// <see cref="Config.Enabled"/> false the class is a straight pass-through to the disk, so the
-/// code ships dark and is turned on by the canary (see the MediaDiscovery options).
+/// system already seen) re-enumerates nothing. On by default since 1.6.4 (a real-cabinet canary
+/// removed ~97% of enumerations with no regression); with <see cref="Config.Enabled"/> false the
+/// class is a straight pass-through to the disk, the exact HP1/HP2 behaviour, for a clean
+/// rollback via the MediaDiscovery options.
 ///
 /// Correctness rests on two guards, not on explicit invalidation alone:
 ///  * every hit re-reads the directory's own mtime — NTFS bumps it on any add / remove /
