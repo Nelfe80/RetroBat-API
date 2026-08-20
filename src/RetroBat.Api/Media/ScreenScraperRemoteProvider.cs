@@ -563,7 +563,14 @@ public sealed class ScreenScraperRemoteProvider
             {
                 var mediaRegion = TryGetMediaTypeRegion(mediaType);
                 var localizedVariantChanged = false;
-                if (ShouldLocalizeMediaKind(normalizedKind) && !string.IsNullOrWhiteSpace(mediaRegion))
+                // Only keep a regional variant for a region OTHER than the one that becomes
+                // the canonical. importedThisKind is still false while the first successful
+                // download is being processed: that download's bytes are about to be written
+                // as the canonical (screenshot.png) a few lines below, so also writing them as
+                // screenshot-wor.png is a pure byte-identical duplicate. Later regions
+                // (importedThisKind == true) still get a variant, deduped against the now
+                // existing base inside TryImportLocalizedMediaVariantAsync.
+                if (importedThisKind && ShouldLocalizeMediaKind(normalizedKind) && !string.IsNullOrWhiteSpace(mediaRegion))
                 {
                     localizedVariantChanged = await TryImportLocalizedMediaVariantAsync(
                         plan,
@@ -1003,6 +1010,32 @@ public sealed class ScreenScraperRemoteProvider
             if (File.Exists(targetPath) && HaveSameContent(sourcePath, targetPath))
             {
                 return false;
+            }
+
+            // Don't create a regional variant that is byte-identical to the region-less base
+            // already on disk. ScreenScraper routinely returns the world ("wor") image
+            // identical to the game's own region, and a screentitle-wor.jpg next to an
+            // identical screentitle.jpg only wastes space and spawns a phantom "image-wor"
+            // asset. Path-only aliases are already neutralized at /addgames — this stops them
+            // being written at all. The KNOWN region is stripped (not a stem guess), so
+            // hyphenated kinds like screenmarquee-small are left intact.
+            if (!string.IsNullOrWhiteSpace(region))
+            {
+                var baseName = Path.GetFileName(targetPath)
+                    .Replace("-" + region, string.Empty, StringComparison.OrdinalIgnoreCase);
+                var basePath = Path.Combine(Path.GetDirectoryName(targetPath)!, baseName);
+                if (!string.Equals(basePath, targetPath, StringComparison.OrdinalIgnoreCase) &&
+                    File.Exists(basePath) && HaveSameContent(sourcePath, basePath))
+                {
+                    await MediaUpdateAuditLog.AppendAsync(
+                        plan,
+                        "remote-scrape-localized-media",
+                        normalizedKind,
+                        "skipped-identical-to-base",
+                        new { region, basePath },
+                        cancellationToken);
+                    return false;
+                }
             }
 
             await CopyFileAtomicallyAsync(sourcePath, targetPath, cancellationToken);
