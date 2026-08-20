@@ -29,6 +29,7 @@ public class MediaKindsRecognisedDirectoriesTests
             ["ui/wheels"] = "ui/wheels/wheel.png",
             ["ui/logos"] = "ui/logos/logo.png",
             ["documents"] = "documents/manual.pdf",
+            ["documents/maps"] = "documents/maps/map.png",
             ["themes"] = "themes/themehb.zip",
         };
 
@@ -54,7 +55,7 @@ public class MediaKindsRecognisedDirectoriesTests
         {
             "", "artwork", "artwork/box", "artwork/mix", "artwork/bezels",
             "artwork/marquee", "artwork/ic", "ui", "ui/wheels", "ui/logos",
-            "documents", "themes",
+            "documents", "documents/maps", "themes",
         };
 
         Assert.Equal(

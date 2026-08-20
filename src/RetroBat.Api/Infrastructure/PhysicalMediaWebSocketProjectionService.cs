@@ -168,8 +168,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // asset table (its layer key is "wheel", not "systemwheel"), so the
                     // per-frontend pin must sit on BOTH tables — otherwise fbneo's gabarit
                     // reads the shared arcade wheel and overwrites the correct logo.
-                    Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, MarqueeAssetKinds),
-                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, MarqueeAssetKinds),
+                    Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, DisplayableMediaKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, DisplayableMediaKinds),
                     Generation = ResolveSystemGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
@@ -196,8 +196,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     {
                         marquee.Topper
                     },
-                    Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, TopperAssetKinds),
-                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, TopperAssetKinds),
+                    Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, DisplayableMediaKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, DisplayableMediaKinds),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
             });
@@ -305,8 +305,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // path cannot tell whose art it is. These two tables can: each holds
                     // only what that scope really owns, and a key is absent when the file
                     // is. The legacy fields are untouched.
-                    Assets = BuildAssetTable(roots, MarqueeAssetKinds),
-                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, MarqueeAssetKinds),
+                    Assets = BuildAssetTable(roots, DisplayableMediaKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, DisplayableMediaKinds),
                     Text = text,
                     Generation = ResolveGameGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
@@ -334,8 +334,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // A topper shows more than a topper: the game's identity and the
                     // printed matter that used to sit above the cabinet. Self-sufficient
                     // stream — no second subscription to dress this surface.
-                    Assets = BuildAssetTable(roots, TopperAssetKinds),
-                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, TopperAssetKinds),
+                    Assets = BuildAssetTable(roots, DisplayableMediaKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, DisplayableMediaKinds),
                     Text = text,
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
                 }
@@ -366,8 +366,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Text = text,
                     // Composing a card takes more than the cards: the logo, the box, a
                     // fanart to sit behind them, and what the buttons DO.
-                    Assets = BuildAssetTable(roots, InstructionCardAssetKinds),
-                    SystemAssets = BuildAssetTable(fallbackSystemRoots, InstructionCardAssetKinds),
+                    Assets = BuildAssetTable(roots, DisplayableMediaKinds),
+                    SystemAssets = BuildAssetTable(fallbackSystemRoots, DisplayableMediaKinds),
                     // keyed by ROM NAME, not by the media slug: dynpanels are named after
                     // the rom file ("1943.json"), and a media folder is a slug that often
                     // differs ("sonic_the_hedgehog" for "Sonic The Hedgehog (USA)")
@@ -738,10 +738,10 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     marquee.ScreenMarqueeSmall,
                     marquee.Fanart
                 },
-                Assets = BuildAssetTable(roots, ScreenAssetKinds),
+                Assets = BuildAssetTable(roots, DisplayableMediaKinds),
                 SystemAssets = systemRoots is null
                     ? null
-                    : BuildAssetTable(systemRoots, ScreenAssetKinds),
+                    : BuildAssetTable(systemRoots, DisplayableMediaKinds),
                 Latency = BuildSnapshotLatency(trigger, selection.Sequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, phase)
             }
         });
@@ -864,8 +864,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // asset table (its layer key is "wheel", not "systemwheel"), so the
                     // per-frontend pin must sit on BOTH tables — otherwise fbneo's gabarit
                     // reads the shared arcade wheel and overwrites the correct logo.
-                    Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, MarqueeAssetKinds),
-                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, MarqueeAssetKinds),
+                    Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, DisplayableMediaKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, DisplayableMediaKinds),
                     Generation = ResolveSystemGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "background-generation")
                 }
@@ -937,8 +937,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // path cannot tell whose art it is. These two tables can: each holds
                     // only what that scope really owns, and a key is absent when the file
                     // is. The legacy fields are untouched.
-                    Assets = BuildAssetTable(roots, MarqueeAssetKinds),
-                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, MarqueeAssetKinds),
+                    Assets = BuildAssetTable(roots, DisplayableMediaKinds),
+                    SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, DisplayableMediaKinds),
                     Text = text,
                     Generation = ResolveGameGenerationState(roots),
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "background-generation")
@@ -1982,37 +1982,29 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         return table;
     }
 
-    /// <summary>What a composed INSTRUCTION CARD can carry: the game's identity, the
-    /// printed matter, and a fanart to sit behind them.</summary>
-    private static readonly IReadOnlySet<string> InstructionCardAssetKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    /// <summary>
+    /// Every media kind a surface may pull into a composition. DECISION (2026-08): all four
+    /// surfaces expose the SAME set — a surface only shows what its composition references,
+    /// so curating per surface added maintenance without ever changing a display. Cheap: the
+    /// table is filtered from the ALREADY-BUILT inventory (no extra disk work), and a key
+    /// exists only when the file does, so a media-poor game stays small.
+    ///
+    /// Excluded on purpose: <c>manual</c>/<c>magazine</c> (documents, never shown on a
+    /// surface), <c>themehb</c> (a theme archive), <c>video</c>/<c>video-normalized</c>
+    /// (playback, served by <c>Media.Video</c>), and <c>dmd-animation</c> (a LIST served by
+    /// <c>Media.Dmd</c> — a one-per-kind table would keep only one frame).
+    /// </summary>
+    private static readonly IReadOnlySet<string> DisplayableMediaKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        MediaKinds.Wheel, MediaKinds.Logo, MediaKinds.Box3d, MediaKinds.BoxFront,
-        MediaKinds.Flyer, MediaKinds.Fanart, MediaKinds.InstructionCard
-    };
-
-    /// <summary>What a TOPPER can display: the cabinet's top sign — its own art, the
-    /// identity of the game, and the printed matter that used to live up there.</summary>
-    private static readonly IReadOnlySet<string> TopperAssetKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        MediaKinds.Topper, MediaKinds.Fanart, MediaKinds.Wheel, MediaKinds.Logo,
-        MediaKinds.Thumbnail, MediaKinds.Flyer, MediaKinds.Box3d, MediaKinds.BoxFront
-    };
-
-    /// <summary>What a secondary SCREEN can display: the screen-shaped media. The title
-    /// screen and the in-game capture are two different things, hence two kinds.</summary>
-    private static readonly IReadOnlySet<string> ScreenAssetKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        MediaKinds.ScreenMarquee, MediaKinds.ScreenMarqueeSmall, MediaKinds.Fanart,
-        MediaKinds.Thumbnail, MediaKinds.Image
-    };
-
-    /// <summary>What a MARQUEE surface can display (plan, matrix per surface).</summary>
-    private static readonly IReadOnlySet<string> MarqueeAssetKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        MediaKinds.Fanart, MediaKinds.Wheel, MediaKinds.Logo, MediaKinds.Marquee,
-        MediaKinds.ScreenMarquee, MediaKinds.ScreenMarqueeSmall, MediaKinds.GeneratedMarquee,
-        MediaKinds.Dmd, MediaKinds.GeneratedDmd, MediaKinds.MixRbv1, MediaKinds.MixRbv2,
-        MediaKinds.Box3d, MediaKinds.BoxFront, MediaKinds.Topper
+        MediaKinds.Wheel, MediaKinds.WheelCarbon, MediaKinds.WheelSteel, MediaKinds.Logo, MediaKinds.SteamGrid,
+        MediaKinds.Marquee, MediaKinds.GeneratedMarquee, MediaKinds.ScreenMarquee, MediaKinds.ScreenMarqueeSmall,
+        MediaKinds.Topper, MediaKinds.Dmd, MediaKinds.GeneratedDmd,
+        MediaKinds.BoxFront, MediaKinds.Box3d, MediaKinds.BoxBack, MediaKinds.BoxSide, MediaKinds.BoxTexture,
+        MediaKinds.MixRbv1, MediaKinds.MixRbv2,
+        MediaKinds.Thumbnail, MediaKinds.Image,
+        MediaKinds.Fanart, MediaKinds.Flyer,
+        MediaKinds.Cartridge, MediaKinds.Label, MediaKinds.Figurine, MediaKinds.Bezel,
+        MediaKinds.InstructionCard, MediaKinds.Map
     };
 
     private static MediaStreamAsset CreateAsset(string path)

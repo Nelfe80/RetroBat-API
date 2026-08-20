@@ -27,6 +27,9 @@ public class MediaKindsFromRelativePathTests
     [InlineData("artwork/screenshot.png", MediaKinds.Thumbnail)]
     [InlineData("artwork/screentitle.png", MediaKinds.Image)]
     [InlineData("artwork/steamgrid.png", MediaKinds.SteamGrid)]
+    [InlineData("artwork/cartridge.png", MediaKinds.Cartridge)]
+    [InlineData("artwork/label.png", MediaKinds.Label)]
+    [InlineData("artwork/figurine.png", MediaKinds.Figurine)]
     // artwork/box/
     [InlineData("artwork/box/3d.png", MediaKinds.Box3d)]
     [InlineData("artwork/box/front.png", MediaKinds.BoxFront)]
@@ -58,8 +61,9 @@ public class MediaKindsFromRelativePathTests
     [InlineData("ui/wheels/wheel-carbon.png", MediaKinds.WheelCarbon)]
     [InlineData("ui/wheels/wheel-steel.png", MediaKinds.WheelSteel)]
     [InlineData("ui/logos/logo.png", MediaKinds.Logo)]
-    // documents/ , themes/
+    // documents/ , documents/maps/ , themes/
     [InlineData("documents/manual.pdf", MediaKinds.Manual)]
+    [InlineData("documents/maps/map.png", MediaKinds.Map)]
     [InlineData("themes/themehb.zip", MediaKinds.ThemeHb)]
     public void Qualifies_recognised_paths(string relative, string expectedKind)
         => Assert.Equal(expectedKind, MediaKinds.FromRelativePath(relative));

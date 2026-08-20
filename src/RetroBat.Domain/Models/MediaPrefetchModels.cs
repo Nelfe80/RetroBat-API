@@ -106,6 +106,7 @@ public static class MediaKinds
             "ui/wheels",
             "ui/logos",
             "documents",
+            "documents/maps",
             "themes",
         };
 
@@ -136,6 +137,9 @@ public static class MediaKinds
                 "screenshot" => Thumbnail,
                 "screentitle" => Image,
                 "steamgrid" => SteamGrid,
+                "cartridge" => Cartridge,
+                "label" => Label,
+                "figurine" => Figurine,
                 _ => VariantOf(stem, "screentitle", Image) ?? VariantOf(stem, "fanart", Fanart)
             },
             "artwork/box" => stem switch
@@ -178,6 +182,7 @@ public static class MediaKinds
             },
             "ui/logos" => stem == "logo" ? Logo : null,
             "documents" => stem == "manual" ? Manual : null,
+            "documents/maps" => stem == "map" ? Map : null,
             "themes" => stem == "themehb" ? ThemeHb : null,
             "" => stem switch
             {
