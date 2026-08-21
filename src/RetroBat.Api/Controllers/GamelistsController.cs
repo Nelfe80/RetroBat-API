@@ -18,11 +18,15 @@ public class GamelistsController : ControllerBase
 {
     private readonly IGamelistStore _gamelists;
     private readonly RomCanonicalResolver _canonical;
+    private readonly Media.LocalizedGamelistCacheService? _localized;
 
-    public GamelistsController(IGamelistStore gamelists, RomCanonicalResolver canonical)
+    public GamelistsController(
+        IGamelistStore gamelists, RomCanonicalResolver canonical,
+        Media.LocalizedGamelistCacheService? localized = null)
     {
         _gamelists = gamelists;
         _canonical = canonical;
+        _localized = localized;
     }
 
     /// <summary>Additif (doctrine contrat) : `md5` (du gamelist.xml) et
@@ -108,7 +112,7 @@ public class GamelistsController : ControllerBase
     [HttpGet("{systemId}/game")]
     [ProducesResponseType(typeof(GamelistGameDetail), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public IActionResult GetGame(string systemId, [FromQuery] string rom)
+    public IActionResult GetGame(string systemId, [FromQuery] string rom, [FromQuery] string? lng = null)
     {
         if (string.IsNullOrWhiteSpace(systemId) || !string.Equals(Path.GetFileName(systemId), systemId, StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(rom))
@@ -116,7 +120,12 @@ public class GamelistsController : ControllerBase
             return NotFound(new { message = "Invalid system id or rom." });
         }
 
-        var path = Path.Combine(RetroBatPaths.RomsRoot, systemId, "gamelist.xml");
+        // Un joueur qui consulte un jeu depuis son telephone lit dans SA
+        // langue ; la borne, elle, ne bascule pas. On sert le cache localise
+        // quand il existe, et la gamelist vivante sinon — un repli qui donne
+        // toujours quelque chose plutot qu'une erreur.
+        var path = _localized?.TryResolveCachedGamelistPath(lng, systemId)
+            ?? Path.Combine(RetroBatPaths.RomsRoot, systemId, "gamelist.xml");
         if (!System.IO.File.Exists(path))
         {
             return NotFound(new { message = $"No gamelist for system '{systemId}'." });

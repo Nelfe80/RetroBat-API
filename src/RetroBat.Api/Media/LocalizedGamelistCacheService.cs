@@ -917,6 +917,38 @@ public sealed class LocalizedGamelistCacheService
             .ToList();
     }
 
+    /// <summary>
+    /// La gamelist d'un système DANS une langue, sans toucher à la borne.
+    ///
+    /// Le service savait basculer toute la borne d'une langue à l'autre
+    /// (SwitchToLanguageAsync) mais pas en LIRE une : les fichiers existaient
+    /// par langue et restaient inaccessibles tant qu'on ne basculait pas. Or
+    /// c'est justement ce qu'il faut quand un joueur consulte un jeu depuis
+    /// son téléphone : il lit dans SA langue, la borne reste dans la sienne.
+    ///
+    /// Retourne null si la langue n'a pas de cache — l'appelant retombe alors
+    /// sur la gamelist vivante, ce qui est le bon repli.
+    /// </summary>
+    public string? TryResolveCachedGamelistPath(string? language, string frontendSystemId)
+    {
+        var code = (language ?? string.Empty).Trim();
+        if (code.Length == 0 || string.IsNullOrWhiteSpace(frontendSystemId))
+        {
+            return null;
+        }
+
+        // Un identifiant de système ne doit jamais remonter l'arborescence :
+        // il arrive d'une query publique.
+        if (!string.Equals(Path.GetFileName(frontendSystemId), frontendSystemId, StringComparison.Ordinal) ||
+            !string.Equals(Path.GetFileName(code), code, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var path = ResolveCachedGamelistPath(code, frontendSystemId);
+        return File.Exists(path) ? path : null;
+    }
+
     private string ResolveCachedGamelistPath(string language, string frontendSystemId)
     {
         return Path.Combine(ResolveLanguageCacheRoot(language), frontendSystemId, "gamelist.xml");
