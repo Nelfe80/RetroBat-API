@@ -211,6 +211,13 @@ public class ApiExposeOptions
 
         /// <summary>LRU ceiling on cached directories.</summary>
         public int MaxCachedDirectories { get; set; } = 4096;
+
+        /// <summary>HP5 — stamp each stream asset with PathRoot ("apiexpose" / "retrobat" /
+        /// "external-local"), the root its relative Path is resolved against. OFF by default and
+        /// additive (the field is omitted from the JSON when off, SnapshotVersion stays 2): an
+        /// older MarqueeManager never sees it, a newer one uses it to resolve deterministically
+        /// instead of guessing plugin-then-RetroBat. Turn on once the consumers understand it.</summary>
+        public bool EmitPathRoot { get; set; } = false;
     }
 
     public class ApiSettingsOptions

@@ -1,0 +1,36 @@
+name: CI
+
+# HP6 — run the test suite on every push and PR to main, on Windows because the projects
+# target net8.0-windows. Make this check required in the branch protection settings so a red
+# suite blocks a merge (that part is a repo setting, not something this file can enforce).
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore tests/RetroBat.Api.Tests/RetroBat.Api.Tests.csproj
+
+      - name: Build
+        run: dotnet build tests/RetroBat.Api.Tests/RetroBat.Api.Tests.csproj -c Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/RetroBat.Api.Tests/RetroBat.Api.Tests.csproj -c Release --no-build --verbosity normal

@@ -47,6 +47,10 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// the byte-for-byte HP1/HP2 path.</summary>
     internal static readonly MediaDirectoryListingCache DirectoryCache = new();
 
+    /// <summary>HP5 — whether CreateAsset stamps PathRoot on each asset. Static for the same
+    /// reason as DirectoryCache (CreateAsset is static); off until MediaDiscovery.EmitPathRoot.</summary>
+    private static volatile bool _emitPathRoot;
+
     public PhysicalMediaWebSocketProjectionService(
         IEventBus eventBus,
         ApiContext context,
@@ -81,6 +85,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             SafetyTtlSeconds: media.SafetyTtlSeconds,
             NegativeTtlSeconds: media.NegativeTtlSeconds,
             MaxDirectories: media.MaxCachedDirectories));
+        _emitPathRoot = media.EmitPathRoot;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -2060,6 +2065,16 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             ? "/api/v1/media/" + relative["media/".Length..]
             : string.Empty;
 
+        // HP5: name the root Path is relative to, so a consumer stops guessing. Mirrors the
+        // relative-path computation above (same order), so Path never changes — off by default.
+        var pathRoot = !_emitPathRoot
+            ? null
+            : IsUnderRoot(fullPath, RetroBatPaths.PluginRoot)
+                ? "apiexpose"
+                : IsUnderRoot(fullPath, RetroBatPaths.RetroBatRoot)
+                    ? "retrobat"
+                    : "external-local";
+
         return new MediaStreamAsset(
             Kind: ResolveKind(path),
             Origin: origin,
@@ -2069,7 +2084,10 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             Extension: info.Extension.TrimStart('.').ToLowerInvariant(),
             Length: info.Length,
             LastWriteTimeUtc: info.LastWriteTimeUtc,
-            Url: url);
+            Url: url)
+        {
+            PathRoot = pathRoot
+        };
     }
 
     private static MediaStreamAsset CreateExternalAsset(string kind, string origin, string path, string url, string extension)
@@ -2726,6 +2744,20 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         /// <summary>Where each entry sits INSIDE the card, when a companion file says
         /// so. Null when the card has none.</summary>
         public IReadOnlyList<InstructionCardPanel>? Panels { get; init; }
+
+        /// <summary>
+        /// HP5 — which root <see cref="Path"/> is relative to, so a consumer resolves the file
+        /// deterministically instead of guessing: "apiexpose" (under the plugin), "retrobat"
+        /// (under RetroBat but outside the plugin — an EmulationStation theme lands here), or
+        /// "external-local" (a local file outside both roots). Null — and omitted from the JSON
+        /// (WhenWritingNull) — unless MediaDiscovery.EmitPathRoot is on: an older consumer never
+        /// sees the field, a newer one uses it when present and falls back to its two-root guess
+        /// when absent. The value mirrors the root Path is already relative to, so Path is
+        /// unchanged and the addition is purely additive (SnapshotVersion stays 2).
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore(
+            Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public string? PathRoot { get; init; }
     }
 
     /// <summary>
