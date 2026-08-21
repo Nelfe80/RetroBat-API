@@ -22,8 +22,13 @@ public sealed class NelfePlayScoringSessionService
     /// streamer et l'id du contest (participation à un contest, salle ou maison).
     /// HOME n'a jamais de session (borne libre / machine perso).
     /// </summary>
+    /// <summary>
+    /// Le joueur de session. <paramref name="Locale"/> est SA langue, pas celle
+    /// de la borne : les annonces la suivent, l'interface de la borne non.
+    /// </summary>
     public sealed record SessionPlayer(
-        string PlayerCode, string World, string? VenueName, string? VenueCity, string? Channel, string? ContestId);
+        string PlayerCode, string World, string? VenueName, string? VenueCity,
+        string? Channel, string? ContestId, string? Locale);
 
     /// <summary>
     /// Pose (ou remplace) le joueur/monde de session. Code vide = checkout.
@@ -33,10 +38,14 @@ public sealed class NelfePlayScoringSessionService
     /// </summary>
     public void Set(
         string? playerCode, string? venueName, string? venueCity,
-        string world = "station", string? channel = null, string? contestId = null)
+        string world = "station", string? channel = null, string? contestId = null,
+        string? locale = null)
     {
         var code = (playerCode ?? string.Empty).Trim();
         var w = world is "stream" or "station" ? world : "station";
+        // Assainie a l'entree : ce qui est stocke est toujours l'une des six
+        // langues servies, ou rien.
+        var lang = CabinetAnnounceText.Normalize(locale);
         lock (_lock)
         {
             _current = code.Length == 0
@@ -47,7 +56,8 @@ public sealed class NelfePlayScoringSessionService
                     string.IsNullOrWhiteSpace(venueName) ? null : venueName.Trim(),
                     string.IsNullOrWhiteSpace(venueCity) ? null : venueCity.Trim(),
                     string.IsNullOrWhiteSpace(channel) ? null : channel.Trim(),
-                    string.IsNullOrWhiteSpace(contestId) ? null : contestId.Trim());
+                    string.IsNullOrWhiteSpace(contestId) ? null : contestId.Trim(),
+                    lang.Length == 0 ? null : lang);
         }
     }
 

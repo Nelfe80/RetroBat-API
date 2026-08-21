@@ -31,13 +31,27 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
     private Control? _dispatcher;
     private AnnounceForm? _form;
 
+    private readonly NelfePlayScoringSessionService? _session;
+
     public ChallengeAnnounceOverlayService(
         IOptionsMonitor<ApiExposeOptions> options,
+        NelfePlayScoringSessionService? session = null,
         ILogger<ChallengeAnnounceOverlayService>? logger = null)
     {
         _options = options;
+        _session = session;
         _logger = logger;
     }
+
+    /// <summary>
+    /// La langue de l'annonce : celle du joueur checke-in s'il y en a un, sinon
+    /// celle de la borne. Relue a chaque affichage — un joueur peut arriver
+    /// entre deux annonces.
+    /// </summary>
+    private string Locale() => CabinetAnnounceText.Resolve(
+        _session?.Get()?.Locale,
+        RetroBat.Domain.Services.ApiExposeProfileResolver.ResolveLanguageCode(
+            null, _options.CurrentValue.ApiSettings.LanguageProfile));
 
     public sealed record AnnounceState(
         bool Visible, string? GamePath, string? GameName, string? Objective,
@@ -114,7 +128,7 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
                     return;
                 }
 
-                _form ??= new AnnounceForm(ResolveTargetScreen, () => _form?.Hide());
+                _form ??= new AnnounceForm(ResolveTargetScreen, () => _form?.Hide(), Locale());
                 _form.Configure(
                     gameName ?? string.Empty,
                     objective ?? string.Empty,
@@ -350,8 +364,13 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
             (int)(from.G + (to.G - from.G) * t),
             (int)(from.B + (to.B - from.B) * t));
 
-        public AnnounceForm(Func<Screen> resolveScreen, Action onExpired)
+        private readonly string _locale;
+
+        private string T(string key) => CabinetAnnounceText.Get(key, _locale);
+
+        public AnnounceForm(Func<Screen> resolveScreen, Action onExpired, string locale)
         {
+            _locale = locale;
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
@@ -404,7 +423,7 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
                     // Le jeu est lancé automatiquement au coup d'envoi (le hub pousse
                     // le launch à zéro) : on n'invite plus à « Appuyer sur START » —
                     // trompeur tant qu'on est dans ES / pendant le chargement.
-                    _ready.Text = "Le jeu se lance…";
+                    _ready.Text = T("launching");
                     // Filet de sécurité : l'annonce disparaît seule 20 s après
                     // le déblocage même si le hub ne la retire pas.
                     if (remain.TotalSeconds < -20)
@@ -453,12 +472,12 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
             _objective = MakeLabel(new Font("Segoe UI", 26, FontStyle.Bold), Color.FromArgb(255, 210, 87));
             _conditions = MakeLabel(new Font("Segoe UI", 13.5f, FontStyle.Bold), Color.FromArgb(200, 200, 215));
             _ready = MakeLabel(new Font("Segoe UI", 22, FontStyle.Bold), Color.White);
-            _ready.Text = "Tenez-vous prêt !";
+            _ready.Text = T("ready");
             _timer = MakeLabel(_pulseFonts[4], Color.White);
             _logo = new PictureBox { SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent };
             _qr = new PictureBox { SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.White };
             _qrHint = MakeLabel(new Font("Segoe UI", 12, FontStyle.Bold), Color.White);
-            _qrHint.Text = "📱 Scannez pour participer — vos scores à votre nom";
+            _qrHint.Text = T("scan");
             Controls.AddRange([_logo, _title, _objective, _conditions, _ready, _timer, _qr, _qrHint]);
         }
 
@@ -514,9 +533,9 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
                 _timer.Text = string.Empty;
                 // Reset explicite : sinon le label garde « Le jeu se lance… » d'un
                 // coup d'envoi précédent et l'affiche sur l'annonce/résultat suivant.
-                _ready.Text = "Tenez-vous prêt !";
+                _ready.Text = T("ready");
                 // Conditions de participation TOUJOURS annoncées, sous l'objectif.
-                _conditions.Text = conditions.Length > 0 ? "🔒 " + conditions : "Ouvert à tous";
+                _conditions.Text = conditions.Length > 0 ? "🔒 " + conditions : T("open_to_all");
             }
 
             SwapImage(ref _background, fanartPath is null ? null : Image.FromFile(fanartPath));

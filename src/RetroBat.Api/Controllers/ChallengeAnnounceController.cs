@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using RetroBat.Api.Infrastructure;
 using RetroBat.Api.Media;
 
@@ -19,13 +20,33 @@ public sealed class ChallengeAnnounceController : ControllerBase
 {
     private readonly ChallengeAnnounceOverlayService _overlay;
     private readonly LiveContestOverlayService _gameOverlay;
+    private readonly NelfePlayScoringSessionService _session;
+    private readonly IOptionsMonitor<ApiExposeOptions> _options;
 
     public ChallengeAnnounceController(
-        ChallengeAnnounceOverlayService overlay, LiveContestOverlayService gameOverlay)
+        ChallengeAnnounceOverlayService overlay, LiveContestOverlayService gameOverlay,
+        NelfePlayScoringSessionService session, IOptionsMonitor<ApiExposeOptions> options)
     {
         _overlay = overlay;
         _gameOverlay = gameOverlay;
+        _session = session;
+        _options = options;
     }
+
+    /// <summary>
+    /// La langue des annonces : celle du joueur checke-in s'il y en a un, sinon
+    /// celle de la borne. Un passant lit la langue de la salle ; un joueur
+    /// identifie lit la sienne, sans que la borne ait a basculer.
+    /// </summary>
+    private string Locale()
+    {
+        var settings = _options.CurrentValue.ApiSettings;
+        var cabinet = RetroBat.Domain.Services.ApiExposeProfileResolver.ResolveLanguageCode(
+            null, settings.LanguageProfile);
+        return CabinetAnnounceText.Resolve(_session.Get()?.Locale, cabinet);
+    }
+
+    private string T(string key) => CabinetAnnounceText.Get(key, Locale());
 
     /// <summary>État courant de l'annonce.</summary>
     [HttpGet]
@@ -77,28 +98,22 @@ public sealed class ChallengeAnnounceController : ControllerBase
         switch ((request.Phase ?? "").ToLowerInvariant())
         {
             case "press-start":
-                _gameOverlay.ShowTop("CHALLENGE",
-                    "Appuyez sur START pour commencer la partie",
-                    "Elle sera mise en pause automatiquement — prête pour le départ", 0);
+                _gameOverlay.ShowTop("CHALLENGE", T("start_title"), T("start_sub"), 0);
                 // emulatorlauncher/ES peut rester DEVANT RetroArch après le
                 // lancement : on le remet au premier plan dès qu'il a une
                 // fenêtre (même filet que Live Contest).
                 _ = FocusRetroArchWhenUpAsync();
                 break;
             case "hold":
-                _gameOverlay.ShowTop("CHALLENGE",
-                    "Ne touchez plus à rien !",
-                    "Partie en pause — départ imminent, attendez le décompte", 0);
+                _gameOverlay.ShowTop("CHALLENGE", T("hold_title"), T("hold_sub"), 0);
                 break;
             case "finished":
                 // Course : objectif atteint, le temps est pris (même scène que
                 // Live Contest « target reached »).
-                _gameOverlay.ShowCenter("🏁 Objectif atteint !",
-                    "Votre temps est enregistré — regardez le classement !", 0);
+                _gameOverlay.ShowCenter(T("reached_title"), T("reached_sub"), 0);
                 break;
             case "end":
-                _gameOverlay.ShowCenter("🏁 Challenge terminé !",
-                    request.Text ?? "Classement sur l'écran de la salle — merci d'avoir joué !", 8000);
+                _gameOverlay.ShowCenter(T("end_title"), request.Text ?? T("end_sub"), 8000);
                 break;
             default:
                 _gameOverlay.Hide();
@@ -141,7 +156,7 @@ public sealed class ChallengeAnnounceController : ControllerBase
                         await Task.Delay(wait);
                     }
 
-                    overlay.ShowCenter(n.ToString(), "Départ dans…", 0);
+                    overlay.ShowCenter(n.ToString(), T("countdown"), 0);
                 }
 
                 var final = startsAt - DateTime.UtcNow;
@@ -157,7 +172,7 @@ public sealed class ChallengeAnnounceController : ControllerBase
                 }
 
                 FocusRetroArch();
-                overlay.ShowCenter("GO !", "", 1800);
+                overlay.ShowCenter(T("go"), "", 1800);
             }
             catch (Exception)
             {

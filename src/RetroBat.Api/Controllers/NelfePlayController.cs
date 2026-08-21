@@ -50,7 +50,7 @@ public sealed class NelfePlayController : ControllerBase
         _scoringSession.Set(
             request?.PlayerCode, request?.VenueName, request?.VenueCity,
             string.IsNullOrWhiteSpace(request?.World) ? "station" : request!.World!,
-            request?.Channel, request?.ContestId);
+            request?.Channel, request?.ContestId, request?.Lng);
         var current = _scoringSession.Get();
         return Ok(new { active = current is not null, world = current?.World, venue = current?.VenueName, channel = current?.Channel, contestId = current?.ContestId });
     }
@@ -346,5 +346,6 @@ public sealed class NelfePlayController : ControllerBase
 
     public sealed record ScoringSessionRequest(
         string? PlayerCode, string? VenueName, string? VenueCity,
-        string? World = null, string? Channel = null, string? ContestId = null);
+        string? World = null, string? Channel = null, string? ContestId = null,
+        string? Lng = null);
 }
