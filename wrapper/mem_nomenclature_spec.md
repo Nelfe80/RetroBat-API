@@ -122,6 +122,30 @@ Canonical field order:
 | `player` | no | both | Player index, emitted as `PLAYER:n` in the pipe (wrapper >= 0.320) and published in `/ws/ingame` payloads (LedManager `playerField` routing, per-player widgets). |
 | `desc` | yes | both | Short English description. No `address` word, no `=`, no double quotes, max 96 chars, last field. |
 
+### Describing a score: one entry, or pieces that never overlap
+
+A score is often scattered in memory — one digit per byte, a BCD pair, an upper
+and a lower half — so the live aggregator ADDS the pieces back together, each
+weighted by what its description or its `score_mask` says.
+
+Nothing in a `.MEM` says *"this entry is the whole score"* rather than a piece of
+it. So a file must pick one of two ways, and never both:
+
+- **one entry covering the whole value** — the wide type reads it in one go
+  (`u24be`, `u32be`), and `score_mask` / `score_encoding` say how to read it;
+- **several entries, one per piece**, whose byte ranges are DISJOINT, each
+  carrying its weight.
+
+Mixing them is what breaks a score, and it happens naturally: someone adds the
+complete entry without removing the pieces it replaces. Sonic 1 read 110 for a
+score of 100 that way — a `u24be` at `0xFE26` (covering `FE26..FE28`) living
+next to the RA note's halves at `0xFE26` and `0xFE28`.
+
+The runtime defends itself: when two score parts cover a common byte, only the
+WIDEST is kept and the narrower is dropped with a warning naming both. The file
+is still wrong, though — two descriptions of the same number will mislead the
+next human who reads it.
+
 Inactive entries (`no_log`/`no_survey` true) are kept in the generated
 files with their explicit flags: the runtimes skip them at load time, and end
 users can re-enable an address by flipping the flag to `false`. The

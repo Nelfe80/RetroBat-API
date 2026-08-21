@@ -172,6 +172,19 @@ Two rules make these entries usable:
 - **`player` is mandatory.** A card is shown for *one* player, and a cabinet has several. Without it, the event has nowhere to go.
 - **The name must be the one of the content it designates**, not the one from your source. If your table says `Torch` while the game's own card shows `FIRE WATER`, write `Fire Water` — otherwise the event points at a card that does not exist.
 
+## Describing a score: one entry, or pieces that never overlap
+
+A score is often scattered in memory — one digit per byte, a BCD pair, an upper and a lower half. The aggregator therefore **adds the pieces back together**, each weighted by what its description or its `score_mask` says.
+
+But **nothing in a `.MEM` says "this entry IS the whole score"** rather than a piece of it. So pick one of two ways, never both:
+
+- **one entry covering the whole value** — a wide type reads it in one go (`u24be`, `u32be`), and `score_mask` / `score_encoding` say how to read it;
+- **several entries, one per piece**, whose byte ranges are **disjoint**, each carrying its weight.
+
+Mixing them breaks the score, and it happens on its own: someone adds the complete entry without removing the pieces it replaces. Sonic 1 read **110 for a score of 100** that way — a `u24be` at `0xFE26` (covering `FE26` to `FE28`) sitting next to the RA note's halves at `0xFE26` and `0xFE28`.
+
+The runtime defends itself: when two parts cover a common byte, **only the widest is kept**, and the other is dropped with a warning naming both. The file is still wrong, though — two descriptions of the same number will mislead the next reader.
+
 ## Translating values: `map`
 
 ```lua

@@ -172,6 +172,19 @@ Deux règles rendent ces entrées utilisables :
 - **`player` est obligatoire.** Une carte s'affiche pour *un* joueur, et une borne en a plusieurs. Sans lui, l'événement ne sait pas où aller.
 - **Le nom doit être celui du contenu qu'il désigne**, pas celui de votre source. Si votre table dit `Torch` et que la carte du jeu affiche `FIRE WATER`, écrivez `Fire Water` — sinon l'événement pointe vers une fiche qui n'existe pas.
 
+## Décrire un score : une entrée, ou des morceaux qui ne se recouvrent pas
+
+Un score est souvent éparpillé en mémoire — un chiffre par octet, une paire BCD, une moitié haute et une basse. L'agrégateur les **additionne** donc pour reconstituer le nombre, chacun pesé par ce que dit sa description ou son `score_mask`.
+
+Mais **rien dans un `.MEM` ne dit « cette entrée EST le score entier »** plutôt qu'un morceau. Il faut donc choisir l'une des deux écritures, jamais les deux :
+
+- **une entrée qui couvre tout** — un type large la lit d'un coup (`u24be`, `u32be`), et `score_mask` / `score_encoding` disent comment l'interpréter ;
+- **plusieurs entrées, une par morceau**, dont les plages d'octets sont **disjointes**, chacune portant son poids.
+
+Les mélanger casse le score, et ça arrive tout seul : on ajoute l'entrée complète sans retirer les morceaux qu'elle remplace. Sonic 1 affichait ainsi **110 pour un score de 100** — une `u24be` en `0xFE26` (qui couvre `FE26` à `FE28`) posée à côté des deux moitiés de la note RA, en `0xFE26` et `0xFE28`.
+
+Le runtime se défend : quand deux morceaux couvrent un octet commun, **seul le plus large est gardé**, et l'autre est ignoré avec un avertissement qui les nomme tous les deux. Le fichier reste faux pour autant — deux descriptions du même nombre égareront le prochain lecteur.
+
 ## Traduire les valeurs : `map`
 
 ```lua
