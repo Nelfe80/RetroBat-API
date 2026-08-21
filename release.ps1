@@ -68,6 +68,10 @@ $ex = @(
     "-x!$name\tools\ffmpeg", "-x!$name\tools\imagemagick", "-x!$name\tools\translateLocally",
     # resources\ra : donnees RetroAchievements personnelles de la borne (leaderboards).
     "-x!$name\resources\ra",
+    # resources\ram\.user : definitions .MEM PERSONNELLES (couche perso, pre-integration
+    # communautaire), gitignorees comme media\user. Le reste de resources\ram (les defs
+    # publiques) part bien dans le Data Pack ; seul .user reste local.
+    "-x!$name\resources\ram\.user",
     # Page de diagnostic ScreenScraper : outil local, jamais distribue. Recursive : elle
     # vit sous resources\scraping, pas a la racine.
     '-xr!ScreenScraper.html'
@@ -90,7 +94,7 @@ $listing = & $sz l $full
 # tools\*.py, resources\ra et ScreenScraper.html sont passes au travers. Il couvre
 # desormais ce que les exclusions ci-dessus retirent, pour que les deux listes se
 # contredisent bruyamment si l'une d'elles derive.
-$leaks = $listing | Select-String '\.env|\.bak|\.ps1$|\.py$|\\media\\|\\src\\|\\tests\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db|\\resources\\ra\\|ScreenScraper\.html|\\tools\\(ffmpeg|imagemagick|translateLocally)\\'
+$leaks = $listing | Select-String '\.env|\.bak|\.ps1$|\.py$|\\media\\|\\src\\|\\tests\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db|\\resources\\ra\\|\\resources\\ram\\\.user\\|ScreenScraper\.html|\\tools\\(ffmpeg|imagemagick|translateLocally)\\'
 if ($leaks) { throw "FUITE DETECTEE dans l'archive : $($leaks[0])" }
 # La cle API de la borne ne doit JAMAIS etre committee/distribuee : le defaut reste vide
 # (chaque borne genere la sienne au 1er run). On bloque si une valeur traine.
