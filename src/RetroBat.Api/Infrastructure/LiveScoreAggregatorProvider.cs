@@ -229,7 +229,13 @@ public sealed class LiveScoreAggregatorProvider : IProvider
             Encoding: transform.Encoding,
             Value: transform.Value,
             Weight: transform.Weight,
-            Description: description);
+            Description: description)
+        {
+            First = numericPartAddress,
+            Width = TryParseAddress(address, out var widthAddress)
+                ? ResolvePartWidth(definitionFile, widthAddress, description)
+                : 1
+        };
 
         PublishIfChanged(
             source,
@@ -380,7 +386,10 @@ public sealed class LiveScoreAggregatorProvider : IProvider
 
             accumulator.DefinitionFile = definitionFile;
             accumulator.Confidence = ChooseConfidence(accumulator.Confidence, confidence);
-            accumulator.Parts[part.Key] = part;
+            if (!TryKeepWidest(accumulator, part))
+            {
+                return;
+            }
 
             var score = accumulator.Parts.Values.Sum(item => item.Value * item.Weight);
             if (score < 0 || score == accumulator.LastPublishedScore)
@@ -801,6 +810,86 @@ public sealed class LiveScoreAggregatorProvider : IProvider
         var zeroesAfter = mask.Length - mask.LastIndexOf('X') - 1;
         transform = new ScorePartTransform(DecodeBcdByte(rawValueHex, fallbackValue), Pow10(zeroesAfter), "score-mask");
         return true;
+    }
+
+    /// <summary>How many bytes a .MEM type reads. Unknown types read one byte, like the
+    /// runtime does.</summary>
+    private static int TypeWidth(string type) => type.ToLowerInvariant() switch
+    {
+        "u16le" or "u16be" => 2,
+        "u24le" or "u24be" => 3,
+        "u32le" or "u32be" => 4,
+        _ => 1
+    };
+
+    /// <summary>The width the definition declares for the entry that fired, matched on
+    /// ADDRESS AND DESCRIPTION: several entries can share an address, and the one that fired
+    /// is the one whose description the event carries.</summary>
+    private int ResolvePartWidth(string definitionFile, long address, string description)
+    {
+        var rules = GetScoreDefinition(definitionFile).Rules
+            .Where(item => item.Address == address)
+            .ToList();
+        if (rules.Count == 0) return 1;
+        var exact = rules.FirstOrDefault(item =>
+            item.Description.Equals(description, StringComparison.OrdinalIgnoreCase));
+        return TypeWidth((exact ?? rules[0]).Type);
+    }
+
+    /// <summary>
+    /// Files the part, unless a WIDER one already covers its bytes.
+    ///
+    /// A score is often scattered — one digit per byte, a BCD pair, an upper and a lower
+    /// half — and this provider exists to add those back together. Nothing in a .MEM says
+    /// "this entry IS the whole score" rather than a piece of it, so everything is treated
+    /// as a piece.
+    ///
+    /// The ranges say it though: two pieces of one number cannot cover the same byte. When
+    /// they do, one of them describes the whole thing, and it is the wider one. Sonic's
+    /// score arrived three times — the two halves of the RA note, and a u24be covering both,
+    /// added by hand without removing them — and 100 was displayed as 110.
+    ///
+    /// The narrower part is dropped, said once per pair: a file that describes the same
+    /// score twice is worth fixing, and silence would let it live forever.
+    /// </summary>
+    private bool TryKeepWidest(ScoreAccumulator accumulator, ScorePartState part)
+    {
+        var covered = accumulator.Parts.Values
+            .Where(item => item.Key != part.Key && item.Overlaps(part))
+            .ToList();
+
+        foreach (var other in covered.Where(item => item.Width >= part.Width))
+        {
+            WarnOverlap(accumulator.DefinitionFile, part, other);
+            return false;
+        }
+
+        foreach (var narrower in covered)
+        {
+            WarnOverlap(accumulator.DefinitionFile, narrower, part);
+            accumulator.Parts.Remove(narrower.Key);
+        }
+
+        accumulator.Parts[part.Key] = part;
+        return true;
+    }
+
+    private readonly HashSet<string> _overlapsLogged = new(StringComparer.OrdinalIgnoreCase);
+
+    private void WarnOverlap(string definitionFile, ScorePartState dropped, ScorePartState kept)
+    {
+        var key = $"{definitionFile}|{dropped.Address}|{kept.Address}";
+        lock (_overlapsLogged)
+        {
+            if (!_overlapsLogged.Add(key)) return;
+        }
+
+        _logger.LogWarning(
+            "Score: {Dropped} ({DroppedWidth} octet(s), \"{DroppedDesc}\") est couvert par {Kept} " +
+            "({KeptWidth} octet(s), \"{KeptDesc}\") — le morceau le plus etroit est ignore. " +
+            "Deux entrees decrivent le meme score dans {Definition}.",
+            dropped.Address, dropped.Width, dropped.Description,
+            kept.Address, kept.Width, kept.Description, definitionFile);
     }
 
     private static bool AreContiguous(IEnumerable<long> addresses)
@@ -1282,7 +1371,19 @@ public sealed class LiveScoreAggregatorProvider : IProvider
         string Encoding,
         long Value,
         long Weight,
-        string Description);
+        string Description)
+    {
+        /// <summary>First byte read, and how many. Two parts of ONE score cannot cover the
+        /// same byte: whoever overlaps is not a part, it is the whole thing said twice.</summary>
+        public long First { get; init; }
+
+        public int Width { get; init; } = 1;
+
+        public bool Overlaps(ScorePartState other)
+            => Width > 0 && other.Width > 0
+               && First < other.First + other.Width
+               && other.First < First + Width;
+    }
 
     private sealed record ScorePartTransform(long Value, long Weight, string Encoding);
 
