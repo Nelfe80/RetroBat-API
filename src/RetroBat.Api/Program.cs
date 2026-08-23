@@ -263,6 +263,7 @@ builder.Services.AddSingleton<MediaLocalizationResolver>();
 builder.Services.AddSingleton<LocalMediaIndexService>();
 builder.Services.AddSingleton<MediaNeedEvaluator>();
 builder.Services.AddSingleton<MediaQualificationService>();
+builder.Services.AddSingleton<GamelistMediaCatalogReader>();
 builder.Services.AddSingleton<IMediaDiscoveryInvalidator, MediaDiscoveryInvalidator>();
 builder.Services.AddSingleton<EsProjectionService>();
 builder.Services.AddSingleton<MameGamelistGroupIndex>();

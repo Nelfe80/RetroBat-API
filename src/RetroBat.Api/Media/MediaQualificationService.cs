@@ -158,4 +158,56 @@ public sealed class MediaQualificationService
             _ => false
         };
     }
+
+    // Durable gamelist tags whose NAME already names a kind (§7.2 source 1: explicit-gamelist).
+    // The generic slots image / marquee / thumbnail are deliberately ABSENT (§7.3): they never
+    // imply a kind on their own — the kind comes from qualifying the file they point at.
+    private static readonly IReadOnlyDictionary<string, string> GamelistTagKinds =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["fanart"] = MediaKinds.Fanart,
+            ["video"] = MediaKinds.Video,
+            ["manual"] = MediaKinds.Manual,
+            ["magazine"] = MediaKinds.Magazine,
+            ["map"] = MediaKinds.Map,
+            ["bezel"] = MediaKinds.Bezel,
+            ["cartridge"] = MediaKinds.Cartridge,
+            ["boxart"] = MediaKinds.BoxFront,
+            ["box"] = MediaKinds.BoxFront,
+            ["titleshot"] = MediaKinds.Image,
+            ["mix"] = MediaKinds.MixRbv2
+        };
+
+    /// <summary>The KIND a DURABLE gamelist tag names on its own (explicit-gamelist). False for the
+    /// generic slots image / marquee / thumbnail, which never imply a kind (§7.3).</summary>
+    public bool TryQualifyByGamelistTag(string tag, out string kind)
+    {
+        if (!string.IsNullOrWhiteSpace(tag) && GamelistTagKinds.TryGetValue(tag, out var found))
+        {
+            kind = found;
+            return true;
+        }
+
+        kind = string.Empty;
+        return false;
+    }
+
+    /// <summary>The KIND a file name suffix implies, IGNORING the folder — for a gamelist medium
+    /// that can live in any folder (downloaded_images, media, …) where the tag is the authority and
+    /// the file name is only a secondary signal. Shares the same suffix table (and its precedence)
+    /// as <see cref="TryQualify"/>. False when no known suffix matches.</summary>
+    public bool TryQualifyByFilename(string fileStem, out string kind)
+    {
+        foreach (var (suffix, candidateKind) in SuffixKinds)
+        {
+            if (fileStem.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                kind = candidateKind;
+                return true;
+            }
+        }
+
+        kind = string.Empty;
+        return false;
+    }
 }
