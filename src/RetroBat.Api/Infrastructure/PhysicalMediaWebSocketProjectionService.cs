@@ -2028,7 +2028,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// (playback, served by <c>Media.Video</c>), and <c>dmd-animation</c> (a LIST served by
     /// <c>Media.Dmd</c> — a one-per-kind table would keep only one frame).
     /// </summary>
-    private static readonly IReadOnlySet<string> DisplayableMediaKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    internal static readonly IReadOnlySet<string> DisplayableMediaKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         MediaKinds.Wheel, MediaKinds.WheelCarbon, MediaKinds.WheelSteel, MediaKinds.Logo, MediaKinds.SteamGrid,
         MediaKinds.Marquee, MediaKinds.GeneratedMarquee, MediaKinds.ScreenMarquee, MediaKinds.ScreenMarqueeSmall,
@@ -2474,7 +2474,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         return fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IEnumerable<string> ResolveGameRoots(string systemId, string gameSlug)
+    internal static IEnumerable<string> ResolveGameRoots(string systemId, string gameSlug)
     {
         yield return Path.Combine(RetroBatPaths.MediaUserSystemsRoot, systemId, "games", gameSlug);
         yield return Path.Combine(RetroBatPaths.MediaSystemsRoot, systemId, "games", gameSlug);

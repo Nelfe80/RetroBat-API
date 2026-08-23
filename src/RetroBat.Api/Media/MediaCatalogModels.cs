@@ -53,3 +53,51 @@ public static class MediaQualifications
     public const string FolderConvention = "folder-convention";
     public const string Heuristic = "heuristic";
 }
+
+/// <summary>LOT 4 — the outcome of a resolution (§9.2). MISSING: nothing for the kind. EXACT: a
+/// candidate that satisfies the requested profile. FALLBACK: the best available, but its
+/// region/language/style does not match what was asked.</summary>
+public enum MediaResolveState
+{
+    Missing,
+    Exact,
+    Fallback
+}
+
+/// <summary>LOT 4 — ask the catalog for one media KIND of a game, optionally for a region /
+/// language / style profile. A null part of the profile means "no preference".</summary>
+public sealed record MediaResolveRequest(
+    string SystemId,
+    string GameSlug,
+    string Kind,
+    string? Region = null,
+    string? Language = null,
+    string? Style = null);
+
+/// <summary>LOT 4 — what the resolver returns: the chosen asset (root-transparent via its
+/// PathRoot), the kind it satisfies and the qualification source it came from.</summary>
+public sealed record MediaResolveResult(
+    MediaResolveState State,
+    MediaAssetRef? Asset,
+    string? Kind,
+    string? Source)
+{
+    public static readonly MediaResolveResult Missing = new(MediaResolveState.Missing, null, null, null);
+}
+
+/// <summary>LOT 4 — a game's media from EVERY source unified: the user gamelist bindings and all
+/// qualified candidates (gamelist + canonical store), each still carrying its provenance. The
+/// resolver reduces this to one asset per request; the catalog never picks on its own.</summary>
+public sealed class GameMediaCatalog
+{
+    public IReadOnlyList<MediaBinding> Bindings { get; }
+    public IReadOnlyList<QualifiedMediaCandidate> Candidates { get; }
+
+    public GameMediaCatalog(
+        IReadOnlyList<MediaBinding> bindings,
+        IReadOnlyList<QualifiedMediaCandidate> candidates)
+    {
+        Bindings = bindings;
+        Candidates = candidates;
+    }
+}
