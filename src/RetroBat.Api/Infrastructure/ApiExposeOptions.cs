@@ -259,6 +259,13 @@ public class ApiExposeOptions
         /// older MarqueeManager never sees it, a newer one uses it to resolve deterministically
         /// instead of guessing plugin-then-RetroBat. Turn on once the consumers understand it.</summary>
         public bool EmitPathRoot { get; set; } = false;
+
+        /// <summary>LOT 6 (2/2) — let the resolver-driven <see cref="RetroBat.Api.Media.MediaScrapePlanner"/>
+        /// SUPPRESS a scrape need when the canonical store already satisfies the kind (local-first,
+        /// no redundant re-scrape). OFF by default: the scrape-need decision stays purely slot-based.
+        /// The planner may only remove a need, never add one, so a genuinely missing kind is never
+        /// skipped. Validate with a scrape canary before turning on.</summary>
+        public bool ScrapePlannerEnabled { get; set; } = false;
     }
 
     public class ApiSettingsOptions

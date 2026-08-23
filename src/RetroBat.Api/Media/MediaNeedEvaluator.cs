@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using RetroBat.Api.Infrastructure;
 using RetroBat.Domain.Models;
 using RetroBat.Domain.Paths;
 using RetroBat.Domain.Services;
@@ -9,17 +11,26 @@ public class MediaNeedEvaluator
     private readonly MediaSystemRules _systemRules;
     private readonly EmulationStationSettingsService _settingsService;
     private readonly RomMetadataResolver _romMetadataResolver;
+    private readonly GameMediaCatalogService _catalog;
+    private readonly MediaScrapePlanner _scrapePlanner;
+    private readonly IOptionsMonitor<ApiExposeOptions> _options;
 
     private static readonly char[] IdentitySeparators = [',', '/', ';', '+', ' '];
 
     public MediaNeedEvaluator(
         MediaSystemRules systemRules,
         EmulationStationSettingsService settingsService,
-        RomMetadataResolver romMetadataResolver)
+        RomMetadataResolver romMetadataResolver,
+        GameMediaCatalogService catalog,
+        MediaScrapePlanner scrapePlanner,
+        IOptionsMonitor<ApiExposeOptions> options)
     {
         _systemRules = systemRules;
         _settingsService = settingsService;
         _romMetadataResolver = romMetadataResolver;
+        _catalog = catalog;
+        _scrapePlanner = scrapePlanner;
+        _options = options;
     }
 
     public MediaProjectionPlan BuildPlan(MediaPrefetchRequest request, string normalizedSystemId, string gameSlug, string frontendSystemId)
@@ -95,7 +106,37 @@ public class MediaNeedEvaluator
             AddNeed(plan, request, normalizedSystemId, frontendSystemId, gameSlug, MediaKinds.ThemeHb, "themes");
         }
 
+        if (_options.CurrentValue.MediaDiscovery?.ScrapePlannerEnabled == true)
+        {
+            ApplyResolverDrivenNeeds(plan, normalizedSystemId, gameSlug, request.GamePath);
+        }
+
         return plan;
+    }
+
+    /// <summary>LOT 6 — reconcile the raw-slot needs with the resolver's view of the catalog. The
+    /// planner only ever tells us a kind is STILL missing after looking at the canonical store too;
+    /// a kind it does not return is already satisfied, so we suppress its scrape. This may only turn
+    /// a need off (never on), keeping the behavior local-first without any under-scrape risk.</summary>
+    private void ApplyResolverDrivenNeeds(MediaProjectionPlan plan, string systemId, string gameSlug, string? romPath)
+    {
+        var catalog = _catalog.BuildCatalog(systemId, gameSlug, romPath);
+        var stillNeeded = _scrapePlanner
+            .Plan(catalog, plan.Needs.Select(n => n.Kind), ScrapeNeedMode.MissingOnly)
+            .Select(n => n.Kind)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        SuppressSatisfiedNeeds(plan.Needs, stillNeeded);
+    }
+
+    /// <summary>The merge rule (testable): a need stays missing only if it was already missing AND
+    /// the resolver could not satisfy it. The planner can subtract a scrape, never add one.</summary>
+    internal static void SuppressSatisfiedNeeds(IEnumerable<MediaNeed> needs, ISet<string> stillNeededKinds)
+    {
+        foreach (var need in needs)
+        {
+            need.IsMissing = need.IsMissing && stillNeededKinds.Contains(need.Kind);
+        }
     }
 
     /// <summary>Splits a gamelist region/lang string ("USA, Europe") into distinct
