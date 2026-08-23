@@ -19,8 +19,6 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
     [
         ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".pdf", ".mp4", ".mkv", ".avi", ".webm", ".zip"
     ];
-    private static readonly string[] ImageExtensions = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"];
-    private static readonly string[] VideoExtensions = [".mp4", ".mkv", ".avi", ".webm"];
     private static readonly IReadOnlyDictionary<string, string> DisabledSettingsAfterRefusal =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -39,48 +37,6 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
             ["global.apiexpose.collections_pack_manager.pack_installer.enabled"] = "0"
         };
 
-    private static readonly (string Suffix, string Kind)[] SuffixKinds =
-    [
-        ("-video-normalized", MediaKinds.VideoNormalized),
-        ("-screenmarqueesmall", MediaKinds.ScreenMarqueeSmall),
-        ("-screenmarquee", MediaKinds.ScreenMarquee),
-        ("-wheelcarbon", MediaKinds.WheelCarbon),
-        ("-wheelsteel", MediaKinds.WheelSteel),
-        ("-boxtexture", MediaKinds.BoxTexture),
-        ("-steamgrid", MediaKinds.SteamGrid),
-        ("-mixrbv1", MediaKinds.MixRbv1),
-        ("-mixrbv2", MediaKinds.MixRbv2),
-        ("-thumbnail", MediaKinds.Thumbnail),
-        ("-screenshot", MediaKinds.Thumbnail),
-        ("-titleshot", MediaKinds.Image),
-        ("-boxside", MediaKinds.BoxSide),
-        ("-figurine", MediaKinds.Figurine),
-        ("-cartridge", MediaKinds.Cartridge),
-        ("-support2d", MediaKinds.Cartridge),
-        ("-supporttexture", MediaKinds.Label),
-        ("-support-texture", MediaKinds.Label),
-        ("-label", MediaKinds.Label),
-        ("-themehb", MediaKinds.ThemeHb),
-        ("-marquee", MediaKinds.Marquee),
-        ("-boxback", MediaKinds.BoxBack),
-        ("-boxfront", MediaKinds.BoxFront),
-        ("-box2d", MediaKinds.BoxFront),
-        ("-box3d", MediaKinds.Box3d),
-        ("-box", MediaKinds.BoxFront),
-        ("-fanart", MediaKinds.Fanart),
-        ("-bezel", MediaKinds.Bezel),
-        ("-image", MediaKinds.Image),
-        ("-thumb", MediaKinds.Thumbnail),
-        ("-logo", MediaKinds.Logo),
-        ("-wheel", MediaKinds.Wheel),
-        ("-flyer", MediaKinds.Flyer),
-        ("-manual", MediaKinds.Manual),
-        ("-magazine", MediaKinds.Magazine),
-        ("-video", MediaKinds.Video),
-        ("-map", MediaKinds.Map),
-        ("-mix", MediaKinds.MixRbv2)
-    ];
-
     private readonly ApiExposeRuntimeOptionsService _runtimeOptions;
     private readonly IOptionsMonitor<ApiExposeOptions> _options;
     private readonly SystemIdNormalizer _systemIdNormalizer;
@@ -90,6 +46,7 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
     private readonly IStartupOverlayService _startupOverlayService;
     private readonly IEmulationStationNotificationService _notificationService;
     private readonly IEsSettingsStore _settingsStore;
+    private readonly MediaQualificationService _qualification;
     private readonly ILogger<RomsMediaCanonicalMigrationHostedService>? _logger;
     private IReadOnlyList<string>? _migrationWaitMessages;
     private CancellationTokenSource? _startupMigrationCts;
@@ -105,6 +62,7 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
         IStartupOverlayService startupOverlayService,
         IEmulationStationNotificationService notificationService,
         IEsSettingsStore settingsStore,
+        MediaQualificationService qualification,
         ILogger<RomsMediaCanonicalMigrationHostedService>? logger = null)
     {
         _runtimeOptions = runtimeOptions;
@@ -116,6 +74,7 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
         _startupOverlayService = startupOverlayService;
         _notificationService = notificationService;
         _settingsStore = settingsStore;
+        _qualification = qualification;
         _logger = logger;
     }
 
@@ -870,7 +829,7 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
         }
 
         var fileStem = Path.GetFileNameWithoutExtension(sourcePath);
-        if (!TryParseProjectedMediaName(legacyFolder, fileStem, extension, out var projectionBaseName, out kind))
+        if (!_qualification.TryQualify(legacyFolder, fileStem, extension, out var projectionBaseName, out kind, out _))
         {
             skipReason = "unrecognized-name";
             return false;
@@ -910,82 +869,6 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
     {
         var relative = Path.GetRelativePath(RetroBatPaths.MediaSystemsRoot, systemTargetPath);
         return Path.Combine(RetroBatPaths.MediaUserSystemsRoot, relative);
-    }
-
-    private static bool TryParseProjectedMediaName(string legacyFolder, string fileStem, string extension, out string projectionBaseName, out string kind)
-    {
-        projectionBaseName = string.Empty;
-        kind = string.Empty;
-
-        foreach (var (suffix, candidateKind) in SuffixKinds)
-        {
-            if (!fileStem.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (!IsKindAllowedForFolder(candidateKind, legacyFolder))
-            {
-                return false;
-            }
-
-            projectionBaseName = fileStem[..^suffix.Length];
-            kind = candidateKind;
-            return !string.IsNullOrWhiteSpace(projectionBaseName);
-        }
-
-        if (legacyFolder.Equals("themehb", StringComparison.OrdinalIgnoreCase) ||
-            legacyFolder.Equals("themes", StringComparison.OrdinalIgnoreCase))
-        {
-            projectionBaseName = fileStem;
-            kind = MediaKinds.ThemeHb;
-            return !string.IsNullOrWhiteSpace(projectionBaseName);
-        }
-
-        if (TryResolveDefaultKind(legacyFolder, extension, out kind))
-        {
-            projectionBaseName = fileStem;
-            return !string.IsNullOrWhiteSpace(projectionBaseName);
-        }
-
-        return false;
-    }
-
-    private static bool TryResolveDefaultKind(string legacyFolder, string extension, out string kind)
-    {
-        kind = string.Empty;
-        var normalizedFolder = legacyFolder.ToLowerInvariant();
-        if (normalizedFolder is "videos" && VideoExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
-        {
-            kind = MediaKinds.Video;
-            return true;
-        }
-
-        if (normalizedFolder is "manuals" && extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-        {
-            kind = MediaKinds.Manual;
-            return true;
-        }
-
-        if (normalizedFolder is "images" && ImageExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
-        {
-            kind = MediaKinds.Thumbnail;
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsKindAllowedForFolder(string kind, string legacyFolder)
-    {
-        return legacyFolder.ToLowerInvariant() switch
-        {
-            "images" => kind is not MediaKinds.Video and not MediaKinds.VideoNormalized and not MediaKinds.Manual and not MediaKinds.ThemeHb,
-            "videos" => kind is MediaKinds.Video or MediaKinds.VideoNormalized,
-            "manuals" => kind is MediaKinds.Manual,
-            "themehb" or "themes" => kind is MediaKinds.ThemeHb,
-            _ => false
-        };
     }
 
     private async Task MigrateFileAsync(
