@@ -236,6 +236,12 @@ public class ApiExposeOptions
         /// <summary>LRU ceiling on cached directories.</summary>
         public int MaxCachedDirectories { get; set; } = 4096;
 
+        /// <summary>LOT 7 — let the game snapshots FILL a missing media kind from the user gamelist:
+        /// a roms/ file the gamelist references but that was never migrated into the canonical store
+        /// becomes visible. OFF by default and ADDITIVE — it only adds a kind the canonical store
+        /// lacks, never overrides a canonical asset — so it ships dark and is turned on by the canary.</summary>
+        public bool GamelistMediaEnabled { get; set; } = false;
+
         /// <summary>HP5 — stamp each stream asset with PathRoot ("apiexpose" / "retrobat" /
         /// "external-local"), the root its relative Path is resolved against. OFF by default and
         /// additive (the field is omitted from the JSON when off, SnapshotVersion stays 2): an

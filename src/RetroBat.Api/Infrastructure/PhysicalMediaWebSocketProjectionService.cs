@@ -29,6 +29,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     private readonly GameNameNormalizer _gameNameNormalizer;
     private readonly IMediaAliasStore _mediaAliasStore;
     private readonly ApiExposeRuntimeOptionsService _runtimeOptions;
+    private readonly GamelistMediaCatalogReader _gamelistReader;
+    private readonly MediaResolver _mediaResolver;
     private readonly ILogger<PhysicalMediaWebSocketProjectionService>? _logger;
     private readonly HttpClient _esHttpClient = new()
     {
@@ -51,6 +53,11 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// reason as DirectoryCache (CreateAsset is static); off until MediaDiscovery.EmitPathRoot.</summary>
     private static volatile bool _emitPathRoot;
 
+    /// <summary>LOT 7 — whether the game snapshots FILL missing kinds from the user gamelist (roms/
+    /// media referenced but not in the canonical store). Off until MediaDiscovery.GamelistMediaEnabled;
+    /// additive — it only ADDS a kind the canonical table lacks, never overrides a canonical asset.</summary>
+    private static volatile bool _gamelistMediaEnabled;
+
     public PhysicalMediaWebSocketProjectionService(
         IEventBus eventBus,
         ApiContext context,
@@ -58,6 +65,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         GameNameNormalizer gameNameNormalizer,
         IMediaAliasStore mediaAliasStore,
         ApiExposeRuntimeOptionsService runtimeOptions,
+        GamelistMediaCatalogReader gamelistReader,
+        MediaResolver mediaResolver,
         ILocalizedTextStore localizedText,
         IEsSettingsStore esSettings,
         IOptionsMonitor<ApiExposeOptions> options,
@@ -71,6 +80,8 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         _gameNameNormalizer = gameNameNormalizer;
         _mediaAliasStore = mediaAliasStore;
         _runtimeOptions = runtimeOptions;
+        _gamelistReader = gamelistReader;
+        _mediaResolver = mediaResolver;
         _logger = logger;
 
         ApplyDiscoveryOptions(options.CurrentValue);
@@ -86,6 +97,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             NegativeTtlSeconds: media.NegativeTtlSeconds,
             MaxDirectories: media.MaxCachedDirectories));
         _emitPathRoot = media.EmitPathRoot;
+        _gamelistMediaEnabled = media.GamelistMediaEnabled;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -311,6 +323,10 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
             var marquee = BuildGameMarqueeMedia(roots, fallbackSystemRoots);
 
+            // LOT 7 — one merged game asset table for all three surfaces: canonical store, plus a
+            // fill from the user gamelist when the flag is on (off by default = the old table).
+            var gameAssets = BuildGameAssets(systemId, gameSlug, selected.GamePath, roots);
+
             // Built once for the whole batch, and BEFORE the first publish: a marquee
             // prints the game's name, its genre, its description. Computing it after
             // meant the marquee snapshot never carried it, and a template that asked for
@@ -335,7 +351,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // path cannot tell whose art it is. These two tables can: each holds
                     // only what that scope really owns, and a key is absent when the file
                     // is. The legacy fields are untouched.
-                    Assets = BuildAssetTable(roots, DisplayableMediaKinds),
+                    Assets = gameAssets,
                     SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, DisplayableMediaKinds),
                     Text = text,
                     Generation = ResolveGameGenerationState(roots),
@@ -364,7 +380,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // A topper shows more than a topper: the game's identity and the
                     // printed matter that used to sit above the cabinet. Self-sufficient
                     // stream — no second subscription to dress this surface.
-                    Assets = BuildAssetTable(roots, DisplayableMediaKinds),
+                    Assets = gameAssets,
                     SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, DisplayableMediaKinds),
                     Text = text,
                     Latency = BuildSnapshotLatency(trigger, selectionSequence, selection.SelectionKey, ResolveReceivedAtUtc(trigger), DateTime.UtcNow, perf, "projection")
@@ -396,7 +412,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     Text = text,
                     // Composing a card takes more than the cards: the logo, the box, a
                     // fanart to sit behind them, and what the buttons DO.
-                    Assets = BuildAssetTable(roots, DisplayableMediaKinds),
+                    Assets = gameAssets,
                     SystemAssets = BuildAssetTable(fallbackSystemRoots, DisplayableMediaKinds),
                     // keyed by ROM NAME, not by the media slug: dynpanels are named after
                     // the rom file ("1943.json"), and a media folder is a slug that often
@@ -958,6 +974,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
             var selection = BuildGameSelection(selectionSequence, frontendSystemId, systemId, gameSlug, selected, state);
             var marquee = BuildGameMarqueeMedia(roots, fallbackSystemRoots);
+            var gameAssets = BuildGameAssets(systemId, gameSlug, selected.GamePath, roots); // LOT 7
             var text = await BuildTextBlockAsync(systemId, gameSlug, selected.Details, roots);
 
             await _eventBus.PublishAsync(new EventEnvelope
@@ -978,7 +995,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // path cannot tell whose art it is. These two tables can: each holds
                     // only what that scope really owns, and a key is absent when the file
                     // is. The legacy fields are untouched.
-                    Assets = BuildAssetTable(roots, DisplayableMediaKinds),
+                    Assets = gameAssets,
                     SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, DisplayableMediaKinds),
                     Text = text,
                     Generation = ResolveGameGenerationState(roots),
@@ -2040,6 +2057,75 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         MediaKinds.Cartridge, MediaKinds.Label, MediaKinds.Figurine, MediaKinds.Bezel,
         MediaKinds.InstructionCard, MediaKinds.Map
     };
+
+    /// <summary>
+    /// LOT 7 — the game's canonical asset table, plus (only when MediaDiscovery.GamelistMediaEnabled
+    /// is on) any kind the canonical store LACKS, filled from the user gamelist. So a roms/ medium the
+    /// gamelist references but that was never migrated becomes visible, WITHOUT ever overriding a
+    /// canonical asset. Off by default → the table is byte-for-byte the old one. Uses the LOT 3 reader
+    /// and the LOT 4 resolver; the filled asset carries PathRoot "retrobat", so MarqueeManager resolves
+    /// it against the RetroBat root (HP5).
+    /// </summary>
+    private IReadOnlyDictionary<string, MediaStreamAsset> BuildGameAssets(
+        string systemId, string gameSlug, string? gamePath, IReadOnlyList<string> roots)
+    {
+        var canonical = BuildAssetTable(roots, DisplayableMediaKinds);
+        if (!_gamelistMediaEnabled || string.IsNullOrWhiteSpace(gamePath))
+        {
+            return canonical;
+        }
+
+        GamelistGameMedia? gamelist;
+        try
+        {
+            gamelist = _gamelistReader.GetGameMedia(systemId, gamePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger?.LogDebug(ex, "Gamelist media fill skipped for {System}/{Game}.", systemId, gameSlug);
+            return canonical;
+        }
+
+        if (gamelist == null || gamelist.Candidates.Count == 0)
+        {
+            return canonical;
+        }
+
+        var merged = new Dictionary<string, MediaStreamAsset>(canonical, StringComparer.OrdinalIgnoreCase);
+        var catalog = new GameMediaCatalog(gamelist.Bindings, gamelist.Candidates);
+        foreach (var kind in DisplayableMediaKinds)
+        {
+            if (merged.ContainsKey(kind)) continue; // fill gaps only: a canonical asset always wins
+
+            var result = _mediaResolver.Resolve(catalog, new MediaResolveRequest(systemId, gameSlug, kind));
+            if (result.State != MediaResolveState.Missing && result.Asset is { } asset)
+            {
+                merged[kind] = ToStreamAsset(kind, asset);
+            }
+        }
+
+        return merged;
+    }
+
+    /// <summary>A resolved catalog asset (LOT 4 <see cref="MediaAssetRef"/>) turned into the
+    /// projection DTO, carrying its PathRoot so the consumer resolves it against the right root (HP5).</summary>
+    private static MediaStreamAsset ToStreamAsset(string kind, MediaAssetRef asset)
+    {
+        var fileName = Path.GetFileName(asset.Path);
+        return new MediaStreamAsset(
+            Kind: kind,
+            Origin: asset.Origin,
+            Path: asset.Path,
+            FileName: fileName,
+            Stem: Path.GetFileNameWithoutExtension(fileName),
+            Extension: Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant(),
+            Length: asset.Length ?? 0,
+            LastWriteTimeUtc: asset.LastWriteTimeUtc ?? default,
+            Url: asset.Url ?? string.Empty)
+        {
+            PathRoot = asset.PathRoot
+        };
+    }
 
     private static MediaStreamAsset CreateAsset(string path)
     {
