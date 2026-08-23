@@ -2553,6 +2553,21 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         return null;
     }
 
+    /// <summary>LOT 5 — gamelists must never carry an empty media tag. When the policy leaves a slot
+    /// unwritten, drop the element if it is present but empty (legacy write helpers dropped empties;
+    /// this preserves that hygiene). A non-empty binding is never touched.</summary>
+    internal static bool RemoveEmptyMediaSlot(XElement gameNode, string slot)
+    {
+        var element = gameNode.Element(slot);
+        if (element is not null && string.IsNullOrWhiteSpace(element.Value))
+        {
+            element.Remove();
+            return true;
+        }
+
+        return false;
+    }
+
     /// <summary>LOT 5 wrapper over <see cref="TrySetVisibleSlotElement"/> (image/marquee/thumbnail).
     /// Gate off → legacy overwrite; on → FillMissing, and never removes a slot it does not own.</summary>
     private bool SetVisibleMediaSlotWithPolicy(XElement gameNode, string systemId, string romPath, string slot, string value)
@@ -2563,7 +2578,13 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         }
 
         var toWrite = ResolveInPlaceMediaSlotWrite(gameNode, systemId, romPath, slot, value);
-        return toWrite is not null && TrySetVisibleSlotElement(gameNode, slot, toWrite);
+        if (toWrite is not null)
+        {
+            return TrySetVisibleSlotElement(gameNode, slot, toWrite);
+        }
+
+        // Preserving (or nothing to write): never leave a forbidden empty tag behind.
+        return RemoveEmptyMediaSlot(gameNode, slot);
     }
 
     /// <summary>LOT 5 wrapper over the canonical needs projection (SetOrCreateElement). Gate off →
@@ -2580,7 +2601,10 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         if (toWrite is not null)
         {
             SetOrCreateElement(gameNode, slot, toWrite);
+            return;
         }
+
+        RemoveEmptyMediaSlot(gameNode, slot);
     }
 
     private void ApplyLiveOfficialSecondaryMediaElements(
