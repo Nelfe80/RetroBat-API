@@ -211,6 +211,12 @@ public class ApiExposeOptions
         public string MediaRegionMode { get; set; } = "match_rom_region";
         public string LogoRegionMode { get; set; } = "user_language";
         public string UserRegion { get; set; } = "auto";
+
+        /// <summary>LOT 5 (§10.1) — how a resolved medium is written into a generic gamelist slot.
+        /// "fill_missing" (default) fills empty slots and updates slots APIExpose still owns, but
+        /// never overwrites a user binding; "managed" behaves the same for the write decision;
+        /// "force" reallocates unconditionally (explicit user action only).</summary>
+        public string WritePolicy { get; set; } = "fill_missing";
     }
 
     /// <summary>
