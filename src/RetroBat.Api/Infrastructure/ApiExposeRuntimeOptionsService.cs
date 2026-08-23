@@ -1055,6 +1055,22 @@ public sealed class ApiExposeRuntimeOptionsService
             appOptions.Scraping.AutoScrapingEnabled;
     }
 
+    /// <summary>LOT 1 — the media-migration mode: "none" (default: no migration, no autorun),
+    /// "copy" (migrate roms/ media into the canonical store, keep the roms/ copies) or "move"
+    /// (migrate then remove the roms/ copies — the old RemoveRoms=true behaviour). es_settings
+    /// key <c>global.apiexpose.media_migration.mode</c> overrides appsettings; any unrecognised
+    /// value falls back to "none", so a migration is never started on a value nobody set.</summary>
+    public string GetMediaMigrationMode()
+    {
+        var appOptions = _options.CurrentValue;
+        var esSettings = ReadEsSettings();
+        var raw = ResolveString(
+            "global.apiexpose.media_migration.mode",
+            appOptions.MediaMigration?.Mode ?? "none",
+            esSettings).Trim().ToLowerInvariant();
+        return raw is "copy" or "move" ? raw : "none";
+    }
+
     public string GetRemoteScrapingProvider()
     {
         var appOptions = _options.CurrentValue;

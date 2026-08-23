@@ -5,6 +5,7 @@ public class ApiExposeOptions
     public bool Enabled { get; set; } = true;
     public TestModeOptions TestMode { get; set; } = new();
     public LocalMediaManagerOptions LocalMediaManager { get; set; } = new();
+    public MediaMigrationOptions MediaMigration { get; set; } = new();
     public MediaAllocationOptions MediaAllocation { get; set; } = new();
     public MediaDiscoveryOptions MediaDiscovery { get; set; } = new();
     public ApiSettingsOptions ApiSettings { get; set; } = new();
@@ -175,7 +176,30 @@ public class ApiExposeOptions
     {
         public bool Enabled { get; set; } = true;
         public bool PopulateAllGamelistsRequested { get; set; }
+
+        /// <summary>DÉPRÉCIÉ (LOT 1) — la décision « supprimer les copies roms/ après migration »
+        /// est désormais portée par <see cref="MediaMigrationOptions.Mode"/> (`move` = supprime,
+        /// `copy` = garde). Conservé pour ne pas casser les configs existantes ; il n'est plus lu
+        /// pour décider de l'autorun (qui n'a plus lieu par défaut). Sera retiré au LOT 9.</summary>
         public bool RemoveRomsMediaAfterCanonicalMigration { get; set; } = true;
+    }
+
+    /// <summary>
+    /// LOT 1 — migration des médias déjà présents sous roms/ vers le store canonique, DÉCOUPLÉE
+    /// du reste du sous-système média. Par défaut <c>none</c> : la migration ne se lance PLUS au
+    /// démarrage, et l'auto-scraping (qui écrit les nouveaux médias dans le store canonique)
+    /// continue de fonctionner normalement — c'est le mode hybride voulu. La migration devient un
+    /// acte explicite, choisi par l'opérateur.
+    /// </summary>
+    public class MediaMigrationOptions
+    {
+        /// <summary>
+        /// <c>none</c> (défaut) : aucune migration, aucun autorun.
+        /// <c>copy</c> : migrer les médias roms/ vers le store canonique, GARDER les copies roms/.
+        /// <c>move</c> : migrer puis SUPPRIMER les copies roms/ (ancien comportement
+        /// RemoveRomsMediaAfterCanonicalMigration=true).
+        /// </summary>
+        public string Mode { get; set; } = "none";
     }
 
     public class MediaAllocationOptions

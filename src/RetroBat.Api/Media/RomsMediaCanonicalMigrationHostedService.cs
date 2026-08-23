@@ -153,16 +153,31 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
 
     private async Task RunStartupMigrationAsync(CancellationToken cancellationToken)
     {
-        if (!_runtimeOptions.IsLocalMediaManagerEnabled())
+        // LOT 1 — a borne that refused the OLD startup migration had scraping / ROM packs /
+        // on-the-fly pinned off by the now-removed cascade. Undo that once, so the hybrid (no
+        // migration, scraping alive) recovers on those bornes too.
+        RecoverFromLegacyMigrationRefusal();
+
+        // LOT 1 — the migration is now an EXPLICIT opt-in, never an autorun, and no longer tied
+        // to LocalMediaManager.Enabled (which stays the master of the media subsystem +
+        // auto-scraping). Default "none" => nothing happens at startup.
+        var mode = _runtimeOptions.GetMediaMigrationMode();
+        if (mode == "none")
         {
             return;
         }
 
-        if (!_runtimeOptions.ShouldRemoveRomsMediaAfterCanonicalMigration())
+        if (mode == "copy")
         {
+            // Non-destructive migration (keep the roms/ copies) is a rewrite of the move-based
+            // engine below — deferred to LOT 9. Until then, "copy" performs no migration rather
+            // than silently deleting anything.
+            _logger?.LogInformation(
+                "Media migration mode 'copy' is not implemented yet (LOT 9): no migration performed, roms/ media left in place.");
             return;
         }
 
+        // mode == "move": the existing migrate-then-remove behaviour, now behind an explicit choice.
         var inventory = await ComputeLegacyInventorySnapshotAsync(cancellationToken);
         if (inventory.FileCount == 0)
         {
@@ -182,8 +197,9 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
 
         if (!ShowMigrationConfirmation())
         {
-            DisableImpactedFeaturesAfterRefusal();
-            _logger?.LogInformation("Legacy roms media migration skipped by user. Impacted APIExpose ES settings were disabled.");
+            // LOT 1 — declining a migration no longer disables anything (the cascade is gone):
+            // Media Manager, auto-scraping, ROM packs and on-the-fly all keep working.
+            _logger?.LogInformation("Media migration declined by the operator; no other feature is affected.");
             return;
         }
 
@@ -397,36 +413,112 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
             "ES - APIExpose migrara los medios antiguos encontrados en roms/<system>/images, videos, manuals, themehb y themes a media/user como originales de usuario prioritarios. Las gamelist apuntaran despues a media/. Los archivos existentes se comparan con hash SHA-256: los duplicados identicos se eliminan de roms, las variantes de usuario existentes se conservan como previous-user-*. Elija NO para omitir la migracion ahora; APIExpose tambien desactivara el Local Media Manager, el auto scraping y los instaladores de packs afectados.");
     }
 
-    private void DisableImpactedFeaturesAfterRefusal()
+    // LOT 1 — marks the one-shot legacy-refusal recovery as done.
+    private const string LegacyRefusalRecoveryMarkerKey =
+        "global.apiexpose.media_migration.legacy_refusal_recovered";
+
+    /// <summary>
+    /// LOT 1 — undo the OLD startup-migration refusal cascade, ONCE. A borne that declined the
+    /// migration before this release had the 13 settings of <see cref="DisabledSettingsAfterRefusal"/>
+    /// pinned to their disabled values; that coupling is gone, but the pinned values remain in
+    /// es_settings and keep scraping / ROM packs / on-the-fly dead. We act only when the FULL
+    /// fingerprint still matches (all 13 present at exactly those disabled values — a human would
+    /// not set that precise set, delay 12000 included) and drop a marker so it runs a single time.
+    /// Recovery simply REMOVES the keys, so each falls back to its appsettings default — the
+    /// pre-refusal state — without this code having to know each individual default.
+    /// </summary>
+    private void RecoverFromLegacyMigrationRefusal()
     {
         try
         {
-            WriteEsSettings(DisabledSettingsAfterRefusal);
+            _settingsStore.Update(document =>
+            {
+                var root = document.Root;
+                if (root == null)
+                {
+                    return false;
+                }
+
+                var changed = ApplyLegacyRefusalRecovery(
+                    root, DisabledSettingsAfterRefusal, LegacyRefusalRecoveryMarkerKey, out var recovered);
+                if (recovered > 0)
+                {
+                    _logger?.LogInformation(
+                        "Recovered {Count} APIExpose ES settings disabled by a legacy migration refusal (Media Manager / auto-scraping / ROM packs / on-the-fly re-enabled).",
+                        recovered);
+                }
+
+                return changed;
+            });
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Xml.XmlException or InvalidOperationException)
         {
-            _logger?.LogWarning(ex, "Unable to disable impacted APIExpose ES settings after migration refusal.");
+            _logger?.LogWarning(ex, "Unable to recover APIExpose ES settings from a legacy migration refusal.");
         }
     }
 
-    private void WriteEsSettings(IReadOnlyDictionary<string, string> settings)
+    /// <summary>
+    /// The pure es_settings transform of the one-shot legacy-refusal recovery (internal for
+    /// tests). Removes the <paramref name="disabledSettings"/> keys ONLY when every one of them
+    /// is still present at exactly its disabled value — the refusal fingerprint — so a borne where
+    /// the operator deliberately turned one thing off is never touched. Always stamps
+    /// <paramref name="markerKey"/> so it runs once. Returns whether the document changed and, via
+    /// <paramref name="recovered"/>, how many keys were removed (0 when the fingerprint did not match
+    /// or the marker was already set).
+    /// </summary>
+    internal static bool ApplyLegacyRefusalRecovery(
+        XElement root,
+        IReadOnlyDictionary<string, string> disabledSettings,
+        string markerKey,
+        out int recovered)
     {
-        _settingsStore.Update(document =>
+        recovered = 0;
+        if (string.Equals(GetStringSetting(root, markerKey), "1", StringComparison.Ordinal))
         {
-            var root = document.Root ?? throw new InvalidOperationException("es_settings.cfg root is missing.");
-            var changed = false;
-            foreach (var (key, value) in settings)
-            {
-                changed |= SetStringSetting(root, key, value);
-            }
+            return false; // already recovered once
+        }
 
-            if (changed)
-            {
-                root.Add(new XText(Environment.NewLine));
-            }
+        var looksLikeRefusal = disabledSettings.All(kv =>
+            string.Equals(GetStringSetting(root, kv.Key), kv.Value, StringComparison.Ordinal));
 
-            return changed;
-        });
+        var changed = false;
+        if (looksLikeRefusal)
+        {
+            foreach (var key in disabledSettings.Keys)
+            {
+                if (RemoveStringSetting(root, key))
+                {
+                    changed = true;
+                    recovered++;
+                }
+            }
+        }
+
+        changed |= SetStringSetting(root, markerKey, "1");
+        if (changed)
+        {
+            root.Add(new XText(Environment.NewLine));
+        }
+
+        return changed;
+    }
+
+    private static string? GetStringSetting(XElement root, string key)
+        => root.Elements()
+            .FirstOrDefault(element => string.Equals(element.Attribute("name")?.Value, key, StringComparison.OrdinalIgnoreCase))
+            ?.Attribute("value")?.Value;
+
+    private static bool RemoveStringSetting(XElement root, string key)
+    {
+        var existing = root.Elements()
+            .FirstOrDefault(element => string.Equals(element.Attribute("name")?.Value, key, StringComparison.OrdinalIgnoreCase));
+        if (existing == null)
+        {
+            return false;
+        }
+
+        existing.Remove();
+        return true;
     }
 
     private static bool SetStringSetting(XElement root, string key, string value)
