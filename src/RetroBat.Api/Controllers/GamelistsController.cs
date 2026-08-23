@@ -18,14 +18,17 @@ public class GamelistsController : ControllerBase
 {
     private readonly IGamelistStore _gamelists;
     private readonly RomCanonicalResolver _canonical;
+    private readonly Media.GamelistMediaAssetResolver _assetResolver;
     private readonly Media.LocalizedGamelistCacheService? _localized;
 
     public GamelistsController(
         IGamelistStore gamelists, RomCanonicalResolver canonical,
+        Media.GamelistMediaAssetResolver assetResolver,
         Media.LocalizedGamelistCacheService? localized = null)
     {
         _gamelists = gamelists;
         _canonical = canonical;
+        _assetResolver = assetResolver;
         _localized = localized;
     }
 
@@ -164,16 +167,19 @@ public class GamelistsController : ControllerBase
             Desc: Tag("desc"), Genre: Tag("genre"),
             Releasedate: Tag("releasedate"), Developer: Tag("developer"),
             Publisher: Tag("publisher"), Players: Tag("players"), Rating: Tag("rating"),
-            Image: MediaUrl(Tag("image")), Thumbnail: MediaUrl(Tag("thumbnail")),
-            Fanart: MediaUrl(Tag("fanart")), Marquee: MediaUrl(Tag("marquee")),
-            Video: MediaUrl(Tag("video")),
+            Image: MediaUrl(systemId, Tag("image")), Thumbnail: MediaUrl(systemId, Tag("thumbnail")),
+            Fanart: MediaUrl(systemId, Tag("fanart")), Marquee: MediaUrl(systemId, Tag("marquee")),
+            Video: MediaUrl(systemId, Tag("video")),
             GameKey: canonical?.GameKey ?? "",
             Scorable: _canonical.HasScoreDefinition(systemId, fileName, md5, cheevosHash)));
     }
 
-    /// <summary>Chemin média du gamelist (« …/APIExpose/media/systems/… »)
-    /// → URL servie « /api/v1/media/systems/… ». Vide si pas de média.</summary>
-    private static string MediaUrl(string raw)
+    /// <summary>URL HTTP d'un média gamelist. Un chemin du store canonique
+    /// (« …/APIExpose/media/systems/… ») garde son URL historique « /api/v1/media/systems/… ».
+    /// LOT 8 : un média UTILISATEUR (sous roms/, etc.) devient une URL opaque et scopée
+    /// « /api/v1/media-asset/&lt;ref&gt; » au lieu d'être perdu. Vide si pas de média ou hors
+    /// racines autorisées.</summary>
+    private string MediaUrl(string systemId, string raw)
     {
         if (raw.Length == 0)
         {
@@ -182,7 +188,13 @@ public class GamelistsController : ControllerBase
 
         var normalized = raw.Replace('\\', '/');
         var i = normalized.IndexOf("media/systems/", StringComparison.OrdinalIgnoreCase);
-        return i >= 0 ? "/api/v1/" + normalized[i..] : "";
+        if (i >= 0)
+        {
+            return "/api/v1/" + normalized[i..];
+        }
+
+        var reference = _assetResolver.BuildReference(systemId, raw);
+        return reference is null ? "" : "/api/v1/media-asset/" + reference;
     }
 
     [HttpGet("{systemId}/games")]

@@ -269,6 +269,12 @@ builder.Services.AddSingleton<GameMediaCatalogService>();
 builder.Services.AddSingleton<MediaResolver>();
 // LOT 6 — resolver-driven scrape-need planner (not yet wired into the live scrape path).
 builder.Services.AddSingleton<MediaScrapePlanner>();
+// LOT 8 — secure, allowlist-scoped resolver for serving gamelist media (canonical + user) over HTTP.
+builder.Services.AddSingleton(new GamelistMediaAssetResolver(new Dictionary<string, string>
+{
+    ["media"] = RetroBatPaths.MediaRoot,
+    ["roms"] = RetroBatPaths.RomsRoot
+}));
 // LOT 5 — ownership sidecar, kept out of roms/ under the plugin's resources tree.
 builder.Services.AddSingleton(new MediaSidecarStore(
     Path.Combine(RetroBatPaths.PluginRoot, "resources", "gamelist", "media-sidecar")));
