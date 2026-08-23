@@ -438,6 +438,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
     private readonly MediaLocalizationResolver _mediaLocalizationResolver;
     private readonly RomMetadataResolver _romMetadataResolver;
     private readonly EsNotifyDeduplicationService _notifyDeduplication;
+    private readonly MediaSidecarStore _mediaSidecar;
     private readonly ILogger<GamelistUpdateService>? _logger;
     private readonly object _selectionNormalizationStateLock = new();
     private GamelistSelectionNormalizationState? _selectionNormalizationState;
@@ -466,6 +467,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         MediaLocalizationResolver mediaLocalizationResolver,
         RomMetadataResolver romMetadataResolver,
         EsNotifyDeduplicationService notifyDeduplication,
+        MediaSidecarStore mediaSidecar,
         ILogger<GamelistUpdateService>? logger = null)
     {
         _settingsService = settingsService;
@@ -485,6 +487,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         _mediaLocalizationResolver = mediaLocalizationResolver;
         _romMetadataResolver = romMetadataResolver;
         _notifyDeduplication = notifyDeduplication;
+        _mediaSidecar = mediaSidecar;
         _logger = logger;
     }
 
@@ -1248,25 +1251,25 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
 
             if (!string.IsNullOrWhiteSpace(tagName))
             {
-                SetOrCreateElement(gameNode, tagName, relativeMediaPath);
+                SetCanonicalMediaSlotWithPolicy(gameNode, plan.FrontendSystemId, relativeGamePath, tagName, relativeMediaPath);
             }
         }
 
         ApplyTemplateMediaElements(gameNode, kindPaths);
 
-        TrySetVisibleSlotElement(gameNode, "image", ResolveSelectedMediaPathStrict(
+        SetVisibleMediaSlotWithPolicy(gameNode, plan.FrontendSystemId, relativeGamePath, "image", ResolveSelectedMediaPathStrict(
             scrapingSettings.ImageSource,
             kindPaths,
             projectedKindPaths,
             MediaSelectionTarget.Image,
             scrapingSettings.WheelStyle));
-        TrySetVisibleSlotElement(gameNode, "marquee", ResolveSelectedMediaPathStrict(
+        SetVisibleMediaSlotWithPolicy(gameNode, plan.FrontendSystemId, relativeGamePath, "marquee", ResolveSelectedMediaPathStrict(
             scrapingSettings.LogoSource,
             kindPaths,
             projectedKindPaths,
             MediaSelectionTarget.Logo,
             scrapingSettings.WheelStyle));
-        TrySetVisibleSlotElement(gameNode, "thumbnail", ResolveSelectedMediaPathStrict(
+        SetVisibleMediaSlotWithPolicy(gameNode, plan.FrontendSystemId, relativeGamePath, "thumbnail", ResolveSelectedMediaPathStrict(
             scrapingSettings.ThumbSource,
             kindPaths,
             projectedKindPaths,
@@ -1285,6 +1288,13 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
 
         ApplyBundleMetadata(gameNode, preferredBundle, scrapingSettings.Language);
         ApplyPlanRomIdentityMetadata(gameNode, plan);
+        if (MediaWritePolicyEnabled)
+        {
+            // Persist ownership even when the XML did not change (e.g. an abandon that preserved a
+            // user value); Save is a no-op unless the sidecar is actually dirty.
+            _mediaSidecar.Save(plan.FrontendSystemId);
+        }
+
         var afterGameXml = gameNode.ToString(SaveOptions.DisableFormatting);
         var changed = !string.Equals(
             beforeGameXml,
@@ -2306,7 +2316,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
                 projectedKindPaths,
                 MediaSelectionTarget.Thumbnail,
                 scrapingSettings.WheelStyle));
-        ApplyLiveOfficialSecondaryMediaElements(gameNode, existingGameNode, kindPaths);
+        ApplyLiveOfficialSecondaryMediaElements(gameNode, existingGameNode, canonicalSystemId, relativeGamePath, kindPaths);
 
         var preferredDescription = ResolveBundleField(preferredBundle, "desc", scrapingSettings.Language);
         if (!string.IsNullOrWhiteSpace(preferredDescription))
@@ -2469,22 +2479,133 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         }
     }
 
-    private static void ApplyLiveOfficialSecondaryMediaElements(
+    // LOT 5 (2/2) — gate reads. OFF by default: the whole write path keeps its legacy overwrite.
+    private bool MediaWritePolicyEnabled => _options.CurrentValue.MediaAllocation?.WritePolicyEnabled == true;
+
+    private MediaWritePolicy ResolveMediaWritePolicy()
+        => MediaAllocationPolicy.Parse(_options.CurrentValue.MediaAllocation?.WritePolicy);
+
+    /// <summary>LOT 5 — write one secondary slot of a rebuilt game node. When the policy gate is off
+    /// this is byte-for-byte the legacy overwrite; when on, it applies FillMissing against the
+    /// ownership sidecar and carries a user's existing value forward across the rebuild.</summary>
+    private void SetSecondaryMediaSlot(
         XElement target,
         XElement? existingGameNode,
+        string systemId,
+        string romPath,
+        string tagName,
+        string preferredPath)
+    {
+        if (!MediaWritePolicyEnabled)
+        {
+            SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, tagName, preferredPath);
+            return;
+        }
+
+        var existing = existingGameNode?.Element(tagName)?.Value?.Trim() ?? string.Empty;
+        var owns = _mediaSidecar.OwnsCurrentValue(systemId, romPath, tagName, existing);
+        var decision = MediaAllocationPolicy.Decide(ResolveMediaWritePolicy(), preferredPath, existing, owns);
+
+        if (decision.AbandonOwnership)
+        {
+            _mediaSidecar.AbandonOwnership(systemId, romPath, tagName);
+        }
+
+        if (decision.Write && decision.Value is not null)
+        {
+            SetOrCreateElement(target, tagName, decision.Value);
+            if (decision.MarkManaged)
+            {
+                _mediaSidecar.RecordManaged(systemId, romPath, tagName, decision.Value);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(existing))
+        {
+            // Not writing (user binding, or owned-and-unchanged): carry the value across the rebuild.
+            SetOrCreateElement(target, tagName, existing);
+        }
+    }
+
+    /// <summary>LOT 5 — apply the allocation policy to an in-place slot on a live game node and update
+    /// ownership. Returns the value to write, or null to leave the slot untouched (user binding, or
+    /// owned-and-unchanged). Assumes the caller has already checked <see cref="MediaWritePolicyEnabled"/>.</summary>
+    private string? ResolveInPlaceMediaSlotWrite(XElement gameNode, string systemId, string romPath, string slot, string? preferred)
+    {
+        var existing = gameNode.Element(slot)?.Value?.Trim() ?? string.Empty;
+        var owns = _mediaSidecar.OwnsCurrentValue(systemId, romPath, slot, existing);
+        var decision = MediaAllocationPolicy.Decide(ResolveMediaWritePolicy(), preferred, existing, owns);
+
+        if (decision.AbandonOwnership)
+        {
+            _mediaSidecar.AbandonOwnership(systemId, romPath, slot);
+        }
+
+        if (decision.Write && decision.Value is not null)
+        {
+            if (decision.MarkManaged)
+            {
+                _mediaSidecar.RecordManaged(systemId, romPath, slot, decision.Value);
+            }
+
+            return decision.Value;
+        }
+
+        return null;
+    }
+
+    /// <summary>LOT 5 wrapper over <see cref="TrySetVisibleSlotElement"/> (image/marquee/thumbnail).
+    /// Gate off → legacy overwrite; on → FillMissing, and never removes a slot it does not own.</summary>
+    private bool SetVisibleMediaSlotWithPolicy(XElement gameNode, string systemId, string romPath, string slot, string value)
+    {
+        if (!MediaWritePolicyEnabled)
+        {
+            return TrySetVisibleSlotElement(gameNode, slot, value);
+        }
+
+        var toWrite = ResolveInPlaceMediaSlotWrite(gameNode, systemId, romPath, slot, value);
+        return toWrite is not null && TrySetVisibleSlotElement(gameNode, slot, toWrite);
+    }
+
+    /// <summary>LOT 5 wrapper over the canonical needs projection (SetOrCreateElement). Gate off →
+    /// legacy overwrite; on → FillMissing so a user binding for the slot is preserved.</summary>
+    private void SetCanonicalMediaSlotWithPolicy(XElement gameNode, string systemId, string romPath, string slot, string value)
+    {
+        if (!MediaWritePolicyEnabled)
+        {
+            SetOrCreateElement(gameNode, slot, value);
+            return;
+        }
+
+        var toWrite = ResolveInPlaceMediaSlotWrite(gameNode, systemId, romPath, slot, value);
+        if (toWrite is not null)
+        {
+            SetOrCreateElement(gameNode, slot, toWrite);
+        }
+    }
+
+    private void ApplyLiveOfficialSecondaryMediaElements(
+        XElement target,
+        XElement? existingGameNode,
+        string systemId,
+        string romPath,
         IReadOnlyDictionary<string, string> kindPaths)
     {
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "video", FirstMediaPath(kindPaths, MediaKinds.Video, MediaKinds.VideoNormalized));
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "manual", FirstMediaPath(kindPaths, MediaKinds.Manual));
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "map", FirstMediaPath(kindPaths, MediaKinds.Map));
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "bezel", FirstMediaPath(kindPaths, MediaKinds.Bezel));
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "cartridge", FirstMediaPath(kindPaths, MediaKinds.Cartridge));
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "boxart", FirstMediaPath(kindPaths, MediaKinds.BoxFront, MediaKinds.Box3d));
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "boxback", FirstMediaPath(kindPaths, MediaKinds.BoxBack));
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "wheel", FirstMediaPath(kindPaths, MediaKinds.Wheel));
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "mix", FirstMediaPath(kindPaths, MediaKinds.MixRbv2, MediaKinds.MixRbv1));
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "titleshot", FirstMediaPath(kindPaths, MediaKinds.Image));
-        SetLiveMediaSlotOrPreserveExisting(target, existingGameNode, "magazine", FirstMediaPath(kindPaths, MediaKinds.Magazine));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "video", FirstMediaPath(kindPaths, MediaKinds.Video, MediaKinds.VideoNormalized));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "manual", FirstMediaPath(kindPaths, MediaKinds.Manual));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "map", FirstMediaPath(kindPaths, MediaKinds.Map));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "bezel", FirstMediaPath(kindPaths, MediaKinds.Bezel));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "cartridge", FirstMediaPath(kindPaths, MediaKinds.Cartridge));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "boxart", FirstMediaPath(kindPaths, MediaKinds.BoxFront, MediaKinds.Box3d));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "boxback", FirstMediaPath(kindPaths, MediaKinds.BoxBack));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "wheel", FirstMediaPath(kindPaths, MediaKinds.Wheel));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "mix", FirstMediaPath(kindPaths, MediaKinds.MixRbv2, MediaKinds.MixRbv1));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "titleshot", FirstMediaPath(kindPaths, MediaKinds.Image));
+        SetSecondaryMediaSlot(target, existingGameNode, systemId, romPath, "magazine", FirstMediaPath(kindPaths, MediaKinds.Magazine));
+
+        if (MediaWritePolicyEnabled)
+        {
+            _mediaSidecar.Save(systemId);
+        }
     }
 
     private async Task<bool> PushLiveGamelistFragmentToEsAsync(
@@ -4398,13 +4519,13 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
                         MediaSelectionTarget.Image,
                         scrapingSettings.WheelStyle);
 
-                    updated |= TrySetVisibleSlotElement(gameNode, "image", preferredImagePath);
-                    updated |= TrySetVisibleSlotElement(gameNode, "marquee", ResolveSelectedCanonicalMediaPathStrict(
+                    updated |= SetVisibleMediaSlotWithPolicy(gameNode, systemId, gamePath, "image", preferredImagePath);
+                    updated |= SetVisibleMediaSlotWithPolicy(gameNode, systemId, gamePath, "marquee", ResolveSelectedCanonicalMediaPathStrict(
                         scrapingSettings.LogoSource,
                         canonicalKindPaths,
                         MediaSelectionTarget.Logo,
                         scrapingSettings.WheelStyle));
-                    updated |= TrySetVisibleSlotElement(gameNode, "thumbnail", ResolveSelectedCanonicalMediaPathStrict(
+                    updated |= SetVisibleMediaSlotWithPolicy(gameNode, systemId, gamePath, "thumbnail", ResolveSelectedCanonicalMediaPathStrict(
                         scrapingSettings.ThumbSource,
                         canonicalKindPaths,
                         MediaSelectionTarget.Thumbnail,
@@ -4445,6 +4566,12 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
                         }
                         ReportStartupProgress(processedGames, totalGames, $"{systemId}: {gameName ?? projectionBaseName}");
                     }
+                }
+
+                if (MediaWritePolicyEnabled)
+                {
+                    // Persist accumulated ownership for every game touched in this system's loop.
+                    _mediaSidecar.Save(systemId);
                 }
 
                 if (!string.IsNullOrWhiteSpace(currentSelectionGamePath) && !currentSelectionProcessed)

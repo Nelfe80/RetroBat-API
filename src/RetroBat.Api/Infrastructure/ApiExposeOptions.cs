@@ -217,6 +217,11 @@ public class ApiExposeOptions
         /// never overwrites a user binding; "managed" behaves the same for the write decision;
         /// "force" reallocates unconditionally (explicit user action only).</summary>
         public string WritePolicy { get; set; } = "fill_missing";
+
+        /// <summary>LOT 5 (2/2) — route gamelist media writes through <see cref="WritePolicy"/> and the
+        /// ownership sidecar. OFF by default: writes keep their legacy overwrite behavior until a
+        /// cabinet canary validates that user bindings survive a re-scrape.</summary>
+        public bool WritePolicyEnabled { get; set; } = false;
     }
 
     /// <summary>

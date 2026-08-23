@@ -267,6 +267,9 @@ builder.Services.AddSingleton<GamelistMediaCatalogReader>();
 builder.Services.AddSingleton<ICanonicalMediaCatalogSource, ProjectionCanonicalMediaCatalogSource>();
 builder.Services.AddSingleton<GameMediaCatalogService>();
 builder.Services.AddSingleton<MediaResolver>();
+// LOT 5 — ownership sidecar, kept out of roms/ under the plugin's resources tree.
+builder.Services.AddSingleton(new MediaSidecarStore(
+    Path.Combine(RetroBatPaths.PluginRoot, "resources", "gamelist", "media-sidecar")));
 builder.Services.AddSingleton<IMediaDiscoveryInvalidator, MediaDiscoveryInvalidator>();
 builder.Services.AddSingleton<EsProjectionService>();
 builder.Services.AddSingleton<MameGamelistGroupIndex>();
