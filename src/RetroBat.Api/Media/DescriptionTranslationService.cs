@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO.Compression;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -39,6 +41,8 @@ public sealed class DescriptionTranslationService : BackgroundService
     private readonly Channel<bool> _wakeups = Channel.CreateUnbounded<bool>();
     private readonly ConcurrentDictionary<string, byte> _notifiedModelPreparations = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _modelLocks = new(StringComparer.OrdinalIgnoreCase);
+    // One in-flight engine download at a time (the engine is provisioned on demand, not bundled).
+    private static readonly SemaphoreSlim EngineProvisionLock = new(1, 1);
     private int _isProcessing;
 
     public DescriptionTranslationService(
@@ -309,7 +313,12 @@ public sealed class DescriptionTranslationService : BackgroundService
         var modelStoreRoot = ResolvePluginPath(_options.CurrentValue.Scraping.TranslateLocallyModelStorePath);
         if (!File.Exists(executablePath))
         {
-            return new TranslationToolResult { Status = "missing-tool", Message = executablePath };
+            // The engine is not bundled in the installer any more: fetch it on demand from the
+            // configured URL. A probe (checkOnly) never triggers a download.
+            if (checkOnly || !await TryProvisionEngineAsync(toolsRoot, executablePath, cancellationToken))
+            {
+                return new TranslationToolResult { Status = "missing-tool", Message = executablePath };
+            }
         }
 
         var key = $"{source}->{target}";
@@ -380,6 +389,76 @@ public sealed class DescriptionTranslationService : BackgroundService
         finally
         {
             gate.Release();
+        }
+    }
+
+    /// <summary>Download the portable translateLocally engine into <paramref name="toolsRoot"/> when it
+    /// is missing and a download URL is configured, so the offline installer no longer has to ship it.
+    /// Returns true only once the expected executable exists. Any failure (no URL, network, bad archive,
+    /// wrong layout) leaves things as-is and returns false, so translation degrades gracefully. A plain
+    /// HttpClient — no shell — keeps it within the antivirus/ClickFix rules.</summary>
+    private async Task<bool> TryProvisionEngineAsync(string toolsRoot, string executablePath, CancellationToken cancellationToken)
+    {
+        var url = _options.CurrentValue.Scraping.TranslateLocallyEngineDownloadUrl?.Trim();
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        await EngineProvisionLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (File.Exists(executablePath))
+            {
+                return true; // provisioned by a concurrent call
+            }
+
+            _logger?.LogInformation("translateLocally engine missing; downloading from {Url} into {ToolsRoot}.", url, toolsRoot);
+            Directory.CreateDirectory(toolsRoot);
+            var tempZip = Path.Combine(Path.GetTempPath(), "translateLocally-" + Guid.NewGuid().ToString("N") + ".zip");
+            try
+            {
+                using (var http = new HttpClient { Timeout = TimeSpan.FromMinutes(15) })
+                using (var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+                {
+                    response.EnsureSuccessStatusCode();
+                    await using var fileStream = File.Create(tempZip);
+                    await response.Content.CopyToAsync(fileStream, cancellationToken);
+                }
+
+                var expectedHash = _options.CurrentValue.Scraping.TranslateLocallyEngineDownloadSha256?.Trim();
+                if (!string.IsNullOrWhiteSpace(expectedHash))
+                {
+                    var actualHash = await JsonMediaAliasStore.ComputeSha256Async(tempZip, cancellationToken);
+                    if (!string.Equals(expectedHash, actualHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger?.LogWarning("translateLocally engine SHA-256 mismatch (expected {Expected}, got {Actual}); aborting.", expectedHash, actualHash);
+                        return false;
+                    }
+                }
+
+                ZipFile.ExtractToDirectory(tempZip, toolsRoot, overwriteFiles: true);
+                var ok = File.Exists(executablePath);
+                if (!ok)
+                {
+                    _logger?.LogWarning("translateLocally archive extracted but {ExecutablePath} is still missing (unexpected layout).", executablePath);
+                }
+
+                return ok;
+            }
+            finally
+            {
+                try { if (File.Exists(tempZip)) File.Delete(tempZip); } catch { /* best-effort temp cleanup */ }
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or TaskCanceledException or UnauthorizedAccessException)
+        {
+            _logger?.LogWarning(ex, "translateLocally engine provisioning failed; translation will be skipped.");
+            return false;
+        }
+        finally
+        {
+            EngineProvisionLock.Release();
         }
     }
 

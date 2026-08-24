@@ -126,6 +126,11 @@ public class ApiExposeOptions
         public string TranslateLocallyProfilePath { get; set; } = "tools/translateLocally/profile";
         public bool TranslateLocallyPortableModelStoreEnabled { get; set; } = true;
         public string TranslateLocallyModelStorePath { get; set; } = "tools/translateLocally/models";
+        // The engine is no longer bundled in the installer (to keep it slim). When it is missing and
+        // this URL is set, the API downloads the portable engine zip once, into TranslateLocallyToolsPath,
+        // then proceeds. Empty (default) => the translation feature degrades gracefully ("missing-tool").
+        public string TranslateLocallyEngineDownloadUrl { get; set; } = "";
+        public string TranslateLocallyEngineDownloadSha256 { get; set; } = "";
         public bool ProjectedMediaIndexCacheEnabled { get; set; } = true;
         public bool ScreenScraperRawCacheEnabled { get; set; } = true;
         // defaults aligned with appsettings.json (the shipped source of truth):
