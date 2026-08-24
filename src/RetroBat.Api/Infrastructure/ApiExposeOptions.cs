@@ -73,7 +73,7 @@ public class ApiExposeOptions
         public bool DetectAddGamesSupport { get; set; } = true;
 
         /// <summary>Merge pending extended gamelists into gamelist.xml when
-        /// EmulationStation exits — the only moment ES cannot overwrite the file
+        /// EmulationStation exits - the only moment ES cannot overwrite the file
         /// from its own memory. Complements the existing api-startup merge.</summary>
         public bool MergePendingOnEsExit { get; set; } = true;
 
@@ -81,7 +81,7 @@ public class ApiExposeOptions
         /// ES actually renders: a visible media PATH, a fresh video, or a first
         /// description. Same-path file replacements never repaint (ES texture
         /// cache has no mtime check) and later text updates ride the next
-        /// mutualized push — pushing for those only rebuilds the ES view for
+        /// mutualized push - pushing for those only rebuilds the ES view for
         /// nothing. false restores the historical delta filter alone.</summary>
         public bool RequireRenderDeltaForLivePush { get; set; } = true;
 
@@ -93,7 +93,7 @@ public class ApiExposeOptions
 
         /// <summary>F3 (Super Mario World bug): ES's addgames ingestion clears a
         /// game's unknown XML elements, wiping the Roms Manager ownership tags
-        /// while &lt;hidden&gt; survives — the entry becomes an orphan. Carrying
+        /// while &lt;hidden&gt; survives - the entry becomes an orphan. Carrying
         /// the existing apiexpose_romset_* tags inside the fragment lets ES
         /// reload them instead. Dedicated rollback: set to false at the first
         /// sign of addgames instability.</summary>
@@ -182,7 +182,7 @@ public class ApiExposeOptions
         public bool Enabled { get; set; } = true;
         public bool PopulateAllGamelistsRequested { get; set; }
 
-        /// <summary>DÉPRÉCIÉ (LOT 1) — la décision « supprimer les copies roms/ après migration »
+        /// <summary>DÉPRÉCIÉ (LOT 1) - la décision « supprimer les copies roms/ après migration »
         /// est désormais portée par <see cref="MediaMigrationOptions.Mode"/> (`move` = supprime,
         /// `copy` = garde). Conservé pour ne pas casser les configs existantes ; il n'est plus lu
         /// pour décider de l'autorun (qui n'a plus lieu par défaut). Sera retiré au LOT 9.</summary>
@@ -190,10 +190,10 @@ public class ApiExposeOptions
     }
 
     /// <summary>
-    /// LOT 1 — migration des médias déjà présents sous roms/ vers le store canonique, DÉCOUPLÉE
+    /// LOT 1 - migration des médias déjà présents sous roms/ vers le store canonique, DÉCOUPLÉE
     /// du reste du sous-système média. Par défaut <c>none</c> : la migration ne se lance PLUS au
     /// démarrage, et l'auto-scraping (qui écrit les nouveaux médias dans le store canonique)
-    /// continue de fonctionner normalement — c'est le mode hybride voulu. La migration devient un
+    /// continue de fonctionner normalement - c'est le mode hybride voulu. La migration devient un
     /// acte explicite, choisi par l'opérateur.
     /// </summary>
     public class MediaMigrationOptions
@@ -217,13 +217,13 @@ public class ApiExposeOptions
         public string LogoRegionMode { get; set; } = "user_language";
         public string UserRegion { get; set; } = "auto";
 
-        /// <summary>LOT 5 (§10.1) — how a resolved medium is written into a generic gamelist slot.
+        /// <summary>LOT 5 (§10.1) - how a resolved medium is written into a generic gamelist slot.
         /// "fill_missing" (default) fills empty slots and updates slots APIExpose still owns, but
         /// never overwrites a user binding; "managed" behaves the same for the write decision;
         /// "force" reallocates unconditionally (explicit user action only).</summary>
         public string WritePolicy { get; set; } = "fill_missing";
 
-        /// <summary>LOT 5 (2/2) — route gamelist media writes through <see cref="WritePolicy"/> and the
+        /// <summary>LOT 5 (2/2) - route gamelist media writes through <see cref="WritePolicy"/> and the
         /// ownership sidecar. OFF by default: writes keep their legacy overwrite behavior until a
         /// cabinet canary validates that user bindings survive a re-scrape.</summary>
         public bool WritePolicyEnabled { get; set; } = false;
@@ -242,7 +242,7 @@ public class ApiExposeOptions
         public bool DirectoryCacheEnabled { get; set; } = true;
 
         /// <summary>Upper bound on how long a positive listing is trusted even if the directory
-        /// mtime never moved — the guard for filesystems that don't update it.</summary>
+        /// mtime never moved - the guard for filesystems that don't update it.</summary>
         public int SafetyTtlSeconds { get; set; } = 5;
 
         /// <summary>How long an absent directory is remembered as absent (it has no mtime to
@@ -252,20 +252,20 @@ public class ApiExposeOptions
         /// <summary>LRU ceiling on cached directories.</summary>
         public int MaxCachedDirectories { get; set; } = 4096;
 
-        /// <summary>LOT 7 — let the game snapshots FILL a missing media kind from the user gamelist:
+        /// <summary>LOT 7 - let the game snapshots FILL a missing media kind from the user gamelist:
         /// a roms/ file the gamelist references but that was never migrated into the canonical store
-        /// becomes visible. OFF by default and ADDITIVE — it only adds a kind the canonical store
-        /// lacks, never overrides a canonical asset — so it ships dark and is turned on by the canary.</summary>
+        /// becomes visible. OFF by default and ADDITIVE - it only adds a kind the canonical store
+        /// lacks, never overrides a canonical asset - so it ships dark and is turned on by the canary.</summary>
         public bool GamelistMediaEnabled { get; set; } = false;
 
-        /// <summary>HP5 — stamp each stream asset with PathRoot ("apiexpose" / "retrobat" /
+        /// <summary>HP5 - stamp each stream asset with PathRoot ("apiexpose" / "retrobat" /
         /// "external-local"), the root its relative Path is resolved against. OFF by default and
         /// additive (the field is omitted from the JSON when off, SnapshotVersion stays 2): an
         /// older MarqueeManager never sees it, a newer one uses it to resolve deterministically
         /// instead of guessing plugin-then-RetroBat. Turn on once the consumers understand it.</summary>
         public bool EmitPathRoot { get; set; } = false;
 
-        /// <summary>LOT 6 (2/2) — let the resolver-driven <see cref="RetroBat.Api.Media.MediaScrapePlanner"/>
+        /// <summary>LOT 6 (2/2) - let the resolver-driven <see cref="RetroBat.Api.Media.MediaScrapePlanner"/>
         /// SUPPRESS a scrape need when the canonical store already satisfies the kind (local-first,
         /// no redundant re-scrape). OFF by default: the scrape-need decision stays purely slot-based.
         /// The planner may only remove a need, never add one, so a genuinely missing kind is never

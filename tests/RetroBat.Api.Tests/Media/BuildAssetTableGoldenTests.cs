@@ -10,8 +10,8 @@ namespace RetroBat.Api.Tests.Media;
 /// filtered by <see cref="MediaKinds.FromRelativePath"/>.
 ///
 /// These pin the OBSERVABLE result (kind → file, filtering, root priority, and that a
-/// system scope never serves game media) so the HP1/HP2 refactor — which replaces the
-/// recursive scan with a targeted per-directory inventory — can be proven behaviour-
+/// system scope never serves game media) so the HP1/HP2 refactor - which replaces the
+/// recursive scan with a targeted per-directory inventory - can be proven behaviour-
 /// preserving: these same tests must stay green.
 /// </summary>
 public class BuildAssetTableGoldenTests

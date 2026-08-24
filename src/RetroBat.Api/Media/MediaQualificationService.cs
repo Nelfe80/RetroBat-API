@@ -3,13 +3,13 @@ using RetroBat.Domain.Models;
 namespace RetroBat.Api.Media;
 
 /// <summary>
-/// LOT 2 — the shared media QUALIFICATION, lifted out of RomsMediaCanonicalMigrationHostedService
+/// LOT 2 - the shared media QUALIFICATION, lifted out of RomsMediaCanonicalMigrationHostedService
 /// so a file can be typed WITHOUT moving it or writing a gamelist. It owns the filename-suffix
 /// table and the folder conventions that used to live inside the migration; the migration now
 /// delegates here, so there is ONE source of truth for "what kind is this file?".
 ///
 /// Order of certainty (§7.2): an explicit gamelist tag or provider type wins over any of this;
-/// what this service covers is the file-based tail — filename convention, then folder convention.
+/// what this service covers is the file-based tail - filename convention, then folder convention.
 /// A generic gamelist slot (&lt;marquee&gt;…&lt;/marquee&gt;) is NEVER enough on its own to make a
 /// Kind: the Kind only comes from qualifying the file the slot points at.
 /// </summary>
@@ -161,7 +161,7 @@ public sealed class MediaQualificationService
 
     // Durable gamelist tags whose NAME already names a kind (§7.2 source 1: explicit-gamelist).
     // The generic slots image / marquee / thumbnail are deliberately ABSENT (§7.3): they never
-    // imply a kind on their own — the kind comes from qualifying the file they point at.
+    // imply a kind on their own - the kind comes from qualifying the file they point at.
     private static readonly IReadOnlyDictionary<string, string> GamelistTagKinds =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -192,7 +192,7 @@ public sealed class MediaQualificationService
         return false;
     }
 
-    /// <summary>The KIND a file name suffix implies, IGNORING the folder — for a gamelist medium
+    /// <summary>The KIND a file name suffix implies, IGNORING the folder - for a gamelist medium
     /// that can live in any folder (downloaded_images, media, …) where the tag is the authority and
     /// the file name is only a secondary signal. Shares the same suffix table (and its precedence)
     /// as <see cref="TryQualify"/>. False when no known suffix matches.</summary>

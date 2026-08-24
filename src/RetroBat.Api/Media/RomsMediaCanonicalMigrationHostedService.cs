@@ -112,12 +112,12 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
 
     private async Task RunStartupMigrationAsync(CancellationToken cancellationToken)
     {
-        // LOT 1 — a borne that refused the OLD startup migration had scraping / ROM packs /
+        // LOT 1 - a borne that refused the OLD startup migration had scraping / ROM packs /
         // on-the-fly pinned off by the now-removed cascade. Undo that once, so the hybrid (no
         // migration, scraping alive) recovers on those bornes too.
         RecoverFromLegacyMigrationRefusal();
 
-        // LOT 1 — the migration is now an EXPLICIT opt-in, never an autorun, and no longer tied
+        // LOT 1 - the migration is now an EXPLICIT opt-in, never an autorun, and no longer tied
         // to LocalMediaManager.Enabled (which stays the master of the media subsystem +
         // auto-scraping). Default "none" => nothing happens at startup.
         var modeName = _runtimeOptions.GetMediaMigrationMode();
@@ -126,7 +126,7 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
             return;
         }
 
-        // LOT 9 — "copy" (non-destructive: the roms/ originals are kept) and "move" (destructive:
+        // LOT 9 - "copy" (non-destructive: the roms/ originals are kept) and "move" (destructive:
         // the source is removed, but ONLY after a verified copy is in place) share one engine. The
         // mode only changes the per-file transfer and whether gamelists are relinked to the store.
         var mode = MediaFileTransfer.ParseMode(modeName);
@@ -150,7 +150,7 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
 
         if (!ShowMigrationConfirmation())
         {
-            // LOT 1 — declining a migration no longer disables anything (the cascade is gone):
+            // LOT 1 - declining a migration no longer disables anything (the cascade is gone):
             // Media Manager, auto-scraping, ROM packs and on-the-fly all keep working.
             _logger?.LogInformation("Media migration declined by the operator; no other feature is affected.");
             return;
@@ -372,19 +372,19 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
             "ES - APIExpose migrara los medios antiguos encontrados en roms/<system>/images, videos, manuals, themehb y themes a media/user como originales de usuario prioritarios. Las gamelist apuntaran despues a media/. Los archivos existentes se comparan con hash SHA-256: los duplicados identicos se eliminan de roms, las variantes de usuario existentes se conservan como previous-user-*. Elija NO para omitir la migracion ahora; APIExpose tambien desactivara el Local Media Manager, el auto scraping y los instaladores de packs afectados.");
     }
 
-    // LOT 1 — marks the one-shot legacy-refusal recovery as done.
+    // LOT 1 - marks the one-shot legacy-refusal recovery as done.
     private const string LegacyRefusalRecoveryMarkerKey =
         "global.apiexpose.media_migration.legacy_refusal_recovered";
 
     /// <summary>
-    /// LOT 1 — undo the OLD startup-migration refusal cascade, ONCE. A borne that declined the
+    /// LOT 1 - undo the OLD startup-migration refusal cascade, ONCE. A borne that declined the
     /// migration before this release had the 13 settings of <see cref="DisabledSettingsAfterRefusal"/>
     /// pinned to their disabled values; that coupling is gone, but the pinned values remain in
     /// es_settings and keep scraping / ROM packs / on-the-fly dead. We act only when the FULL
-    /// fingerprint still matches (all 13 present at exactly those disabled values — a human would
+    /// fingerprint still matches (all 13 present at exactly those disabled values - a human would
     /// not set that precise set, delay 12000 included) and drop a marker so it runs a single time.
-    /// Recovery simply REMOVES the keys, so each falls back to its appsettings default — the
-    /// pre-refusal state — without this code having to know each individual default.
+    /// Recovery simply REMOVES the keys, so each falls back to its appsettings default - the
+    /// pre-refusal state - without this code having to know each individual default.
     /// </summary>
     private void RecoverFromLegacyMigrationRefusal()
     {
@@ -419,7 +419,7 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
     /// <summary>
     /// The pure es_settings transform of the one-shot legacy-refusal recovery (internal for
     /// tests). Removes the <paramref name="disabledSettings"/> keys ONLY when every one of them
-    /// is still present at exactly its disabled value — the refusal fingerprint — so a borne where
+    /// is still present at exactly its disabled value - the refusal fingerprint - so a borne where
     /// the operator deliberately turned one thing off is never touched. Always stamps
     /// <paramref name="markerKey"/> so it runs once. Returns whether the document changed and, via
     /// <paramref name="recovered"/>, how many keys were removed (0 when the fingerprint did not match

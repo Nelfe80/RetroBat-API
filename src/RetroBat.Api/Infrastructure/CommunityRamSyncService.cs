@@ -13,7 +13,7 @@ namespace RetroBat.Api.Infrastructure;
 ///
 /// Rien n'est poussé : c'est un pull HTTPS sortant vers l'API GitHub (publique, sans
 /// jeton), en lecture seule. Le dossier officiel livré par l'installer n'est jamais
-/// écrasé par défaut (<c>OverwriteExisting = false</c>) — on n'AJOUTE que les jeux
+/// écrasé par défaut (<c>OverwriteExisting = false</c>) - on n'AJOUTE que les jeux
 /// absents en local. La synchro est incrémentale : on ne refait rien tant que le
 /// commit HEAD du dépôt n'a pas changé.
 /// </summary>
@@ -158,7 +158,7 @@ public sealed class CommunityRamSyncService : BackgroundService
 
         SaveState(new SyncState { LastSha = sha, LastSyncUtc = DateTime.UtcNow });
         _logger.LogInformation(
-            "Canal RAM communautaire : {Added} ajout(s), {Updated} mise(s) à jour, {Skipped} inchangé(s) — {Repo}@{Sha}.",
+            "Canal RAM communautaire : {Added} ajout(s), {Updated} mise(s) à jour, {Skipped} inchangé(s) - {Repo}@{Sha}.",
             added, updated, skipped, repo, Short(sha));
     }
 

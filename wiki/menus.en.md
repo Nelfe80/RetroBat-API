@@ -33,7 +33,7 @@ Scraping: local first, remote when needed, each media type toggled separately.
 | `ENABLE AUTO SCRAPING MANAGER` | Enables local then remote scraping, with live game-view updates when a real change is found. *(on by default)* |
 | `ENABLE SCREENSCRAPER` | Lets ScreenScraper fill the store when local scraping is not enough. |
 | `TRANSLATE DESCRIPTIONS` | Translates English descriptions when your language has no localized one. |
-| `ENABLE SCRAPING QUEUE` | Low-priority background scraping queue — it pauses during live scraping. |
+| `ENABLE SCRAPING QUEUE` | Low-priority background scraping queue - it pauses during live scraping. |
 | `REMOTE SCRAPE AFTER LOCAL` | Remote scraping starts only if the local pass leaves gaps. |
 | `SCRAPE EXACT LOCAL MEDIA` | Fetches the exact regional media when a visible slot is only served by a local fallback. |
 | `REFRESH GAME VIEW AFTER SCRAPE` | Refreshes the current game view after a successful remote scrape. |
@@ -51,7 +51,7 @@ The list cleaner: ready-made profiles plus explicit per-category filters.
 | Option | Choices | Effect |
 |---|---|---|
 | `ENABLE ROMS MANAGER` | on/off | Enables the romset management and filtering module. |
-| `ROMS PROFILE` | CASUAL GAMER, GAMER, HARD-GAMER, PRO-GAMER, RETROACHIEVER, LOCALIZED PLAYER, ARCADE PURIST, ARCADE GAMER, HISTORIAN, PRESERVATIONIST, HOMEBREW PLAYER, MODDER, HACKER | A named preset that positions every filter at once — options stay visible and adjustable afterwards. |
+| `ROMS PROFILE` | CASUAL GAMER, GAMER, HARD-GAMER, PRO-GAMER, RETROACHIEVER, LOCALIZED PLAYER, ARCADE PURIST, ARCADE GAMER, HISTORIAN, PRESERVATIONIST, HOMEBREW PLAYER, MODDER, HACKER | A named preset that positions every filter at once - options stay visible and adjustable afterwards. |
 | `NEVER HIDE FAVORITES` | on/off | Your favorites are **never** hidden by filters. *(on by default)* |
 | `LANGUAGE` | SHOW ALL / SHOW ONLY MY LANGUAGE | Hides other languages when a version in yours exists. |
 | `REGION` | SHOW ALL / SHOW ONLY MY REGION | Hides other regions when a version from yours exists. |
@@ -61,7 +61,7 @@ The list cleaner: ready-made profiles plus explicit per-category filters.
 Each **category** is then a SHOW/HIDE switch: `OFFICIAL GAMES`, `CLONES`, `PROTOTYPES`, `DEMOS`, `BETA / ALPHA`, `USEFUL PATCHES` (bugfix, QoL, widescreen…), `HACKS AND MODS`, `CHEATS AND TRAINERS`, `BOOTLEGS AND PIRATES`, `UNLICENSED`, `HOMEBREWS AND AFTERMARKET`, `ADULT`, `CASINO AND GAMBLING`, `MAHJONG`, `QUIZ`, `NON-GAMES` (BIOS, devices…), `UNKNOWN ROMS`, `ARCADE TESTS AND DIAGNOSTICS`.
 
 ??? info "Advanced romset options (version dependent)"
-    The module also includes: `VARIANT MODE` (OFF / DISPLAY ONLY / HIDE VARIANTS — DISPLAY ONLY analyzes without writing), `TRANSLATIONS` (a translation may become the main variant if it matches your language), `ARCADE HANDLING` (parent only, best clone, parent/clone group), `ROM SET OUTPUT` (report only, gamelist hidden tag, collection, or API filter) and `ROM SET DEBUG REPORT` (JSON report with decisions and scores).
+    The module also includes: `VARIANT MODE` (OFF / DISPLAY ONLY / HIDE VARIANTS - DISPLAY ONLY analyzes without writing), `TRANSLATIONS` (a translation may become the main variant if it matches your language), `ARCADE HANDLING` (parent only, best clone, parent/clone group), `ROM SET OUTPUT` (report only, gamelist hidden tag, collection, or API filter) and `ROM SET DEBUG REPORT` (JSON report with decisions and scores).
 
 ### Pack installation (Roms Pack Manager)
 
@@ -106,7 +106,7 @@ Finally, publication to other tools:
 | Option | Effect |
 |---|---|
 | `ENABLE CONTROL PANEL DISPLAY` | Publishes the resolved panel layout for themes and LED panels. |
-| `PUSH CONTROL PANEL TO WS STREAM` | Pushes that layout into the WebSocket stream on each system or arcade-game selection — this is what LedManager consumes. |
+| `PUSH CONTROL PANEL TO WS STREAM` | Pushes that layout into the WebSocket stream on each system or arcade-game selection - this is what LedManager consumes. |
 
 ## COLLECTIONS PACK MANAGER
 
@@ -146,11 +146,11 @@ The APIExpose side that feeds marquees (the [MarqueeManager](https://nelfe80.git
 | `MARQUEE AUTOGEN NOTIFY` | on/off | ES notification when a marquee is generated. |
 
 !!! tip "ZeDMD 128×32?"
-    Set `DMD AUTOGEN` to your panel's physical size — it is the setting that guarantees crisp rendering on the MarqueeManager side.
+    Set `DMD AUTOGEN` to your panel's physical size - it is the setting that guarantees crisp rendering on the MarqueeManager side.
 
 ## GAME EVENTS MANAGER
 
-Real-time in-game events — the raw material of live scores and LEDs.
+Real-time in-game events - the raw material of live scores and LEDs.
 
 | Option | Effect |
 |---|---|
@@ -167,8 +167,8 @@ Cross-cutting settings, deliberately last.
 
 | Option | Effect |
 |---|---|
-| `LANGUAGE PROFILE` | Your central language profile (16 choices) — used by filters, metadata localization and every service. |
-| `REGION PROFILE` | Your central region profile (20 choices) — same role for regions. |
+| `LANGUAGE PROFILE` | Your central language profile (16 choices) - used by filters, metadata localization and every service. |
+| `REGION PROFILE` | Your central region profile (20 choices) - same role for regions. |
 | `REPAIR GAMELISTS ON STARTUP` | Startup pass realigning visible media slots and localized gamelist texts. |
 | `SYNC GAMELISTS WITH SYSTEM LANGUAGE` | When the ES language changes, gamelists are realigned in the new language. |
 | `SHOW API SPLASHSCREEN` | APIExpose overlay during initialization. |

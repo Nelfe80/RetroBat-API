@@ -7,7 +7,7 @@ namespace RetroBat.Api.Infrastructure;
 /// <summary>
 /// Push deployment of the curated MAME cfg pack (resources/controls/mame) into
 /// saves/mame/cfg. Never a blind copy: only the &lt;input&gt; ports present in the
-/// pack are merged into the deployed file — MAME state (counters, DIP, mixer) is
+/// pack are merged into the deployed file - MAME state (counters, DIP, mixer) is
 /// kept, and the user's manual binds are preserved with the pack's JOYCODE forms
 /// OR-appended (KEYCODE_Z becomes "KEYCODE_Z OR JOYCODE_1_BUTTON1"). Callers must
 /// refuse to deploy while MAME runs: MAME rewrites every cfg at exit.
@@ -25,7 +25,7 @@ public sealed class MameCfgDeployService
     /// <summary>RetroPad identity name → raw DirectInput index on the standard
     /// encoder profile (raw N = MAME JOYCODE_BUTTON(N+1)).
     /// Measured 2026-07-14 via MAME TAB (0-based display): physical B3 (identity y)
-    /// reads "Button 2" and B4 (x) reads "Button 3" — the DirectInput raw order
+    /// reads "Button 2" and B4 (x) reads "Button 3" - the DirectInput raw order
     /// keeps x/y in their identity slots, unlike the SDL chain; only the shoulder
     /// pairs swap (B6→BUTTON8, B8→BUTTON6, B5→BUTTON7, B7→BUTTON5).</summary>
     private static readonly IReadOnlyDictionary<string, int> StandardRawByIdentity = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
@@ -118,7 +118,7 @@ public sealed class MameCfgDeployService
     }
 
     /// <summary>Rewrites the pack's JOYCODE_x_BUTTONn tokens (n = physical slot,
-    /// identity-authored) into the button numbers the cabinet really emits — using
+    /// identity-authored) into the button numbers the cabinet really emits - using
     /// the cartography of the player the JOYCODE index refers to.</summary>
     private string TranslateJoycodes(string sequence)
     {
@@ -134,8 +134,8 @@ public sealed class MameCfgDeployService
 
     /// <summary>
     /// Applies the cabinet translation to every input sequence of a pack document.
-    /// Face/shoulder buttons (P{p}_BUTTON{k}) are PLACED from the game's dynpanel —
-    /// the same authority the RetroArch rmp uses — so MAME matches the LEDs and
+    /// Face/shoulder buttons (P{p}_BUTTON{k}) are PLACED from the game's dynpanel -
+    /// the same authority the RetroArch rmp uses - so MAME matches the LEDs and
     /// RetroArch instead of the pack's own (X/Y-swapped) slot authoring. Every other
     /// port keeps the pack's slot, translated through the cartography as before.
     /// </summary>
@@ -209,7 +209,7 @@ public sealed class MameCfgDeployService
                     continue;
                 }
 
-                // prefer the 8-Button layout, else the first — the slot for a given
+                // prefer the 8-Button layout, else the first - the slot for a given
                 // game button is the same across layouts for the X/Y realignment
                 var layout = layouts.TryGetProperty("8-Button", out var eight)
                     ? eight
@@ -243,7 +243,7 @@ public sealed class MameCfgDeployService
     /// Current wiring of the DEPLOYED cfg, translated back to physical panel
     /// buttons: P1_BUTTONn → the cabinet buttons whose JOYCODEs appear in the
     /// port's standard sequence (inverse cartography). This is what really fires
-    /// in MAME today — the patch bay shows it as the default cables.
+    /// in MAME today - the patch bay shows it as the default cables.
     /// </summary>
     public IReadOnlyDictionary<string, IReadOnlyList<int>> CurrentWiring(string rom)
     {
@@ -297,7 +297,7 @@ public sealed class MameCfgDeployService
     /// <summary>
     /// Repairs a deployed cfg against the INSTALLED MAME: boots the game headless
     /// with the vendored dump_ports.lua (LedManager\tools\mame-repair) to read the
-    /// real port signatures, then realigns the cfg — wrong tag/mask/defvalue fixed,
+    /// real port signatures, then realigns the cfg - wrong tag/mask/defvalue fixed,
     /// ports MAME silently dropped restored from the translated pack (+ overrides),
     /// user sequences kept, unknown ports removed. .bak written before saving.
     /// </summary>
@@ -425,7 +425,7 @@ public sealed class MameCfgDeployService
             if (!truth.TryGetValue(type, out var signature))
             {
                 removed++;
-                details.Add($"{type} : inconnu de cette version de MAME — retire");
+                details.Add($"{type} : inconnu de cette version de MAME - retire");
                 continue;
             }
 
@@ -484,7 +484,7 @@ public sealed class MameCfgDeployService
     }
 
     /// <summary>
-    /// Deploys one rom's cfg, or the pack when rom is null — optionally a slice of
+    /// Deploys one rom's cfg, or the pack when rom is null - optionally a slice of
     /// it (offset/limit) so a client can chunk the run and show real progress.
     /// </summary>
     public Report Deploy(string? rom = null, int offset = 0, int limit = 0, bool replaceInputs = false)
@@ -682,7 +682,7 @@ public sealed class MameCfgDeployService
 
             // game buttons: replace the joycodes with the wired buttons.
             // directions/others (P1_LEFT…): KEEP the axis switches (the stick must
-            // keep working) and OR-append the wired buttons — curator semantics.
+            // keep working) and OR-append the wired buttons - curator semantics.
             var isGameButton = Regex.IsMatch(type, @"^P\d+_BUTTON\d+$");
             var kept = tokens.Where(t =>
                 !t.StartsWith("JOYCODE_", StringComparison.OrdinalIgnoreCase)
@@ -766,7 +766,7 @@ public sealed class MameCfgDeployService
             }
 
             // Self-recognition: a sequence identical to the RAW pack content is one
-            // of our earlier deployments (before the cabinet translation existed) —
+            // of our earlier deployments (before the cabinet translation existed) -
             // upgrade it outright to the translated form.
             var rawSeq = FindSeq(packRawInput, tag, type);
             if (rawSeq is not null && TokensEqual(existingTokens, SplitSeq(rawSeq)))

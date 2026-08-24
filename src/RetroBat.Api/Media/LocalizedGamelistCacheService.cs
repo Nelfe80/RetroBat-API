@@ -926,7 +926,7 @@ public sealed class LocalizedGamelistCacheService
     /// c'est justement ce qu'il faut quand un joueur consulte un jeu depuis
     /// son téléphone : il lit dans SA langue, la borne reste dans la sienne.
     ///
-    /// Retourne null si la langue n'a pas de cache — l'appelant retombe alors
+    /// Retourne null si la langue n'a pas de cache - l'appelant retombe alors
     /// sur la gamelist vivante, ce qui est le bon repli.
     /// </summary>
     public string? TryResolveCachedGamelistPath(string? language, string frontendSystemId)

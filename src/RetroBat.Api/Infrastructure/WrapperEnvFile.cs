@@ -6,7 +6,7 @@ namespace RetroBat.Api.Infrastructure;
 /// <summary>
 /// Accès partagé au <c>.env</c> du wrapper (<c>plugins\APIExpose\wrapper\.env</c>), lu une
 /// seule fois par le wrapper à l'init du core. On préserve TOUJOURS les autres lignes
-/// (DISCOVERY, PIPE, HZ, PERSO, commentaires) : jamais de réécriture complète du fichier —
+/// (DISCOVERY, PIPE, HZ, PERSO, commentaires) : jamais de réécriture complète du fichier -
 /// c'est justement ce qui permet aux différents flags (découverte, perso) de coexister.
 /// </summary>
 public static class WrapperEnvFile

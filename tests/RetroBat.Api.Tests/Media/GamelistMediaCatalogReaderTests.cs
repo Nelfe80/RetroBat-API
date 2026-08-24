@@ -9,9 +9,9 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 3 — reading a user gamelist as a media source. These pin what a &lt;game&gt; entry yields:
+/// LOT 3 - reading a user gamelist as a media source. These pin what a &lt;game&gt; entry yields:
 /// a binding per present media tag, a durable tag naming its kind (explicit-gamelist), the file
-/// name adding a kind (filename-convention), and the rule that matters most — a GENERIC slot
+/// name adding a kind (filename-convention), and the rule that matters most - a GENERIC slot
 /// (image / marquee / thumbnail) never invents a kind on its own (§7.3).
 /// </summary>
 public sealed class GamelistMediaCatalogReaderTests : IDisposable

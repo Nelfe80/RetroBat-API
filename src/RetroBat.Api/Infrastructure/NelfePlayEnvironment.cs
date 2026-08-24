@@ -13,7 +13,7 @@ namespace RetroBat.Api.Infrastructure;
 ///
 /// Le Passeport de jouabilite se remplissait a la main : quelqu'un decrivait
 /// un environnement, et cette description valait ce que vaut une declaration.
-/// La machine, elle, SAIT — elle connait ses versions et son materiel, et les
+/// La machine, elle, SAIT - elle connait ses versions et son materiel, et les
 /// dire ne lui coute rien. Ce qui suit est donc un releve, pas un formulaire.
 ///
 /// Deux precautions dans ce qui est retenu.
@@ -123,7 +123,7 @@ public static class NelfePlayEnvironment
     /// « 11 » ou « 10 », rien de plus.
     ///
     /// Le numero de build distingue deux machines a jour a quinze jours d'ecart,
-    /// ce qui n'a jamais explique qu'un jeu se lance ou non — mais suffirait a
+    /// ce qui n'a jamais explique qu'un jeu se lance ou non - mais suffirait a
     /// les empecher de compter ensemble.
     /// </summary>
     private static string ReadWindowsVersion()
@@ -184,7 +184,7 @@ public static class NelfePlayEnvironment
     /// Lance un utilitaire pour lire ce qu'il ecrit, et l'abandonne s'il traine.
     ///
     /// Sans delai maximum, un executable qui attendrait une touche bloquerait le
-    /// releve pour toujours — et avec lui le service qui l'a demande.
+    /// releve pour toujours - et avec lui le service qui l'a demande.
     /// </summary>
     private static string RunForOutput(string exePath, string arguments)
     {

@@ -130,7 +130,7 @@ public sealed class PanelDefinitionProjectionService
             }
 
             // the physical peripheral the input belongs to (joystick, spinner,
-            // trackball, paddle…) — clients draw one node per device
+            // trackball, paddle…) - clients draw one node per device
             var deviceType = ReadString(deviceNode, "type");
             var deviceLabel = ReadString(deviceNode, "label");
 

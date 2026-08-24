@@ -55,7 +55,7 @@ public static class RetroBatPaths
     public static string EmulationStationThemeMediaRoot => Path.Combine(EmulationStationThemesRoot, ".media");
     public static string EmulationStationThemeMediasRoot => Path.Combine(EmulationStationThemesRoot, ".medias");
     public static string EmulatorLauncherLogPath => Path.Combine(RetroBatRoot, "emulationstation", "emulatorLauncher.log");
-    // ES captures RetroArch stdout here — contains [RCHEEVOS]: verbose lines.
+    // ES captures RetroArch stdout here - contains [RCHEEVOS]: verbose lines.
     public static string EsLaunchStdoutLogPath => Path.Combine(EmulationStationConfigRoot, "es_launch_stdout.log");
     public static string RetroArchConfigPath => Path.Combine(RetroBatRoot, "emulators", "retroarch", "retroarch.cfg");
     public static string MameIniPath => Path.Combine(RetroBatRoot, "bios", "mame", "ini", "mame.ini");

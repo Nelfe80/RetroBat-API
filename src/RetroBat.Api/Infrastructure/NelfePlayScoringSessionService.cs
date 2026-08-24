@@ -3,8 +3,8 @@ namespace RetroBat.Api.Infrastructure;
 /// <summary>
 /// Joueur de SESSION sur la borne (Lot 6 / Station) : le code joueur RGPC posé au
 /// check-in par le hub, retiré au checkout. Le <see cref="NelfePlayScoringReporter"/>
-/// le lit à la fin de partie pour stamper le passeport certifié —
-/// <c>identity.session_player_id</c> + <c>context{world:"station", venue}</c> — afin
+/// le lit à la fin de partie pour stamper le passeport certifié -
+/// <c>identity.session_player_id</c> + <c>context{world:"station", venue}</c> - afin
 /// que le record joué en salle soit attribué à CE joueur (pas à la machine anonyme)
 /// et porte la provenance de l'enseigne (nom + ville).
 ///

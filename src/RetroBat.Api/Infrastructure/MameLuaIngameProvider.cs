@@ -376,8 +376,8 @@ public sealed class MameLuaIngameProvider : IProvider
 
     /// <summary>
     /// Actions whose value is a STATE, not a change: they name what the player has in
-    /// hand right now. Everything else in a .MEM describes something happening — a life
-    /// lost, a score rising — and only makes sense as a transition.
+    /// hand right now. Everything else in a .MEM describes something happening - a life
+    /// lost, a score rising - and only makes sense as a transition.
     /// </summary>
     private static bool IsStateAnnouncement(string action)
         => action.Equals("CHARACTER_SELECTED", StringComparison.OrdinalIgnoreCase)
@@ -399,7 +399,7 @@ public sealed class MameLuaIngameProvider : IProvider
         if (naming.Count == 0) return;
 
         _logger.LogInformation(
-            "MAME Lua: state address 0x{Address:X} first read = 0x{Value:X} — known values {Values}",
+            "MAME Lua: state address 0x{Address:X} first read = 0x{Value:X} - known values {Values}",
             naming[0].Address, value,
             string.Join(", ", naming.Select(r => $"0x{r.Value:X}={r.Description}")));
     }
@@ -529,7 +529,7 @@ public sealed class MameLuaIngameProvider : IProvider
 
         // Table alignee sur wrapper.cpp, qui fait contrat. La ligne de partage y est
         // deliberee : une VARIATION (change, increase, decrease) exige une lecture
-        // precedente, un ETAT (eq, neq, bit_*) n'en a pas besoin — il est vrai ou faux
+        // precedente, un ETAT (eq, neq, bit_*) n'en a pas besoin - il est vrai ou faux
         // des la premiere lecture. Le pont exigeait une transition partout, et rendait
         // donc invisible tout etat deja etabli quand la partie commence.
         var magnitude = Math.Abs(rate);
@@ -574,7 +574,7 @@ public sealed class MameLuaIngameProvider : IProvider
             default:
                 // Le wrapper ne declenche rien sur une condition qu'il ne connait pas.
                 // Se rabattre sur "change" faisait vivre sur arcade des entrees mortes
-                // sur console — deux comportements pour un meme fichier.
+                // sur console - deux comportements pour un meme fichier.
                 return false;
         }
     }

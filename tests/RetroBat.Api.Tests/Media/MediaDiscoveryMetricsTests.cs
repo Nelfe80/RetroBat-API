@@ -6,8 +6,8 @@ namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
 /// The measured payoff of HP1, as a test. Before the refactor, a system-scope
-/// <c>BuildAssetTable</c> recursively walked the ENTIRE subtree — including every game's
-/// media under <c>games/</c> — so its cost grew with the library (the arcade "10 s" scan).
+/// <c>BuildAssetTable</c> recursively walked the ENTIRE subtree - including every game's
+/// media under <c>games/</c> - so its cost grew with the library (the arcade "10 s" scan).
 /// The targeted inventory reads only the handful of recognised directories, so the cost
 /// is now CONSTANT regardless of how many games exist. These assertions pin that.
 /// </summary>
@@ -37,7 +37,7 @@ public class MediaDiscoveryMetricsTests
 
         // No recursive walk anymore, and games/ is never entered: exactly ONE media file
         // is read (the system marquee), whatever the number of games. This is the whole
-        // point of the patch — cost decoupled from library size.
+        // point of the patch - cost decoupled from library size.
         Assert.Equal(0, metrics.RecursiveScans);
         Assert.Equal(0, metrics.RecursiveFilesVisited);
         Assert.Equal(1, metrics.PatternFilesVisited);

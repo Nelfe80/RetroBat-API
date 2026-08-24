@@ -354,7 +354,7 @@ public sealed class RomSetManagerService
                         {
                             // F2 : hidden entry stripped of its ownership tags by
                             // ES's fragment ingestion but provably ours (ledger,
-                            // elected winner, or currently-decided hide) — re-tag
+                            // elected winner, or currently-decided hide) - re-tag
                             // it so the branches below hide or restore it through
                             // the normal flow
                             SetElementValue(game, ApiHiddenTag, "true");
@@ -2754,7 +2754,7 @@ public sealed class RomSetManagerService
     }
 
     /// <summary>
-    /// F1 (bug Super Mario World) — ownership ledger of every game path this
+    /// F1 (bug Super Mario World) - ownership ledger of every game path this
     /// manager hid, persisted OUTSIDE gamelist.xml. ES's addgames ingestion
     /// clears a game's unknown XML elements (MetaData loadFromXML), stripping
     /// the apiexpose_romset_* ownership tags while &lt;hidden&gt; survives: the

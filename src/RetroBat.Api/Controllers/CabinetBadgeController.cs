@@ -48,7 +48,7 @@ public sealed class CabinetBadgeController : ControllerBase
 
 /// <summary>Mode qr (borne libre) ou player (plaque joueur : avatar pixel
 /// dessine localement depuis seed+colors, pseudo, rang en sous-titre).
-/// ChallengeEndsAtUtc (additif) : challenge chronométré en cours — un petit
+/// ChallengeEndsAtUtc (additif) : challenge chronométré en cours - un petit
 /// cartouche au-dessus de la plaque décompte le temps restant.</summary>
 public sealed record CabinetBadgeRequest(
     bool Visible,

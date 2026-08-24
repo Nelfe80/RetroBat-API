@@ -1,11 +1,11 @@
 # Créer ses fichiers .MEM
 
-Un fichier `.MEM` apprend à APIExpose à **lire la mémoire d'un jeu pendant que vous y jouez** : où se trouvent les vies, le score, l'état du personnage… C'est grâce à lui que vos LEDs flashent quand Sonic perd ses rings et que le score s'affiche en direct sur le marquee — sans modifier ni le jeu ni l'émulateur.
+Un fichier `.MEM` apprend à APIExpose à **lire la mémoire d'un jeu pendant que vous y jouez** : où se trouvent les vies, le score, l'état du personnage… C'est grâce à lui que vos LEDs flashent quand Sonic perd ses rings et que le score s'affiche en direct sur le marquee - sans modifier ni le jeu ni l'émulateur.
 
 Cette page vous apprend à écrire le vôtre. Aucun outil spécial requis : un `.MEM` est un simple fichier texte.
 
 !!! tip "Partagez votre .MEM avec la communauté"
-    Vous avez un `.MEM` qui marche pour un jeu ? **Proposez-le sur NelfePlay** : il est validé, testé, puis — s'il est bon — intégré au dossier RAM officiel et déployé sur toutes les bornes, crédité à votre nom.
+    Vous avez un `.MEM` qui marche pour un jeu ? **Proposez-le sur NelfePlay** : il est validé, testé, puis - s'il est bon - intégré au dossier RAM officiel et déployé sur toutes les bornes, crédité à votre nom.
     → **[Contribuer un .MEM](https://nelfeplay.com/fr/mem/contribute)** (compte NelfePlay requis).
 
 ## Comment ça marche
@@ -29,7 +29,7 @@ Il lance un jeu **via APIExpose**, observe la mémoire pendant que vous jouez et
 
 La méthode est celle de tous les chercheurs d'adresses : jouez, dites à l'outil ce que vous venez d'observer (« j'ai perdu une vie », « le score a augmenté »), et la liste des adresses candidates se réduit à chaque passe jusqu'à la bonne.
 
-L'outil écrit ensuite la définition **au format du curator** — le même vocabulaire que les `.MEM` officiels — et vous pouvez la tester en jeu immédiatement, avant de la proposer à la communauté.
+L'outil écrit ensuite la définition **au format du curator** - le même vocabulaire que les `.MEM` officiels - et vous pouvez la tester en jeu immédiatement, avant de la proposer à la communauté.
 
 !!! note "Le mode découverte ne tourne que quand vous le demandez"
     Lire la RAM en continu coûte du temps machine. Le mode découverte est activé par MEM Explorer le temps de la session, puis relâché : une borne qui joue normalement n'en paye rien.
@@ -57,7 +57,7 @@ return {
 }
 ```
 
-### 1. `game` — l'identité du jeu
+### 1. `game` - l'identité du jeu
 
 ```lua
 game = {
@@ -68,7 +68,7 @@ game = {
 }
 ```
 
-### 2. `rom` — les ROMs compatibles
+### 2. `rom` - les ROMs compatibles
 
 ```lua
 rom = {
@@ -85,7 +85,7 @@ Les hashes permettent de reconnaître les variantes (régions, versions) sans du
 
 **Où trouver les adresses ?** Avec le cheat engine de RetroArch, un débogueur d'émulateur, ou les bases communautaires (Data Crystal, guides de romhacking). Les adresses des cheat codes existants sont souvent un excellent point de départ.
 
-### 3. `events` — ce qui déclenche les effets
+### 3. `events` - ce qui déclenche les effets
 
 Un événement = une adresse + un type + une **condition** + une **action** de la nomenclature + une description, rangé dans sa famille `categorie.sous_famille` :
 
@@ -108,7 +108,7 @@ events = {
 
 | Type | Signification |
 |---|---|
-| `u8` | 1 octet — **le choix par défaut** |
+| `u8` | 1 octet - **le choix par défaut** |
 | `u16le` / `u16be` | 2 octets, little / big endian |
 | `u24le` / `u24be` | 3 octets (fréquent pour les scores) |
 | `u32le` / `u32be` | 4 octets |
@@ -142,7 +142,7 @@ Chaque événement se range dans une famille, avec des sous-clés normalisées (
 | `state` | Formes et effets | `player_state`, `powerup_state`, `temporary_state`, `status_effect` |
 | `system` | Le technique utile | `memory`, `prng`, `flags` |
 
-Utilisez les noms canoniques : `rings` et `coins` deviennent `coins_rings`, `gold`/`rupees` deviennent `currency`, `XP` devient `experience`. Une valeur valide mais inclassable va dans `system.memory` — on ne jette rien.
+Utilisez les noms canoniques : `rings` et `coins` deviennent `coins_rings`, `gold`/`rupees` deviennent `currency`, `XP` devient `experience`. Une valeur valide mais inclassable va dans `system.memory` - on ne jette rien.
 
 ## Nommer ce que le joueur a en main
 
@@ -150,12 +150,12 @@ Deux actions se lisent autrement que les autres : leur `desc` porte **un nom**, 
 
 | Action | Famille | Ce que `desc` contient |
 |---|---|---|
-| `CHARACTER_SELECTED` | `state.player` | le personnage joué — `"Cody"`, `"Ryu"` |
-| `WEAPON_SELECTED` | `inventory.weapon` | l'arme en main — `"Fire Water"`, `"Shotgun"` |
+| `CHARACTER_SELECTED` | `state.player` | le personnage joué - `"Cody"`, `"Ryu"` |
+| `WEAPON_SELECTED` | `inventory.weapon` | l'arme en main - `"Fire Water"`, `"Shotgun"` |
 
 C'est ce qui permet à une carte d'instructions de s'afficher toute seule : le jeu annonce *Cody*, l'écran montre la fiche de Cody.
 
-Une entrée par valeur, en `condition="eq"` — elle ne se déclenche qu'à **l'entrée** dans la valeur, donc une fois au moment du choix :
+Une entrée par valeur, en `condition="eq"` - elle ne se déclenche qu'à **l'entrée** dans la valeur, donc une fois au moment du choix :
 
 ```lua
 state = {
@@ -170,20 +170,20 @@ state = {
 Deux règles rendent ces entrées utilisables :
 
 - **`player` est obligatoire.** Une carte s'affiche pour *un* joueur, et une borne en a plusieurs. Sans lui, l'événement ne sait pas où aller.
-- **Le nom doit être celui du contenu qu'il désigne**, pas celui de votre source. Si votre table dit `Torch` et que la carte du jeu affiche `FIRE WATER`, écrivez `Fire Water` — sinon l'événement pointe vers une fiche qui n'existe pas.
+- **Le nom doit être celui du contenu qu'il désigne**, pas celui de votre source. Si votre table dit `Torch` et que la carte du jeu affiche `FIRE WATER`, écrivez `Fire Water` - sinon l'événement pointe vers une fiche qui n'existe pas.
 
 ## Décrire un score : une entrée, ou des morceaux qui ne se recouvrent pas
 
-Un score est souvent éparpillé en mémoire — un chiffre par octet, une paire BCD, une moitié haute et une basse. L'agrégateur les **additionne** donc pour reconstituer le nombre, chacun pesé par ce que dit sa description ou son `score_mask`.
+Un score est souvent éparpillé en mémoire - un chiffre par octet, une paire BCD, une moitié haute et une basse. L'agrégateur les **additionne** donc pour reconstituer le nombre, chacun pesé par ce que dit sa description ou son `score_mask`.
 
 Mais **rien dans un `.MEM` ne dit « cette entrée EST le score entier »** plutôt qu'un morceau. Il faut donc choisir l'une des deux écritures, jamais les deux :
 
-- **une entrée qui couvre tout** — un type large la lit d'un coup (`u24be`, `u32be`), et `score_mask` / `score_encoding` disent comment l'interpréter ;
+- **une entrée qui couvre tout** - un type large la lit d'un coup (`u24be`, `u32be`), et `score_mask` / `score_encoding` disent comment l'interpréter ;
 - **plusieurs entrées, une par morceau**, dont les plages d'octets sont **disjointes**, chacune portant son poids.
 
-Les mélanger casse le score, et ça arrive tout seul : on ajoute l'entrée complète sans retirer les morceaux qu'elle remplace. Sonic 1 affichait ainsi **110 pour un score de 100** — une `u24be` en `0xFE26` (qui couvre `FE26` à `FE28`) posée à côté des deux moitiés de la note RA, en `0xFE26` et `0xFE28`.
+Les mélanger casse le score, et ça arrive tout seul : on ajoute l'entrée complète sans retirer les morceaux qu'elle remplace. Sonic 1 affichait ainsi **110 pour un score de 100** - une `u24be` en `0xFE26` (qui couvre `FE26` à `FE28`) posée à côté des deux moitiés de la note RA, en `0xFE26` et `0xFE28`.
 
-Le runtime se défend : quand deux morceaux couvrent un octet commun, **seul le plus large est gardé**, et l'autre est ignoré avec un avertissement qui les nomme tous les deux. Le fichier reste faux pour autant — deux descriptions du même nombre égareront le prochain lecteur.
+Le runtime se défend : quand deux morceaux couvrent un octet commun, **seul le plus large est gardé**, et l'autre est ignoré avec un avertissement qui les nomme tous les deux. Le fichier reste faux pour autant - deux descriptions du même nombre égareront le prochain lecteur.
 
 ## Traduire les valeurs : `map`
 
@@ -194,7 +194,7 @@ powerup_state = {
 }
 ```
 
-Le `map` transforme un nombre brut en mot stable — c'est ce que les effets lumineux exploitent (« fire » → panel rouge).
+Le `map` transforme un nombre brut en mot stable - c'est ce que les effets lumineux exploitent (« fire » → panel rouge).
 
 ## Piloter les effets : `action` et `action_map`
 
@@ -202,8 +202,8 @@ Le runtime traduit automatiquement vos familles en commandes universelles : une 
 
 ## Éviter le spam : `no_log` et `no_survey`
 
-- `no_log=true` ou `no_survey=true` : le runtime **ignore l'entrée dès le chargement** — l'adresse n'est pas surveillée et ne coûte rien en jeu.
-- Ces entrées restent volontairement dans les fichiers du Data Pack : pour réactiver une adresse, passez son flag à `false` (ou supprimez-le — l'absence vaut `false`), aucun outil n'est nécessaire.
+- `no_log=true` ou `no_survey=true` : le runtime **ignore l'entrée dès le chargement** - l'adresse n'est pas surveillée et ne coûte rien en jeu.
+- Ces entrées restent volontairement dans les fichiers du Data Pack : pour réactiver une adresse, passez son flag à `false` (ou supprimez-le - l'absence vaut `false`), aucun outil n'est nécessaire.
 - Un anti-spam automatique protège de toute façon le runtime : un événement non-score qui se déclenche en boucle est coupé définitivement pour la session.
 
 ## Les règles d'or des descriptions
@@ -223,4 +223,4 @@ En anglais, courtes, orientées gameplay, sans point final, sans adresse dans le
 - [ ] Testé en jeu : les événements apparaissent sur `ws://127.0.0.1:12345/ws/ingame` (avec leur `family`, et `color` pour les deltas score arcade)
 
 !!! question "Un doute ?"
-    Le modèle complet commenté est `resources\ram\<système>\template.MEM` quand il existe, et les fichiers du Data Pack sont autant d'exemples conformes. Les fichiers `.MEM` sont couverts par la [DATA-LICENSE](licences.md) — vos créations personnelles restent les vôtres, le partage communautaire est bienvenu.
+    Le modèle complet commenté est `resources\ram\<système>\template.MEM` quand il existe, et les fichiers du Data Pack sont autant d'exemples conformes. Les fichiers `.MEM` sont couverts par la [DATA-LICENSE](licences.md) - vos créations personnelles restent les vôtres, le partage communautaire est bienvenu.

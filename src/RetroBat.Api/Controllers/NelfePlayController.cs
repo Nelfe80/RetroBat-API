@@ -126,7 +126,7 @@ public sealed class NelfePlayController : ControllerBase
     /// Nom de cette machine dans le compte Nelfe Play. UNE seule regle pour les
     /// deux mondes : le poste local possede son nom. En salle, HubManager
     /// appelle cette route quand l'exploitant renomme la borne ; un particulier
-    /// — qui n'a pas de hub — le fixe ici, ou laisse le nom de sa machine
+    /// - qui n'a pas de hub - le fixe ici, ou laisse le nom de sa machine
     /// Windows. Le nom part au prochain releve.
     /// </summary>
     /// <response code="200">Nom applique.</response>
@@ -150,7 +150,7 @@ public sealed class NelfePlayController : ControllerBase
     /// <summary>
     /// Bloc « ta position » de la page /records : cette borne demande à Nelfe Play le
     /// rang de SON meilleur score (credential appairé ?? anonyme), pour que la page
-    /// statique — chargée dans le navigateur de la borne — affiche « #N sur M » et le
+    /// statique - chargée dans le navigateur de la borne - affiche « #N sur M » et le
     /// bouton d'identification. Appelable depuis nelfeplay.com (CORS) ; localhost seul
     /// (127.0.0.1) est joignable depuis une page HTTPS sans blocage « mixed content ».
     /// </summary>
@@ -203,7 +203,7 @@ public sealed class NelfePlayController : ControllerBase
         }
     }
 
-    /// <summary>Classement MONDIAL (records certifiés) du jeu COURANT — proxy public de
+    /// <summary>Classement MONDIAL (records certifiés) du jeu COURANT - proxy public de
     /// /api/v1/scores/leaderboard, sans paramètre : la borne résout elle-même le rom_group
     /// du jeu sélectionné. Sert la source « nelfeplay » du composant leaderboard.</summary>
     [HttpGet("records/leaderboard")]

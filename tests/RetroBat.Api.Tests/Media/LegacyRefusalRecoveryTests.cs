@@ -7,7 +7,7 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 1 — the one-shot es_settings recovery that undoes an OLD migration-refusal. This is the
+/// LOT 1 - the one-shot es_settings recovery that undoes an OLD migration-refusal. This is the
 /// risky part: it must re-enable a borne the removed cascade left crippled, WITHOUT ever
 /// overriding a config the operator shaped on purpose. These pin that boundary.
 /// </summary>

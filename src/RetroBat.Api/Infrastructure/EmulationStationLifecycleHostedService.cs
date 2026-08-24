@@ -148,7 +148,7 @@ public sealed class EmulationStationLifecycleHostedService : BackgroundService
         if (_options.CurrentValue.Scraping.MergePendingOnEsExit)
         {
             // ES is down: the only moment it cannot rewrite gamelist.xml from its
-            // own memory (audit-scrap.md §6.2) — merge the session's scraped data
+            // own memory (audit-scrap.md §6.2) - merge the session's scraped data
             // now so the next ES start reads the complete cards
             try
             {

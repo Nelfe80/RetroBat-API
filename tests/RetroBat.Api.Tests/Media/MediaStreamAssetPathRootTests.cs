@@ -6,7 +6,7 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// HP5 — PathRoot must be ADDITIVE: absent from the payload unless emitted, so an older
+/// HP5 - PathRoot must be ADDITIVE: absent from the payload unless emitted, so an older
 /// MarqueeManager sees byte-for-byte the same snapshot it always did. These pin the JsonIgnore
 /// (WhenWritingNull) contract; the value itself mirrors the existing relative-path root choice.
 /// </summary>

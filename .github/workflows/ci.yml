@@ -1,6 +1,6 @@
 name: CI
 
-# HP6 — run the test suite on every push and PR to main, on Windows because the projects
+# HP6 - run the test suite on every push and PR to main, on Windows because the projects
 # target net8.0-windows. Make this check required in the branch protection settings so a red
 # suite blocks a merge (that part is a repo setting, not something this file can enforce).
 

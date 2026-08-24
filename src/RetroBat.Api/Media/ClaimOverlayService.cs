@@ -15,10 +15,10 @@ using RetroBat.Domain.Paths;
 namespace RetroBat.Api.Media;
 
 /// <summary>
-/// « Réclame ton record ! » — surimpression affichée sur l'écran de la MACHINE
+/// « Réclame ton record ! » - surimpression affichée sur l'écran de la MACHINE
 /// (borne, PC perso, mini-PC…) à la fin d'une partie dont le score a été
 /// certifié et publié SOUS ANONYMAT. Plein écran : le fanart du jeu en fond, en
-/// DEUX COLONNES — à gauche l'identité du record (marque, « Record certifié »,
+/// DEUX COLONNES - à gauche l'identité du record (marque, « Record certifié »,
 /// logo/nom du jeu, score en or, rang, sceau) ; à droite un panneau avec le QR
 /// + le short-link nelfeplay.com/claim/XXXXXX. Le joueur scanne depuis son
 /// téléphone pour rattacher le record à son compte.
@@ -468,27 +468,27 @@ public sealed class ClaimOverlayService : BackgroundService
             "fr" => new ClaimStrings(
                 "Record certifié",
                 "Réclame ton record !",
-                "Scanne pour rattacher ce score à ton compte — depuis ton téléphone.",
+                "Scanne pour rattacher ce score à ton compte - depuis ton téléphone.",
                 "ou va sur",
                 "points",
                 "Mesuré · Signé sur la machine · 🔗 Enregistré sur la blockchain",
                 "Se ferme dès que tu ouvres le lien · ou à la première touche · sinon {0} s",
-                "✅ Record associé — bravo !",
+                "✅ Record associé - bravo !",
                 "Monde"),
             "es" => new ClaimStrings(
                 "Récord certificado",
                 "¡Reclama tu récord!",
-                "Escanea para vincular este puntaje a tu cuenta — desde tu teléfono.",
+                "Escanea para vincular este puntaje a tu cuenta - desde tu teléfono.",
                 "o entra en",
                 "puntos",
                 "Medido · Firmado en la máquina · 🔗 Registrado en la blockchain",
                 "Se cierra al abrir el enlace · o con la primera tecla · si no {0} s",
-                "✅ Récord vinculado — ¡bravo!",
+                "✅ Récord vinculado - ¡bravo!",
                 "Mundo"),
             "ja" => new ClaimStrings(
                 "認証記録",
                 "記録を受け取ろう！",
-                "スコアをアカウントに紐づけるにはスキャン — スマホから。",
+                "スコアをアカウントに紐づけるにはスキャン - スマホから。",
                 "またはアクセス",
                 "点",
                 "計測 · 端末で署名 · 🔗 ブロックチェーンに記録",
@@ -498,17 +498,17 @@ public sealed class ClaimOverlayService : BackgroundService
             "zh" => new ClaimStrings(
                 "认证纪录",
                 "认领你的纪录！",
-                "扫码将此分数绑定到你的账号 — 用手机。",
+                "扫码将此分数绑定到你的账号 - 用手机。",
                 "或访问",
                 "分",
                 "已测量 · 已在本机签名 · 🔗 已记录在区块链",
                 "打开链接即关闭 · 或按第一个键 · 否则 {0} 秒",
-                "✅ 纪录已绑定 — 恭喜！",
+                "✅ 纪录已绑定 - 恭喜！",
                 "世界"),
             "ko" => new ClaimStrings(
                 "인증 기록",
                 "기록을 등록하세요!",
-                "이 점수를 계정에 연결하려면 스캔하세요 — 휴대폰으로.",
+                "이 점수를 계정에 연결하려면 스캔하세요 - 휴대폰으로.",
                 "또는 방문",
                 "점",
                 "측정됨 · 기기에서 서명됨 · 🔗 블록체인에 기록됨",
@@ -518,12 +518,12 @@ public sealed class ClaimOverlayService : BackgroundService
             _ => new ClaimStrings(
                 "Certified record",
                 "Claim your record!",
-                "Scan to attach this score to your account — from your phone.",
+                "Scan to attach this score to your account - from your phone.",
                 "or go to",
                 "points",
                 "Measured · Signed on the machine · 🔗 Recorded on the blockchain",
                 "Closes when you open the link · or on the first key · otherwise {0} s",
-                "✅ Record linked — well played!",
+                "✅ Record linked - well played!",
                 "World"),
         };
     }
@@ -671,7 +671,7 @@ public sealed class ClaimOverlayService : BackgroundService
             }
 
             // Barrière clavier : on n'arme la fermeture-au-clavier qu'après avoir
-            // vu TOUTES les touches relâchées — sinon la combinaison de sortie du
+            // vu TOUTES les touches relâchées - sinon la combinaison de sortie du
             // jeu (encore enfoncée) refermerait l'overlay à l'instant même.
             var anyDown = AnyKeyDown();
             if (!_keyGateOpen)
@@ -829,7 +829,7 @@ public sealed class ClaimOverlayService : BackgroundService
 
             y += (int)(h * 0.075);
 
-            // « Record certifié » — doré, majuscules espacées.
+            // « Record certifié » - doré, majuscules espacées.
             using (var fKick = new Font("Segoe UI", 13f, FontStyle.Bold))
             {
                 DrawTracked(g, _strings.Kick.ToUpperInvariant(), fKick, Gold, x, y, 3f);

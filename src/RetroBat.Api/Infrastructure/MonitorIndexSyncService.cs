@@ -12,7 +12,7 @@ namespace RetroBat.Api.Infrastructure;
 /// screen so standalone emulators (MAME/FBNeo…) launch there. emulatorLauncher builds
 /// the target monitor as <c>"\\.\DISPLAY" + MonitorIndex</c> (see Mame64.Generator.cs),
 /// so the value must be the GDI device NUMBER of the RetroBat monitor (e.g.
-/// <c>\\.\DISPLAY24</c> → 24) — a number the ES "Monitor Index" dropdown (0..10) cannot
+/// <c>\\.\DISPLAY24</c> → 24) - a number the ES "Monitor Index" dropdown (0..10) cannot
 /// reach and that Windows renumbers on display reconfig. Recomputed at startup and on
 /// demand: Marquee Manager pushes the currently assigned game-screen device name when it
 /// changes. Only writes when the value differs (the store backs up es_settings.cfg).

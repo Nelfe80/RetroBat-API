@@ -554,7 +554,7 @@ public sealed class RetroAchievementsLeaderboardInferenceService : IHostedServic
     }
 
     // Mirrors RetroAchievementsLeaderboardHistoryStore.InitialCandidate: a level-scoped
-    // speedrun whose start selectors are all zero — i.e. the first level of the game.
+    // speedrun whose start selectors are all zero - i.e. the first level of the game.
     private bool IsInitialCandidate(RetroAchievementsLeaderboardInfo info)
     {
         var selectors = GetStartEqualities(info);

@@ -1,13 +1,13 @@
 namespace RetroBat.Api.Media;
 
-/// <summary>LOT 6 — how much the scraper is allowed to want.</summary>
+/// <summary>LOT 6 - how much the scraper is allowed to want.</summary>
 public enum ScrapeNeedMode
 {
     /// <summary>Only fetch a kind the catalog cannot satisfy at all (local-first default).</summary>
     MissingOnly,
 
     /// <summary>Also fetch a kind that only resolves to a region/style FALLBACK, to obtain the
-    /// exact variant — but still never touches a kind a user media already provides.</summary>
+    /// exact variant - but still never touches a kind a user media already provides.</summary>
     EnrichVariants
 }
 
@@ -22,11 +22,11 @@ public enum ScrapeNeedReason
 public readonly record struct ScrapeNeed(string Kind, ScrapeNeedReason Reason);
 
 /// <summary>
-/// LOT 6 — decides which media kinds a game still needs from a remote provider, from the resolver's
+/// LOT 6 - decides which media kinds a game still needs from a remote provider, from the resolver's
 /// view of what the catalog already holds rather than from raw gamelist slot presence. Two rules
 /// carry the exit criterion ("complete the catalog without reorganizing the user's library"):
 /// a kind resolved EXACT is never fetched (local-first), and a kind a VALID user media already
-/// provides is never fetched — not even for variant enrichment. Only genuinely missing kinds (and,
+/// provides is never fetched - not even for variant enrichment. Only genuinely missing kinds (and,
 /// under <see cref="ScrapeNeedMode.EnrichVariants"/>, kinds stuck on a region/style fallback) are
 /// planned. The planner is pure over a <see cref="GameMediaCatalog"/>; it schedules nothing itself.
 /// </summary>
@@ -80,7 +80,7 @@ public sealed class MediaScrapePlanner
                 case MediaResolveState.Fallback when mode == ScrapeNeedMode.EnrichVariants:
                     needs.Add(new ScrapeNeed(kind, ScrapeNeedReason.FallbackOnly));
                     break;
-                // Exact, or Fallback in MissingOnly: already satisfied — nothing to fetch.
+                // Exact, or Fallback in MissingOnly: already satisfied - nothing to fetch.
             }
         }
 
@@ -89,7 +89,7 @@ public sealed class MediaScrapePlanner
 
     /// <summary>A kind counts as user-provided when any candidate for it is referenced by the user
     /// gamelist or carries the explicit-gamelist qualification (§5.2). Provider-explicit and
-    /// canonical-store candidates do NOT count — the scraper may still enrich those.</summary>
+    /// canonical-store candidates do NOT count - the scraper may still enrich those.</summary>
     private static bool HasUserMedia(GameMediaCatalog catalog, string kind)
     {
         foreach (var candidate in catalog.Candidates)

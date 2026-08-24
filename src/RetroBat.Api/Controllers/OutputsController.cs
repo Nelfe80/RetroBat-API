@@ -116,7 +116,7 @@ public class OutputsController : ControllerBase
 
         // Cible explicite OU contexte courant : dans les deux cas la MÊME
         // résolution que le runtime (alias.json, nom normalisé, repli arcade)
-        // — un chemin naïf <system>/<rom>.MEM ne trouve jamais les fichiers
+        // - un chemin naïf <system>/<rom>.MEM ne trouve jamais les fichiers
         // édités.
         var snapshot = !string.IsNullOrWhiteSpace(system) && !string.IsNullOrWhiteSpace(rom)
             ? provider.ResolveDefinitionFor(rom.Trim(), system.Trim())
@@ -145,7 +145,7 @@ public class OutputsController : ControllerBase
         });
     }
 
-    // Marche Lua superficielle — MÊMES règles que MarqueeManagerSetup /
+    // Marche Lua superficielle - MÊMES règles que MarqueeManagerSetup /
     // LedManagerSetup (MemSignalCatalog, héritées du MemSignalsParser de
     // RetroCreator) : tables nommées = segments de famille (équilibre
     // d'accolades), seuls les signaux de la section top-level `events`
@@ -204,7 +204,7 @@ public class OutputsController : ControllerBase
             {
                 var name = open.Groups[1].Value;
                 // Seul le `events` TOP-LEVEL ouvre la section : certains jeux
-                // imbriquent une famille nommée events (flow.events) — elle
+                // imbriquent une famille nommée events (flow.events) - elle
                 // doit s'empiler comme famille, pas réinitialiser la section.
                 if (name.Equals("events", StringComparison.OrdinalIgnoreCase) && !inEvents)
                 {
@@ -257,11 +257,11 @@ public sealed class RetroArchDefinitionContentResponse
     /// <example>sonic-the-hedgehog</example>
     public string Rom { get; set; } = string.Empty;
     public string DefinitionFile { get; set; } = string.Empty;
-    /// <summary>SHA-256 of the raw file bytes (uppercase hex) — the definition identity.</summary>
+    /// <summary>SHA-256 of the raw file bytes (uppercase hex) - the definition identity.</summary>
     public string Sha256 { get; set; } = string.Empty;
     public long SizeBytes { get; set; }
     public DateTime LastWriteUtc { get; set; }
-    /// <summary>Raw mem-curator Lua content — the authoritative contract.</summary>
+    /// <summary>Raw mem-curator Lua content - the authoritative contract.</summary>
     public string Content { get; set; } = string.Empty;
     public IReadOnlyList<RetroArchDefinitionSignal> Signals { get; set; } = [];
 }

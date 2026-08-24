@@ -7,7 +7,7 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 9 — the migration's transfer primitive. The invariants that make a destructive migration safe:
+/// LOT 9 - the migration's transfer primitive. The invariants that make a destructive migration safe:
 /// Copy never removes the source; Move removes it only after a verified copy is in place; an existing
 /// target is replaced with verified content; a missing source is a no-op.
 /// </summary>

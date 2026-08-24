@@ -6,8 +6,8 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 6 (2/2) — the merge that lets the resolver refine the raw-slot needs. Invariant: the planner
-/// may only SUPPRESS a scrape (a kind the canonical store already satisfies), never add one — so a
+/// LOT 6 (2/2) - the merge that lets the resolver refine the raw-slot needs. Invariant: the planner
+/// may only SUPPRESS a scrape (a kind the canonical store already satisfies), never add one - so a
 /// genuinely missing kind is never skipped and a present media is never disturbed.
 /// </summary>
 public class ScrapeNeedSuppressionTests

@@ -100,7 +100,7 @@ public class RetroArchWrapperProvider : IProvider
     /// Resolves a definition for an EXPLICIT system/rom pair with the exact
     /// same logic as the current-context path: alias.json first, normalized
     /// rom name, and arcade-like system fallback. This is what remote
-    /// consumers (tournament manager, Live Contest) must use — a naive
+    /// consumers (tournament manager, Live Contest) must use - a naive
     /// <c>&lt;system&gt;/&lt;rom&gt;.MEM</c> path never matches curated files.
     /// </summary>
     public RetroArchDefinitionSnapshot ResolveDefinitionFor(string rawRom, string systemId)
@@ -118,7 +118,7 @@ public class RetroArchWrapperProvider : IProvider
 
         // Repli catalogue (même logique que MarqueeManagerSetup/MemSignalCatalog) :
         // clé tolérante à la ponctuation sur alias.json ET les basenames .MEM,
-        // puis nom débarrassé des tags de dump — « Sonic The Hedgehog (Europe) »
+        // puis nom débarrassé des tags de dump - « Sonic The Hedgehog (Europe) »
         // trouve sonic-the-hedgehog.MEM même sans entrée d'alias.
         foreach (var candidateSystemId in ResolveDefinitionSystemCandidates(systemId))
         {

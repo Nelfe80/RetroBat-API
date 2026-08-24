@@ -3,7 +3,7 @@ using System.IO;
 namespace RetroBat.Api.Media;
 
 /// <summary>
-/// HP3 — a bounded, cross-publication cache of a directory's TOP-LEVEL file listing.
+/// HP3 - a bounded, cross-publication cache of a directory's TOP-LEVEL file listing.
 ///
 /// HP1/HP2 already list every recognised media directory once per publication; this cache
 /// keeps those listings BETWEEN publications so a hot revisit (navigating back to a game or
@@ -13,13 +13,13 @@ namespace RetroBat.Api.Media;
 /// rollback via the MediaDiscovery options.
 ///
 /// Correctness rests on two guards, not on explicit invalidation alone:
-///  * every hit re-reads the directory's own mtime — NTFS bumps it on any add / remove /
+///  * every hit re-reads the directory's own mtime - NTFS bumps it on any add / remove /
 ///    rename of a direct child, so a file appearing or vanishing is caught immediately, the
 ///    exact "no stale index" the patch demands;
 ///  * the listing carries only file PATHS. A file whose CONTENT changed keeps its path, and
 ///    the projection re-stats every path through CreateAsset, so size / mtime stay live.
 /// A safety TTL backstops filesystems that do not update the directory mtime, and writers may
-/// still invalidate explicitly (HP4) — chiefly to turn a negatively-cached absent directory
+/// still invalidate explicitly (HP4) - chiefly to turn a negatively-cached absent directory
 /// positive the instant APIExpose creates it.
 /// </summary>
 internal sealed class MediaDirectoryListingCache
@@ -110,7 +110,7 @@ internal sealed class MediaDirectoryListingCache
 
     /// <summary>Drops the entry for the directory that holds <paramref name="fullPath"/>. A
     /// writer calls this at the point it knows the final file, so the next publication sees the
-    /// mutation without waiting for the TTL — and a newly created directory stops being
+    /// mutation without waiting for the TTL - and a newly created directory stops being
     /// negatively cached at once.</summary>
     public void InvalidatePath(string fullPath)
     {

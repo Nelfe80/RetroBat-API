@@ -100,7 +100,7 @@ public class MediaKindsFromRelativePathTests
     /// lives under <c>games/&lt;slug&gt;/…</c>. Its directory is therefore never one of
     /// the recognised system directories, so <see cref="MediaKinds.FromRelativePath"/>
     /// returns null for it. A system-scope inventory that never descends into
-    /// <c>games/</c> thus loses zero assets — it only skips wasted I/O.
+    /// <c>games/</c> thus loses zero assets - it only skips wasted I/O.
     /// </summary>
     [Theory]
     [InlineData("games/1942/artwork/marquee/marquee.png")]

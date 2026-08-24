@@ -396,7 +396,7 @@ public sealed class DescriptionTranslationService : BackgroundService
     /// is missing and a download URL is configured, so the offline installer no longer has to ship it.
     /// Returns true only once the expected executable exists. Any failure (no URL, network, bad archive,
     /// wrong layout) leaves things as-is and returns false, so translation degrades gracefully. A plain
-    /// HttpClient — no shell — keeps it within the antivirus/ClickFix rules.</summary>
+    /// HttpClient - no shell - keeps it within the antivirus/ClickFix rules.</summary>
     private async Task<bool> TryProvisionEngineAsync(string toolsRoot, string executablePath, CancellationToken cancellationToken)
     {
         var url = _options.CurrentValue.Scraping.TranslateLocallyEngineDownloadUrl?.Trim();

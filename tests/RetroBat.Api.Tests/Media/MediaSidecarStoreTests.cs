@@ -5,7 +5,7 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 5 (§11) — the ownership sidecar. These pin the contract the FillMissing policy relies on:
+/// LOT 5 (§11) - the ownership sidecar. These pin the contract the FillMissing policy relies on:
 /// ownership survives a reload, is asserted only while the gamelist still holds what we wrote,
 /// releases cleanly, persists atomically outside roms/, and never writes when nothing changed.
 /// </summary>

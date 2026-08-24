@@ -5,7 +5,7 @@ using RetroBat.Api.Media;
 namespace RetroBat.Api.Controllers;
 
 /// <summary>
-/// LOT 8 — serves a gamelist media asset (canonical store OR a user binding under roms/) from an
+/// LOT 8 - serves a gamelist media asset (canonical store OR a user binding under roms/) from an
 /// OPAQUE, allowlist-scoped reference produced by <see cref="GamelistMediaAssetResolver"/>. The
 /// reference never carries a steerable path; the resolver re-validates the root and rejects any
 /// traversal, so a client cannot read outside the allowlisted roots. A missing or invalid reference

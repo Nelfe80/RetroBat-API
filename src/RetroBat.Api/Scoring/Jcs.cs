@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 namespace RetroBat.Api.Scoring;
 
 /// <summary>
-/// Canonicalisation JSON — RFC 8785 (JCS). Nombres ENTIERS uniquement (score/temps
+/// Canonicalisation JSON - RFC 8785 (JCS). Nombres ENTIERS uniquement (score/temps
 /// sont des chaînes). Clés triées par unités UTF-16 (Ordinal), aucun blanc,
 /// échappements ECMAScript, non-ASCII littéral.
 /// </summary>

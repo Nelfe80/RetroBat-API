@@ -2,7 +2,7 @@
 
 ## Your media always come first
 
-APIExpose finds, organizes and projects game media: screenshots, logos and wheels, boxarts, fanarts, videos, manuals, magazines, maps and theme media. But **your files take priority** — place them here and APIExpose will use them before any downloaded media:
+APIExpose finds, organizes and projects game media: screenshots, logos and wheels, boxarts, fanarts, videos, manuals, magazines, maps and theme media. But **your files take priority** - place them here and APIExpose will use them before any downloaded media:
 
 ```text
 media\user\systems\<system>\games\<game>\
@@ -28,7 +28,7 @@ To override an entire **system**'s media:
 media\user\systems\<system>\
 ```
 
-If no local system media exists, APIExpose looks in the current EmulationStation theme, then in `es-theme-carbon` — it does not walk through every installed theme.
+If no local system media exists, APIExpose looks in the current EmulationStation theme, then in `es-theme-carbon` - it does not walk through every installed theme.
 
 ## Automatic scraping
 

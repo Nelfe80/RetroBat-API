@@ -1055,9 +1055,9 @@ public sealed class ApiExposeRuntimeOptionsService
             appOptions.Scraping.AutoScrapingEnabled;
     }
 
-    /// <summary>LOT 1 — the media-migration mode: "none" (default: no migration, no autorun),
+    /// <summary>LOT 1 - the media-migration mode: "none" (default: no migration, no autorun),
     /// "copy" (migrate roms/ media into the canonical store, keep the roms/ copies) or "move"
-    /// (migrate then remove the roms/ copies — the old RemoveRoms=true behaviour). es_settings
+    /// (migrate then remove the roms/ copies - the old RemoveRoms=true behaviour). es_settings
     /// key <c>global.apiexpose.media_migration.mode</c> overrides appsettings; any unrecognised
     /// value falls back to "none", so a migration is never started on a value nobody set.</summary>
     public string GetMediaMigrationMode()
@@ -1066,7 +1066,7 @@ public sealed class ApiExposeRuntimeOptionsService
         var esSettings = ReadEsSettings();
 
         // Advanced override: an explicit mode (copy/move) set in appsettings or es_settings always
-        // wins — this is how a power user opts into the DESTRUCTIVE "move".
+        // wins - this is how a power user opts into the DESTRUCTIVE "move".
         var raw = ResolveString(
             "global.apiexpose.media_migration.mode",
             appOptions.MediaMigration?.Mode ?? "none",
@@ -1082,7 +1082,7 @@ public sealed class ApiExposeRuntimeOptionsService
         return ResolveBool("global.apiexpose.media_migration.enabled", false, esSettings) ? "copy" : "none";
     }
 
-    /// <summary>LOT 5 — whether gamelist media writes go through the FillMissing allocation policy
+    /// <summary>LOT 5 - whether gamelist media writes go through the FillMissing allocation policy
     /// (never overwrite a user binding). es_settings key
     /// <c>global.apiexpose.media_allocation.write_policy_enabled</c> overrides appsettings; OFF by
     /// default so a fresh install keeps the legacy overwrite behaviour.</summary>

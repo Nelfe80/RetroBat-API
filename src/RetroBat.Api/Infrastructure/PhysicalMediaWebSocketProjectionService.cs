@@ -15,7 +15,7 @@ namespace RetroBat.Api.Infrastructure;
 public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, IDisposable
 {
     // v5: SVG filter references are stripped before rasterisation (librsvg drops filtered
-    // elements — the gx4000 "GX 4000" lettering vanished), and arcade sub-systems now key
+    // elements - the gx4000 "GX 4000" lettering vanished), and arcade sub-systems now key
     // their wheel on the frontend id. Bumping the version regenerates every cached logo so
     // both land without a manual purge.
     private const string SystemLogoCacheVersion = "system-logo-cache-v5-png32-srgb";
@@ -42,20 +42,20 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     private IDisposable? _subscription;
     private IDisposable? _optionsChange;
 
-    /// <summary>HP3 — cross-publication directory-listing cache. Static because the enumeration
+    /// <summary>HP3 - cross-publication directory-listing cache. Static because the enumeration
     /// helpers it backs are static; a single hosted-service instance configures it from options.
     /// Initialised <see cref="MediaDirectoryListingCache.Disabled"/> and configured by the
     /// constructor from options (on by default since 1.6.4); DirectoryCacheEnabled=false restores
     /// the byte-for-byte HP1/HP2 path.</summary>
     internal static readonly MediaDirectoryListingCache DirectoryCache = new();
 
-    /// <summary>HP5 — whether CreateAsset stamps PathRoot on each asset. Static for the same
+    /// <summary>HP5 - whether CreateAsset stamps PathRoot on each asset. Static for the same
     /// reason as DirectoryCache (CreateAsset is static); off until MediaDiscovery.EmitPathRoot.</summary>
     private static volatile bool _emitPathRoot;
 
-    /// <summary>LOT 7 — whether the game snapshots FILL missing kinds from the user gamelist (roms/
+    /// <summary>LOT 7 - whether the game snapshots FILL missing kinds from the user gamelist (roms/
     /// media referenced but not in the canonical store). Off until MediaDiscovery.GamelistMediaEnabled;
-    /// additive — it only ADDS a kind the canonical table lacks, never overrides a canonical asset.</summary>
+    /// additive - it only ADDS a kind the canonical table lacks, never overrides a canonical asset.</summary>
     private static volatile bool _gamelistMediaEnabled;
 
     public PhysicalMediaWebSocketProjectionService(
@@ -208,7 +208,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // fallbacks, Assets says exactly what THIS entry owns.
                     // The gabarit's logo layer resolves the "wheel" kind from the PLAIN
                     // asset table (its layer key is "wheel", not "systemwheel"), so the
-                    // per-frontend pin must sit on BOTH tables — otherwise fbneo's gabarit
+                    // per-frontend pin must sit on BOTH tables - otherwise fbneo's gabarit
                     // reads the shared arcade wheel and overwrites the correct logo.
                     Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, DisplayableMediaKinds),
                     SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, DisplayableMediaKinds),
@@ -323,7 +323,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
             var marquee = BuildGameMarqueeMedia(roots, fallbackSystemRoots);
 
-            // LOT 7 — one merged game asset table for all three surfaces: canonical store, plus a
+            // LOT 7 - one merged game asset table for all three surfaces: canonical store, plus a
             // fill from the user gamelist when the flag is on (off by default = the old table).
             var gameAssets = BuildGameAssets(systemId, gameSlug, selected.GamePath, roots);
 
@@ -379,7 +379,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     },
                     // A topper shows more than a topper: the game's identity and the
                     // printed matter that used to sit above the cabinet. Self-sufficient
-                    // stream — no second subscription to dress this surface.
+                    // stream - no second subscription to dress this surface.
                     Assets = gameAssets,
                     SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, fallbackSystemRoots, DisplayableMediaKinds),
                     Text = text,
@@ -433,7 +433,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             {
                 // §14 observability, at Debug so the on-by-default cache adds no per-navigation
                 // noise in production: a cabinet that wants a look raises the level and sees hits
-                // climb while enum stays flat — the "0 EnumerateFiles on revisit" criterion.
+                // climb while enum stays flat - the "0 EnumerateFiles on revisit" criterion.
                 var cache = DirectoryCache.Metrics();
                 _logger?.LogDebug(
                     "media discovery cache: hits={Hits}, misses={Misses}, enum={Enum}, invalidations={Inval}, entries={Entries}",
@@ -508,18 +508,18 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// <param name="roots">Roots of the entry being shown. A screen serves screen-shaped
     /// media of its own, so it carries its own asset table rather than borrowing the
     /// marquee's: a consumer subscribed to this stream alone must not need a second one.</param>
-    /// <param name="systemRoots">Null in system scope — there is no wider scope to
+    /// <param name="systemRoots">Null in system scope - there is no wider scope to
     /// distinguish it from.</param>
     /// <summary>
     /// The entry's TEXT, in the language EmulationStation is set to. Surfaces that print
-    /// something about a game — a topper, an instruction card — needed the description,
+    /// something about a game - a topper, an instruction card - needed the description,
     /// the genre, the number of players, and had no way to get them.
     ///
     /// Only text is published. The metadata bundles also carry media pointers
     /// (boxart, wheel, mix...) written when they were scraped: they are stale by
     /// design and would compete with the asset tables, which are resolved fresh.
     /// Fields the bundle does not carry are completed from the in-memory details.
-    /// Null when nothing is known — an empty block would say "nothing to print" where
+    /// Null when nothing is known - an empty block would say "nothing to print" where
     /// the truth is "we never looked".
     /// </summary>
     /// <summary>
@@ -529,7 +529,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// for that. A consumer subscribed to this stream alone can draw a panel without a
     /// second subscription.
     ///
-    /// Source: resources/dynpanels, game file then system file — the same precedence
+    /// Source: resources/dynpanels, game file then system file - the same precedence
     /// the panel export uses. Null when the entry has no panel: an empty block would
     /// claim the buttons mean nothing.
     /// </summary>
@@ -708,7 +708,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         };
     }
 
-    /// <summary>Which languages this entry has been written in — so a consumer that
+    /// <summary>Which languages this entry has been written in - so a consumer that
     /// wants another one knows it exists before asking for it.</summary>
     private static IReadOnlyList<string> ListTextLanguages(IReadOnlyList<string> roots)
     {
@@ -919,7 +919,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                     // fallbacks, Assets says exactly what THIS entry owns.
                     // The gabarit's logo layer resolves the "wheel" kind from the PLAIN
                     // asset table (its layer key is "wheel", not "systemwheel"), so the
-                    // per-frontend pin must sit on BOTH tables — otherwise fbneo's gabarit
+                    // per-frontend pin must sit on BOTH tables - otherwise fbneo's gabarit
                     // reads the shared arcade wheel and overwrites the correct logo.
                     Assets = BuildSystemAssetTable(frontendSystemId, systemId, roots, DisplayableMediaKinds),
                     SystemAssets = BuildSystemAssetTable(frontendSystemId, systemId, roots, DisplayableMediaKinds),
@@ -1521,7 +1521,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
     /// <summary>
     /// imagemagick's SVG rasteriser (librsvg) silently DROPS any element carrying an SVG
-    /// filter it does not implement — feConvolveMatrix among them — so a themed logo like
+    /// filter it does not implement - feConvolveMatrix among them - so a themed logo like
     /// gx4000, whose "GX 4000" lettering sits under such a filter, loses its text entirely
     /// and only the surrounding artwork survives. The filter is a cosmetic sharpen; removing
     /// only the REFERENCE (never the geometry, never the &lt;defs&gt;) lets the letters render.
@@ -1638,7 +1638,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// Every instruction card of a game, each stamped with the ROLE it belongs to.
     ///
     /// Cards used to live flat under `artwork/ic`; they are now grouped one level
-    /// deeper, one folder per role — `cody`, `items-and-weaponry`, `stage-3`. Both
+    /// deeper, one folder per role - `cody`, `items-and-weaponry`, `stage-3`. Both
     /// layouts are read: a cabinet cartographed before the change keeps working, and
     /// its cards simply carry the empty role.
     ///
@@ -1647,7 +1647,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     private IEnumerable<MediaStreamAsset> FindInstructionCards(IReadOnlyList<string> roots)
     {
         // An image, and only an image: each card now sits next to its `.json` companion,
-        // which the `ic*.*` pattern happily matches too — every card would be published
+        // which the `ic*.*` pattern happily matches too - every card would be published
         // twice, once as a picture and once as its own description.
         static bool IsCard(MediaStreamAsset asset)
             => (asset.Stem.Equals("ic", StringComparison.OrdinalIgnoreCase)
@@ -1710,7 +1710,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
     /// <summary>
     /// Where each entry sits inside a card, from the `.json` written next to it. Null
-    /// when there is none — a card without a companion is still a card, it just cannot
+    /// when there is none - a card without a companion is still a card, it just cannot
     /// have one of its entries framed.
     /// </summary>
     private static IReadOnlyList<InstructionCardPanel>? ReadCardPanels(string cardPath)
@@ -1892,7 +1892,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     // The recursive AllDirectories scan of a system root is the dominant cost this
     // patch removes; these counters make the "before" measurable and testable. The
     // accumulator is null unless a scope is opened, so production pays nothing until
-    // asked. HP1/HP2 replace the scan and these numbers collapse — this block goes
+    // asked. HP1/HP2 replace the scan and these numbers collapse - this block goes
     // with it.
     internal sealed class MediaDiscoveryMetrics
     {
@@ -1926,7 +1926,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         internal MediaInventory(IReadOnlyDictionary<string, IReadOnlyList<string>> byDirectory)
             => _byDirectory = byDirectory;
 
-        /// <summary>Full file paths in a recognised directory — roots in priority order,
+        /// <summary>Full file paths in a recognised directory - roots in priority order,
         /// then top-directory enumeration order. Empty when the directory is absent.</summary>
         public IReadOnlyList<string> Files(string relativeDirectory)
             => _byDirectory.TryGetValue(relativeDirectory, out var files) ? files : Array.Empty<string>();
@@ -1937,7 +1937,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     private static readonly AsyncLocal<System.Collections.Concurrent.ConcurrentDictionary<string, MediaInventory>?> _inventoryScope = new();
 
     /// <summary>Begins a per-publication inventory scope: within it, repeated inventory
-    /// requests for the same roots reuse a single disk listing. Dispose ends the scope —
+    /// requests for the same roots reuse a single disk listing. Dispose ends the scope -
     /// each publication is fresh, nothing is kept across events (that is HP3).</summary>
     internal static IDisposable BeginInventoryScope()
     {
@@ -1975,7 +1975,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                 if (!Directory.Exists(root)) continue;
                 var directory = CombineRelative(root, relativeDirectory);
 
-                // HP3: the listing comes from the cross-publication cache — a straight
+                // HP3: the listing comes from the cross-publication cache - a straight
                 // pass-through enumeration when the cache is off, a validated hit otherwise. The
                 // onEnumerate callback fires only on a real disk read, so the baseline metric
                 // still counts enumerations and not cache hits.
@@ -2035,7 +2035,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
 
     /// <summary>
     /// Every media kind a surface may pull into a composition. DECISION (2026-08): all four
-    /// surfaces expose the SAME set — a surface only shows what its composition references,
+    /// surfaces expose the SAME set - a surface only shows what its composition references,
     /// so curating per surface added maintenance without ever changing a display. Cheap: the
     /// table is filtered from the ALREADY-BUILT inventory (no extra disk work), and a key
     /// exists only when the file does, so a media-poor game stays small.
@@ -2043,7 +2043,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// Excluded on purpose: <c>manual</c>/<c>magazine</c> (documents, never shown on a
     /// surface), <c>themehb</c> (a theme archive), <c>video</c>/<c>video-normalized</c>
     /// (playback, served by <c>Media.Video</c>), and <c>dmd-animation</c> (a LIST served by
-    /// <c>Media.Dmd</c> — a one-per-kind table would keep only one frame).
+    /// <c>Media.Dmd</c> - a one-per-kind table would keep only one frame).
     /// </summary>
     internal static readonly IReadOnlySet<string> DisplayableMediaKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -2059,7 +2059,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     };
 
     /// <summary>
-    /// LOT 7 — the game's canonical asset table, plus (only when MediaDiscovery.GamelistMediaEnabled
+    /// LOT 7 - the game's canonical asset table, plus (only when MediaDiscovery.GamelistMediaEnabled
     /// is on) any kind the canonical store LACKS, filled from the user gamelist. So a roms/ medium the
     /// gamelist references but that was never migrated becomes visible, WITHOUT ever overriding a
     /// canonical asset. Off by default → the table is byte-for-byte the old one. Uses the LOT 3 reader
@@ -2152,7 +2152,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             : string.Empty;
 
         // HP5: name the root Path is relative to, so a consumer stops guessing. Mirrors the
-        // relative-path computation above (same order), so Path never changes — off by default.
+        // relative-path computation above (same order), so Path never changes - off by default.
         var pathRoot = !_emitPathRoot
             ? null
             : IsUnderRoot(fullPath, RetroBatPaths.PluginRoot)
@@ -2300,7 +2300,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     }
 
     /// <summary>System logo/fanart shipped by the themes (active theme, then es-theme-carbon),
-    /// as an O(1) in-memory lookup built once from the theme-set roots — replaces the
+    /// as an O(1) in-memory lookup built once from the theme-set roots - replaces the
     /// per-selection theme glob. Built lazily on first system fanart/logo resolution, cached
     /// for the process. See docs §27.</summary>
     private static readonly Lazy<ThemeSystemArtIndex> _themeArt =
@@ -2318,15 +2318,15 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             ?? _themeArt.Value.ResolveFanartPath(SystemFanartNames(frontendSystemId, systemId));
     }
 
-    // The system logo the marquee SNAPSHOT carries must be a raster — MarqueeManager renders
-    // SVG only for panels, not for media — so it is the media-store PNG. That PNG IS the cache
+    // The system logo the marquee SNAPSHOT carries must be a raster - MarqueeManager renders
+    // SVG only for panels, not for media - so it is the media-store PNG. That PNG IS the cache
     // produced from the source resolved below and refreshed by EnsureSystemLogoCachedAsync,
     // then republished; a first visit before the cache exists simply carries no system logo.
     private MediaStreamAsset? ResolveSystemLogoAsset(string frontendSystemId, string systemId, IReadOnlyList<string> roots)
     {
         // Resolve the EXACT file EnsureSystemLogoCached writes: wheel.png for 1:1 systems
         // (snes, and the arcade AGGREGATE) and wheel.<frontend>.png for the collapsed arcade
-        // sub-systems. Using the exact name — never the "wheel.*" glob — is what stops the
+        // sub-systems. Using the exact name - never the "wheel.*" glob - is what stops the
         // arcade aggregate from grabbing an alphabetically-earlier sibling (wheel.fbneo.png),
         // and stops fbneo from grabbing the shared wheel. roots put media/user first, so this
         // already honours an operator override.
@@ -2359,7 +2359,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     }
 
     /// <summary>
-    /// The system asset table the GABARIT reads — published as <c>SystemAssets</c>, which
+    /// The system asset table the GABARIT reads - published as <c>SystemAssets</c>, which
     /// MarqueeManager exposes under the snapshot's "system:*" keys and a gabarit's
     /// "systemwheel"/"systemmarquee" layers resolve against (never Media.Logo). The generic
     /// table enumerates the shared media dir, where arcade collapses several frontends'
@@ -2395,12 +2395,12 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         }
     }
 
-    // The logo SOURCE to convert/compose (svg is fine here — imagemagick handles it):
-    //  1. a logo the operator dropped under media/user ALWAYS wins — it is a deliberate
+    // The logo SOURCE to convert/compose (svg is fine here - imagemagick handles it):
+    //  1. a logo the operator dropped under media/user ALWAYS wins - it is a deliberate
     //     per-cabinet override, and it must never be shadowed by a theme;
     //  2. then the theme's per-system logo (canonical, and it keeps fbneo/mame distinct via
     //     the specific frontend id, where the media store is keyed by the collapsed "arcade"
-    //     id — this is what beats the wrong "arcade" logo the scraped store carries);
+    //     id - this is what beats the wrong "arcade" logo the scraped store carries);
     //  3. then the rest of the media store, for systems no theme ships.
     private string? ResolveSystemLogoPath(string frontendSystemId, string systemId, SystemDetails? selectedSystem, IReadOnlyList<string> roots)
     {
@@ -2423,7 +2423,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     /// composited marquee) therefore key on the FRONTEND id, so fbneo and mame no longer
     /// overwrite each other's single file under media/systems/arcade. A system whose
     /// frontend id already equals its systemId (snes, and the jaguar-style 1:1 renames)
-    /// keeps the plain name — no new files, no migration, no behaviour change.
+    /// keeps the plain name - no new files, no migration, no behaviour change.
     /// </summary>
     internal static string FrontendScopedFileName(string baseName, string extension, string frontendSystemId, string systemId)
         => string.Equals(frontendSystemId, systemId, StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(frontendSystemId)
@@ -2594,7 +2594,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             // reach us AFTER a newer one. Advance the high-water mark only on a
             // strictly greater sequence; never promote an out-of-order arrival.
             // A late lower sequence keeps its real value so IsStaleSelectionSequence
-            // drops it — the intermediate is skipped by order, the destination wins.
+            // drops it - the intermediate is skipped by order, the destination wins.
             // (Equal sequence = the enriched second pass of the same selection: it
             // is not advanced and not dropped, so genre/year details still publish.)
             if (sequence > _latestSelectionSequence)
@@ -2818,7 +2818,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     {
         /// <summary>
         /// For an instruction card: the folder it sits in, which IS what the card is
-        /// about — a character (`cody`), a topic (`items-and-weaponry`) or a stage
+        /// about - a character (`cody`), a topic (`items-and-weaponry`) or a stage
         /// (`stage-3`). Empty for cards at the root of `artwork/ic`, the default role.
         ///
         /// Added rather than folded into `Kind`: a consumer that only knows the flat
@@ -2832,11 +2832,11 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
         public IReadOnlyList<InstructionCardPanel>? Panels { get; init; }
 
         /// <summary>
-        /// HP5 — which root <see cref="Path"/> is relative to, so a consumer resolves the file
+        /// HP5 - which root <see cref="Path"/> is relative to, so a consumer resolves the file
         /// deterministically instead of guessing: "apiexpose" (under the plugin), "retrobat"
-        /// (under RetroBat but outside the plugin — an EmulationStation theme lands here), or
-        /// "external-local" (a local file outside both roots). Null — and omitted from the JSON
-        /// (WhenWritingNull) — unless MediaDiscovery.EmitPathRoot is on: an older consumer never
+        /// (under RetroBat but outside the plugin - an EmulationStation theme lands here), or
+        /// "external-local" (a local file outside both roots). Null - and omitted from the JSON
+        /// (WhenWritingNull) - unless MediaDiscovery.EmitPathRoot is on: an older consumer never
         /// sees the field, a newer one uses it when present and falls back to its two-root guess
         /// when absent. The value mirrors the root Path is already relative to, so Path is
         /// unchanged and the addition is purely additive (SnapshotVersion stays 2).
@@ -2847,7 +2847,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     }
 
     /// <summary>
-    /// One entry of an instruction card — a weapon, a stage, a score table — and the
+    /// One entry of an instruction card - a weapon, a stage, a score table - and the
     /// rectangle it occupies, in FRACTIONS of the image so a frame drawn over it
     /// survives any scaling.
     ///

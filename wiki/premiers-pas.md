@@ -6,12 +6,12 @@ Installer APIExpose tient en un **installateur** : on télécharge, on lance, on
 
 - une installation **RetroBat** fonctionnelle ;
 - le **[runtime .NET 8](https://dotnet.microsoft.com/download/dotnet/8.0)** ;
-- une sauvegarde de votre dossier RetroBat si votre installation compte pour vous — APIExpose modifie gamelists et réglages.
+- une sauvegarde de votre dossier RetroBat si votre installation compte pour vous - APIExpose modifie gamelists et réglages.
 
 ## Installation
 
-1. Téléchargez **[`APIExpose-Cabinet-Setup.exe`](https://github.com/Nelfe80/RetroBat-APIExpose/releases/latest/download/APIExpose-Cabinet-Setup.exe)** depuis la page des releases — il contient le programme, les outils (ffmpeg, ImageMagick, translateLocally) et le Data Pack complet.
-2. Lancez l'installateur : il installe le plugin dans `RetroBat\plugins\` et enregistre le hook de démarrage EmulationStation — vous obtenez :
+1. Téléchargez **[`APIExpose-Cabinet-Setup.exe`](https://github.com/Nelfe80/RetroBat-APIExpose/releases/latest/download/APIExpose-Cabinet-Setup.exe)** depuis la page des releases - il contient le programme, les outils (ffmpeg, ImageMagick, translateLocally) et le Data Pack complet.
+2. Lancez l'installateur : il installe le plugin dans `RetroBat\plugins\` et enregistre le hook de démarrage EmulationStation - vous obtenez :
 
     ```text
     RetroBat\plugins\APIExpose\
@@ -44,7 +44,7 @@ L'état du démarrage est sur `/api/v1/startup/ready`, et la liste complète des
 
 ## Vos réglages, directement dans RetroBat
 
-APIExpose ajoute ses options **dans les menus d'EmulationStation**, traduites — pas de fichier à éditer pour l'usage courant :
+APIExpose ajoute ses options **dans les menus d'EmulationStation**, traduites - pas de fichier à éditer pour l'usage courant :
 
 ```text
 EXTENDED OPTIONS
@@ -63,7 +63,7 @@ COLLECTIONS PACK MANAGER
 | Arrêter APIExpose | Double-clic sur `stop.bat` |
 | Retirer le lancement automatique | Double-clic sur `uninstall-es-start-hook.bat` |
 
-Les fichiers restent dans `plugins\APIExpose` — relancer le hook réactive tout.
+Les fichiers restent dans `plugins\APIExpose` - relancer le hook réactive tout.
 
 !!! tip "Conseils simples"
     Installez le hook une seule fois, puis lancez RetroBat normalement. Ne supprimez pas les dossiers `media\`, `resources\`, `tools\` ou `wrapper\` : APIExpose en a besoin.

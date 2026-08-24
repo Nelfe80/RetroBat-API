@@ -10,7 +10,7 @@ namespace RetroBat.Api.Controllers;
 /// <summary>
 /// Annonce de challenge sur l'écran de la borne (fenêtre 80 % centrée :
 /// fanart, logo, objectif, « Tenez-vous prêt ! », compte à rebours, QR de
-/// participation). Poussée par le hub de salle avant le coup d'envoi —
+/// participation). Poussée par le hub de salle avant le coup d'envoi -
 /// route volontairement HORS du préfixe /api/v1/overlay (loopback-only).
 /// </summary>
 [ApiController]
@@ -126,7 +126,7 @@ public sealed class ChallengeAnnounceController : ControllerBase
     /// <summary>
     /// DÉPART façon Live Contest : décompte 5-4-3-2-1 dans le jeu (overlay
     /// in-game centré) calé sur startsAtUtc, dépause à zéro pile, « GO ! ».
-    /// Poussé par le hub quand le gérant lance le challenge — tout le monde
+    /// Poussé par le hub quand le gérant lance le challenge - tout le monde
     /// part en même temps.
     /// </summary>
     /// <response code="202">Décompte engagé.</response>

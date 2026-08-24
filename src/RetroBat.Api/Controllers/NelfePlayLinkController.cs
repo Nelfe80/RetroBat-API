@@ -14,7 +14,7 @@ namespace RetroBat.Api.Controllers;
 /// fois, et se retrouve sur nelfeplay.com pour accorder.
 ///
 /// Pas de QR : sur un poste, il y a un navigateur. En salle, c'est le hub qui
-/// appaire les bornes depuis son interface — il les joint deja.
+/// appaire les bornes depuis son interface - il les joint deja.
 /// </summary>
 [ApiController]
 [Tags("NelfePlay")]
@@ -61,7 +61,7 @@ public sealed class NelfePlayLinkController : ControllerBase
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Connecter cette machine — NelfePlay</title>
+<title>Connecter cette machine - NelfePlay</title>
 <style>
   :root { color-scheme: dark; }
   body { margin:0; min-height:100dvh; display:flex; align-items:center; justify-content:center;
@@ -146,12 +146,12 @@ const T = {
     on: 'active', off: 'not detected',
   },
 }[LANG];
-// Destination finale : le return fourni par l'approbation, sinon le compte, LOCALISE —
+// Destination finale : le return fourni par l'approbation, sinon le compte, LOCALISE -
 // pour ne jamais rester bloque sur cette page, meme quand la machine est deja liee.
 const ACCOUNT = (RETURN && /^https?:\/\//.test(RETURN)) ? RETURN : (SITE + '/' + LANG + '/account#mymachines');
 let timer = null;
 
-// via=local : marque, pour NelfePlay, que la demande vient de CETTE page locale — ce qui
+// via=local : marque, pour NelfePlay, que la demande vient de CETTE page locale - ce qui
 // fait auto-autoriser puis rediriger ici (?claimed) pour finaliser.
 function withVia(u) { return u + (u.indexOf('?') === -1 ? '?' : '&') + 'via=local'; }
 // Le lien d'autorisation est fige sur /fr/ cote serveur : on l'aligne sur la langue d'origine.
@@ -161,7 +161,7 @@ document.documentElement.lang = LANG;
 $('title').textContent = T.connectTitle;
 $('account').textContent = T.seeAccount;
 
-// Voyants : APIExpose (forcement actif — cette page vient de lui) + EmulationStation.
+// Voyants : APIExpose (forcement actif - cette page vient de lui) + EmulationStation.
 async function checks() {
   $('chk-api').classList.add('on'); $('sub-api').textContent = T.on;
   try {
@@ -172,7 +172,7 @@ async function checks() {
   } catch { $('chk-es').classList.add('off'); $('sub-es').textContent = T.off; }
 }
 
-// Ecran pret : bouton NOMME d'apres la machine (aucun demarrage automatique — c'est
+// Ecran pret : bouton NOMME d'apres la machine (aucun demarrage automatique - c'est
 // CE clic qui vaut consentement, la validation cote NelfePlay etant ensuite invisible).
 function ready(state) {
   $('machine').textContent = (state && state.label) || '';

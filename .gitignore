@@ -21,7 +21,7 @@ tools/**
 !tools/**/
 !tools/**/README.txt
 
-# mem-curator : outil interne privé — hors du repo public (historique purgé le 2026-08-09).
+# mem-curator : outil interne privé - hors du repo public (historique purgé le 2026-08-09).
 # L'exclusion du dossier entier prime sur les ré-inclusions tools/**/ ci-dessus.
 tools/mem-curator/
 

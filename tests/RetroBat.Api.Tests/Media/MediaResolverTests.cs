@@ -6,7 +6,7 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 4 — the resolver reduces a unified catalog to ONE asset per request, root-transparent. These
+/// LOT 4 - the resolver reduces a unified catalog to ONE asset per request, root-transparent. These
 /// pin the §9.3 precedence (user gamelist beats the canonical store), the confidence tie-break, and
 /// the EXACT vs FALLBACK verdict against a requested region/style profile.
 /// </summary>

@@ -49,7 +49,7 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
     private bool Enabled => _configuration.GetValue("ApiExpose:PanelRemapExport:Enabled", false);
 
     /// <summary>
-    /// "manual" (default): browsing the gamelist costs nothing — remaps are pushed
+    /// "manual" (default): browsing the gamelist costs nothing - remaps are pushed
     /// through the deploy endpoints (LedManagerSetup "Contrôles"), and a CONTROL
     /// PANEL selector change still regenerates immediately. "onSelection": legacy
     /// behavior, regenerate at every game selection.
@@ -336,7 +336,7 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
     }
 
     /// <summary>System-level twin of GenerateForGame: no per-game selector, no
-    /// per-game rmp — just the content-directory remap of the system.</summary>
+    /// per-game rmp - just the content-directory remap of the system.</summary>
     private RemapDeployItem DeploySystemRemap(string systemId)
     {
         var (emulator, core) = ResolveEmulatorAndCore(systemId);
@@ -405,7 +405,7 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
         return new RemapDeployItem(systemId, status, $"layout={layoutUsed} file={coreFolder}\\{contentDirName}.rmp");
     }
 
-    /// <summary>Roms folder name of a system (es_systems.cfg &lt;path&gt;) — the name
+    /// <summary>Roms folder name of a system (es_systems.cfg &lt;path&gt;) - the name
     /// RetroArch expects for a content-directory remap.</summary>
     private string? ReadSystemRomsFolder(string systemId)
     {
@@ -561,7 +561,7 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
     /// launcher). The LED pipeline is anchored on the same `physical` numbers, so
     /// lights and inputs stay in sync by construction. Overridable in appsettings.json
     /// (ApiExpose:PanelRemapExport:CabinetButtons): if a RetroBat update changes the
-    /// controller chain again, adjust the map — no rebuild.
+    /// controller chain again, adjust the map - no rebuild.
     /// </summary>
     /// <summary>Player 1 / single-panel cabinet, used to build the slot set.</summary>
     private IReadOnlyDictionary<int, string> CabinetButtons => CabinetButtonsFor(1);
@@ -694,13 +694,13 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
             }
 
             // The rmp line remaps the CABINET button that carries the function: the
-            // layout's `physical` field — the LED pipeline lights that same button, so
+            // layout's `physical` field - the LED pipeline lights that same button, so
             // anchoring on it keeps lights and inputs in sync by construction.
             // Label = the cabinet cartography's identity for that physical button;
             // value = retropad_id, the id the core expects for the button's game
             // function. Neither `controller` (ES name on the ORIGINAL accessory) nor
             // `rmp_button` (keyed on panel_slot, the accessory position) describe the
-            // cabinet — both desynced LEDs from inputs (seen on snes Score Master).
+            // cabinet - both desynced LEDs from inputs (seen on snes Score Master).
             var retropad = entry.Value.TryGetProperty("retropad_id", out var rp) && rp.TryGetInt32(out var id) ? id : -1;
             var slot = entry.Value.TryGetProperty("panel_slot", out var ps) && ps.TryGetInt32(out var s)
                 ? s
@@ -817,7 +817,7 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
                 }
 
                 // purely data-driven: the id the core expects for game button n
-                // comes from the dynpanel convention (panel.slots[n].retropad_id) —
+                // comes from the dynpanel convention (panel.slots[n].retropad_id) -
                 // family quirks belong to the DATA, never hardcoded here;
                 // "2#2" duplicates share their base button's id
                 var baseButton = button.Name.Split('#')[0];

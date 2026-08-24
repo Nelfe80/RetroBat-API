@@ -5,7 +5,7 @@ namespace RetroBat.Api.Controllers;
 
 /// <summary>
 /// Inscription Live Contest : la page de participation (plateforme) remet le
-/// playToken a l'APIExpose local — c'est le SEUL point d'entree navigateur.
+/// playToken a l'APIExpose local - c'est le SEUL point d'entree navigateur.
 /// Toute l'orchestration (lancement, pause, scores, fermeture) est ensuite
 /// assuree par <see cref="LiveContestClientService"/> en local.
 /// </summary>

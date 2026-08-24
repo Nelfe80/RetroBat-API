@@ -9,9 +9,9 @@ info:
     as soon as a client connects (retained messages).
 
     Live discovery endpoint: `GET http://127.0.0.1:12345/api/v1/ws/streams`
-    (always in sync with the running build — this document mirrors it).
+    (always in sync with the running build - this document mirrors it).
 
-    Contract policy: additive JSON only — fields are added, never removed nor renamed.
+    Contract policy: additive JSON only - fields are added, never removed nor renamed.
 defaultContentType: application/json
 
 servers:
@@ -30,17 +30,17 @@ channels:
   frontend:
     address: /ws/frontend
     description: >
-      Prefixes `ui.` — EmulationStation navigation and lifecycle:
+      Prefixes `ui.` - EmulationStation navigation and lifecycle:
       ui.system.selected, ui.game.selected, ui.game.started, ui.game.ended,
       ui.event, ui.frontend.started, ui.frontend.stopped (frontend process
-      lifecycle — replaces polling the emulationstation process).
+      lifecycle - replaces polling the emulationstation process).
     messages:
       envelope:
         $ref: '#/components/messages/envelope'
   esevent:
     address: /ws/esevent
     description: >
-      Prefixes `esevent.` — raw EmulationStation hook refreshes (esevent.events_refresh).
+      Prefixes `esevent.` - raw EmulationStation hook refreshes (esevent.events_refresh).
       Aliases: es-event, es_event, esevents, es-events.
     messages:
       envelope:
@@ -48,7 +48,7 @@ channels:
   marquee:
     address: /ws/marquee
     description: >
-      Prefixes `marquee.` — marquee media snapshots for the selected game/system:
+      Prefixes `marquee.` - marquee media snapshots for the selected game/system:
       marquee.snapshot, marquee.snapshot.updated.
       Payload carries `Media` (legacy named fields, kept as-is) plus `Assets` and,
       in game scope, `SystemAssets`: tables keyed by canonical media kind holding
@@ -59,7 +59,7 @@ channels:
   topper:
     address: /ws/topper
     description: >
-      Prefixes `topper.` — topper media snapshots (topper.snapshot). Payload carries
+      Prefixes `topper.` - topper media snapshots (topper.snapshot). Payload carries
       `Media.Topper` plus `Assets`/`SystemAssets`: the game identity and printed matter
       a topper can show (flyer, box art, wheel, fanart, screenshot), and `Text`:
       description, genre, players, rating in the language EmulationStation is set to.
@@ -69,11 +69,11 @@ channels:
   instruction-card:
     address: /ws/instruction-card
     description: >
-      Prefixes `instruction-card.` — instruction card snapshots
+      Prefixes `instruction-card.` - instruction card snapshots
       (instruction-card.snapshot). Aliases: instructioncard, instruction_card, instructions.
       Payload carries `Cards`, `Assets`/`SystemAssets` (wheel, box art, flyer, fanart),
       `Text` (description, genre, players, rating in the EmulationStation language) and
-      `Controls`: what each button DOES and its colour, from resources/dynpanels —
+      `Controls`: what each button DOES and its colour, from resources/dynpanels -
       enough to compose a card, not only to show one. The full panel geometry stays on
       /ws/panel.
     messages:
@@ -82,7 +82,7 @@ channels:
   screen:
     address: /ws/screen
     description: >
-      Prefixes `screen.` — secondary screen snapshots (screen.snapshot). Payload carries
+      Prefixes `screen.` - secondary screen snapshots (screen.snapshot). Payload carries
       `Media` plus `Assets`/`SystemAssets`: screen-shaped media, with the title screen
       (`image`) and the in-game capture (`thumbnail`) kept apart.
     messages:
@@ -91,7 +91,7 @@ channels:
   panel:
     address: /ws/panel
     description: >
-      Prefixes `panel.`, `theme.` — resolved control panel of the current
+      Prefixes `panel.`, `theme.` - resolved control panel of the current
       context: panel.state (retained, replayed on connect),
       cpo.panel.config.selected, panel.settings.changed.
 
@@ -99,17 +99,17 @@ channels:
       Also carries, on the SAME channel because it is the same subject:
 
 
-      `panel.config.changed` (retained) — the CABINET's own description: how many
+      `panel.config.changed` (retained) - the CABINET's own description: how many
       player panels, how many buttons each, which peripherals, and the rows they
       sit in. Static configuration: it only moves when the user reconfigures, so
       it is retained rather than repeated on every selection.
 
 
-      `panel.input.pressed` / `panel.input.released` — a physical press, already
+      `panel.input.pressed` / `panel.input.released` - a physical press, already
       resolved to a panel slot (player, slot, function) and never a raw button
       index. This is what makes a wiring check possible without any LED
       hardware: press a button, see that slot light up. START and SELECT are
-      reported as system inputs rather than as "no slot" — they are wired on
+      reported as system inputs rather than as "no slot" - they are wired on
       their own pins, outside the numbered slots. These are EVENTS, not state:
       a consumer that coalesces snapshots must not coalesce them, or a press and
       its release cancel each other out.
@@ -126,7 +126,7 @@ channels:
   ingame:
     address: /ws/ingame
     description: >
-      Prefixes `ingame.`, `retroarch.`, `wrapper.` — in-game memory events:
+      Prefixes `ingame.`, `retroarch.`, `wrapper.` - in-game memory events:
       ingame.memory.changed, retroarch.memory.changed, ingame.mame.session.started/stopped.
     messages:
       envelope:
@@ -134,7 +134,7 @@ channels:
   arcade:
     address: /ws/arcade
     description: >
-      Prefixes `arcade.`, `mame.`, `fbneo.`, `outputs.` — arcade outputs (lamps)
+      Prefixes `arcade.`, `mame.`, `fbneo.`, `outputs.` - arcade outputs (lamps)
       and sessions: mame.session.started, mame.output.changed.
     messages:
       envelope:
@@ -142,7 +142,7 @@ channels:
   score:
     address: /ws/score
     description: >
-      Prefix `score.live.` — normalized live score, all sources
+      Prefix `score.live.` - normalized live score, all sources
       (score.live.changed, retained). Alias: scores.
     messages:
       envelope:
@@ -150,7 +150,7 @@ channels:
   timer:
     address: /ws/timer
     description: >
-      Prefix `timer.live.` — normalized live timer (timer.live.changed, retained).
+      Prefix `timer.live.` - normalized live timer (timer.live.changed, retained).
       Alias: timers.
     messages:
       envelope:
@@ -158,7 +158,7 @@ channels:
   retroachievements:
     address: /ws/retroachievements
     description: >
-      Prefixes `retroachievements.` — session, catalog (retained), challenges,
+      Prefixes `retroachievements.` - session, catalog (retained), challenges,
       leaderboards, unlocks, rich presence, runtime.* inference events.
       Aliases: retroachievement, cheevos.
     messages:
@@ -167,21 +167,21 @@ channels:
   hiscore:
     address: /ws/hiscore
     description: >
-      Prefixes `hiscore.` — high score captures and updates: hiscore.updated,
+      Prefixes `hiscore.` - high score captures and updates: hiscore.updated,
       hiscore.console.score.captured. Aliases: highscore, highscores, hiscores.
     messages:
       envelope:
         $ref: '#/components/messages/envelope'
   media:
     address: /ws/media
-    description: Prefixes `media.` — media store changes.
+    description: Prefixes `media.` - media store changes.
     messages:
       envelope:
         $ref: '#/components/messages/envelope'
   roms:
     address: /ws/roms
     description: >
-      Prefixes `roms.`, `rom-pack.`, `romset.` — Roms Manager and pack installer events.
+      Prefixes `roms.`, `rom-pack.`, `romset.` - Roms Manager and pack installer events.
     messages:
       envelope:
         $ref: '#/components/messages/envelope'
@@ -189,14 +189,14 @@ channels:
     address: /ws/system
     description: >
       Prefixes `startup.`, `health.`, `version.`, `hub.`, `config.`,
-      `maintenance.`, `rules.`, `notifications.` — service-level events.
+      `maintenance.`, `rules.`, `notifications.` - service-level events.
     messages:
       envelope:
         $ref: '#/components/messages/envelope'
   control:
     address: /ws/control
     description: >
-      Prefixes `commands.`, `intent.`, `es-control.` — command and navigation
+      Prefixes `commands.`, `intent.`, `es-control.` - command and navigation
       acknowledgements.
     messages:
       envelope:

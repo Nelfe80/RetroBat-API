@@ -14,7 +14,7 @@ namespace RetroBat.Api.Infrastructure;
 ///
 /// L'appairage demandait de lire un code sur nelfeplay.com et de le taper ici.
 /// C'est une friction qui fait renoncer, et elle n'apportait rien : cette
-/// machine possede DEJA une identite solide — une cle privee dans le coffre du
+/// machine possede DEJA une identite solide - une cle privee dans le coffre du
 /// systeme. Ce qui lui manque, c'est un lien vers une personne.
 ///
 /// Elle DEMANDE donc, et une personne connectee ACCORDE. On ouvre une demande,
@@ -22,7 +22,7 @@ namespace RetroBat.Api.Infrastructure;
 /// la-bas, et le credential arrive ici.
 ///
 /// Deux secrets circulent, et c'est essentiel : l'identifiant de la demande
-/// voyage dans l'adresse — le joueur la voit, peut la recopier — tandis que le
+/// voyage dans l'adresse - le joueur la voit, peut la recopier - tandis que le
 /// SECRET DE RETRAIT ne quitte jamais cette machine. Sans cette separation,
 /// quiconque apercevrait l'adresse pourrait reclamer le credential a notre
 /// place.

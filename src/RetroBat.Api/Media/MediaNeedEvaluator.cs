@@ -114,7 +114,7 @@ public class MediaNeedEvaluator
         return plan;
     }
 
-    /// <summary>LOT 6 — reconcile the raw-slot needs with the resolver's view of the catalog. The
+    /// <summary>LOT 6 - reconcile the raw-slot needs with the resolver's view of the catalog. The
     /// planner only ever tells us a kind is STILL missing after looking at the canonical store too;
     /// a kind it does not return is already satisfied, so we suppress its scrape. This may only turn
     /// a need off (never on), keeping the behavior local-first without any under-scrape risk.</summary>
@@ -140,7 +140,7 @@ public class MediaNeedEvaluator
     }
 
     /// <summary>Splits a gamelist region/lang string ("USA, Europe") into distinct
-    /// tokens. Fallback only — the compact referential is the primary source.</summary>
+    /// tokens. Fallback only - the compact referential is the primary source.</summary>
     private static List<string> SplitIdentity(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

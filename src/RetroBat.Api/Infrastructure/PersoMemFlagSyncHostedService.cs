@@ -10,7 +10,7 @@ namespace RetroBat.Api.Infrastructure;
 ///
 /// - Au démarrage : écrit la baseline (aucun test perso n'est actif à ce moment).
 /// - Sur changement es_settings : ne réécrit le .env QUE si la préférence a réellement
-///   changé (delta) — pour ne pas écraser un <c>PERSO=1</c> transitoire posé par le
+///   changé (delta) - pour ne pas écraser un <c>PERSO=1</c> transitoire posé par le
 ///   <c>MemPersoController</c> (bouton ▶ Tester du MEM Explorer) quand l'utilisateur
 ///   modifie un tout autre réglage du menu.
 /// </summary>

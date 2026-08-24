@@ -35,13 +35,13 @@ public sealed record GamelistEntryUpdateResult(
 }
 
 // ============================================================================
-// FROZEN CONTRACT — live /addgames payloads (audit-scrap.md §5)
+// FROZEN CONTRACT - live /addgames payloads (audit-scrap.md §5)
 //
 // EmulationStation ingests /addgames WITHOUT any internal locking: the HTTP
 // thread mutates the live FileData tree while the UI thread renders it, and a
 // posted lambda captures a raw SystemData*. Any payload that strays from the
 // proven shape widens that race window and can crash ES outright. Therefore:
-//   - the payload FORMAT and CONTENT rules below are frozen — scheduling
+//   - the payload FORMAT and CONTENT rules below are frozen - scheduling
 //     changes (when/whether to push) are fine, payload changes are not;
 //   - every <path> must be relative to the system rom dir, exist on disk, and
 //     use an extension the system declares; only games ES already knows may be
@@ -51,7 +51,7 @@ public sealed record GamelistEntryUpdateResult(
 //     stack (audit-scrap.md §3.3). The startup F5 path is the only sanctioned
 //     full refresh.
 // Recent ES builds reject raw /addgames bodies entirely (upstream file-guard
-// regression — PRs RetroBat-Official/emulationstation#429 and
+// regression - PRs RetroBat-Official/emulationstation#429 and
 // batocera-linux/batocera-emulationstation#2178); the capability detector in
 // this service turns pushes off for those builds.
 // ============================================================================
@@ -1334,7 +1334,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         if (_options.CurrentValue.Scraping.DetectAddGamesSupport && _runtimeState.IsAddGamesUnsupported)
         {
             // this ES build rejects raw /addgames bodies (audit-scrap.md §8):
-            // pushing would only rebuild the ES view for nothing — the scraped
+            // pushing would only rebuild the ES view for nothing - the scraped
             // data reaches gamelist.xml through the pending-extended merges
             _logger?.LogDebug(
                 "Live ES game fragment skipped for system={SystemId}, game={GameSlug}: /addgames is unsupported by this EmulationStation build.",
@@ -1492,7 +1492,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
                     if (_options.CurrentValue.Scraping.HonestNotifications)
                     {
                         // no visible-change label to announce: a generic "card
-                        // updated" toast would be a lie — stay silent (activity
+                        // updated" toast would be a lie - stay silent (activity
                         // is still communicated by the scraping notifications)
                         _logger?.LogDebug(
                             "Live update toast suppressed for system={SystemId}, game={GameSlug}: no visible-change label.",
@@ -2110,7 +2110,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         var gameName = ResolveNotifyGameName(plan);
         // A real /addgames on the current card must never be label-less: announce the
         // media whose CONTENT really changed AND the embedded metadata that actually
-        // differs — including region and lang (UMK3 → "boîte 2D, région").
+        // differs - including region and lang (UMK3 → "boîte 2D, région").
         var updatedLabels = ResolveLiveRefreshLabels(plan, gameElement, cancellationToken)
             .Concat(ResolveMediaRefreshLabels(plan, gameElement))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -2482,14 +2482,14 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         }
     }
 
-    // LOT 5 (2/2) — gate reads (es_settings-aware, so the ES menu toggle drives it). OFF by default:
+    // LOT 5 (2/2) - gate reads (es_settings-aware, so the ES menu toggle drives it). OFF by default:
     // the whole write path keeps its legacy overwrite.
     private bool MediaWritePolicyEnabled => _runtimeOptions.IsMediaWritePolicyEnabled();
 
     private MediaWritePolicy ResolveMediaWritePolicy()
         => MediaAllocationPolicy.Parse(_options.CurrentValue.MediaAllocation?.WritePolicy);
 
-    /// <summary>LOT 5 — write one secondary slot of a rebuilt game node. When the policy gate is off
+    /// <summary>LOT 5 - write one secondary slot of a rebuilt game node. When the policy gate is off
     /// this is byte-for-byte the legacy overwrite; when on, it applies FillMissing against the
     /// ownership sidecar and carries a user's existing value forward across the rebuild.</summary>
     private void SetSecondaryMediaSlot(
@@ -2530,7 +2530,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         }
     }
 
-    /// <summary>LOT 5 — apply the allocation policy to an in-place slot on a live game node and update
+    /// <summary>LOT 5 - apply the allocation policy to an in-place slot on a live game node and update
     /// ownership. Returns the value to write, or null to leave the slot untouched (user binding, or
     /// owned-and-unchanged). Assumes the caller has already checked <see cref="MediaWritePolicyEnabled"/>.</summary>
     private string? ResolveInPlaceMediaSlotWrite(XElement gameNode, string systemId, string romPath, string slot, string? preferred)
@@ -2557,7 +2557,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         return null;
     }
 
-    /// <summary>LOT 5 — gamelists must never carry an empty media tag. When the policy leaves a slot
+    /// <summary>LOT 5 - gamelists must never carry an empty media tag. When the policy leaves a slot
     /// unwritten, drop the element if it is present but empty (legacy write helpers dropped empties;
     /// this preserves that hygiene). A non-empty binding is never touched.</summary>
     internal static bool RemoveEmptyMediaSlot(XElement gameNode, string slot)
@@ -2749,8 +2749,8 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         if (_options.CurrentValue.Scraping.RequireRenderDeltaForLivePush &&
             !HasVisibleRenderDelta(plan, gameElement, allowCurrentVideoRefresh, allowLocalizedMetadataRefresh, cancellationToken))
         {
-            // nothing ES actually renders would change (same media paths — the
-            // texture cache never reloads a same-path file — and no first text):
+            // nothing ES actually renders would change (same media paths - the
+            // texture cache never reloads a same-path file - and no first text):
             // skip the POST, keep the data dirty so it rides the next mutualized
             // push or the exit merge instead
             MarkLiveGamelistDirty(plan);
@@ -3830,7 +3830,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
     /// <summary>
     /// F3 (Super Mario World bug) : ES's fragment loadFromXML clears the game's
     /// unknown XML elements, wiping the Roms Manager ownership tags while
-    /// hidden=true survives — the entry becomes an orphan the manager refuses to
+    /// hidden=true survives - the entry becomes an orphan the manager refuses to
     /// touch. Carrying the existing tags inside the fragment lets ES reload them
     /// instead; the payload format is otherwise untouched. Rollback dedicated:
     /// Scraping:IncludeRomsetTagsInLivePayload=false.
@@ -3868,7 +3868,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
     /// <summary>
     /// True when pushing this fragment can change something the ES view actually
     /// renders: a visible media tag whose PATH differs from the current gamelist
-    /// node (a same-path file replacement never repaints — ES's texture cache has
+    /// node (a same-path file replacement never repaints - ES's texture cache has
     /// no mtime check, audit-scrap.md §3.2), a fresh official video on the video
     /// pass, or a FIRST localized description on a card that had none. Later text
     /// updates travel silently with the next mutualized push instead.
@@ -7946,7 +7946,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
 
     // lang/region are the ROM's IDENTITY, resolved once by the ROM metadata resolver
     // and applied only by ApplyPlanRomIdentityMetadata. The localized text bundle must
-    // never touch them — a screentitle-wor.png must not stamp the ROM as region "wr".
+    // never touch them - a screentitle-wor.png must not stamp the ROM as region "wr".
     private static bool IsRomIdentityTag(string tagName)
     {
         return tagName.Equals("lang", StringComparison.OrdinalIgnoreCase) ||
@@ -8032,7 +8032,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         if (romRegions.Count == 0)
         {
             // unknown region: stamp "wr" (world) and OVERWRITE whatever is there.
-            // User decision — a neutral world flag is better than keeping a false
+            // User decision - a neutral world flag is better than keeping a false
             // region (e.g. a stray "France"). The media-alias fixes (steps 2/4/5)
             // mean this is a one-time legitimate correction, never a refresh loop.
             return "wr";

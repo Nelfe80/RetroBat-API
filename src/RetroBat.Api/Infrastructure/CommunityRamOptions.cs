@@ -27,7 +27,7 @@ public class CommunityRamOptions
     /// <summary>
     /// « Prioriser mes .MEM perso » : en jeu normal, préférer les .MEM personnels
     /// (<c>resources\ram\.user\</c>) à l'officiel. Par défaut NON (opt-in explicite) :
-    /// un .MEM perso ne doit jamais être joué en silence — le scoring certifiable reste
+    /// un .MEM perso ne doit jamais être joué en silence - le scoring certifiable reste
     /// sur l'officiel. L'arbitre du wrapper garde <c>contest &gt; perso &gt; officiel</c>.
     /// Reflété dans le flag <c>PERSO</c> du .env du wrapper (voir
     /// <see cref="PersoMemFlagSyncHostedService"/>).

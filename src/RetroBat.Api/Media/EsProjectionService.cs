@@ -184,7 +184,7 @@ public class EsProjectionService
 
             await CopyFileAtomicallyAsync(sourcePath, canonicalPath, cancellationToken);
             need.WasImported = true;
-            // HP4: the file — and possibly its directory — is new, the one case the cache's
+            // HP4: the file - and possibly its directory - is new, the one case the cache's
             // mtime check cannot catch on its own; invalidate so the next publication lists it
             // at once rather than after the short negative TTL.
             _discoveryInvalidator.InvalidatePath(canonicalPath);

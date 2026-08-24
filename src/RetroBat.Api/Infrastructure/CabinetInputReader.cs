@@ -4,7 +4,7 @@
 // different identity than the one the cabinet was configured with.
 //
 // It lives here because a cabinet must be able to check its wiring WITHOUT LedManager
-// installed — the whole point of the exercise. Two copies of this logic is the price;
+// installed - the whole point of the exercise. Two copies of this logic is the price;
 // two DIFFERENT answers to "which button is this" would be the bug.
 
 using System.IO;
@@ -19,15 +19,15 @@ namespace RetroBat.Api.Infrastructure;
 /// gamecontrollerdb.txt RetroBat ships (system\tools\gamecontrollerdb.txt).
 ///
 /// Crucially, it parses that DB ITSELF (matching the device GUID) and reads the RAW
-/// joystick buttons/axes — instead of trusting SDL's GameController layer, whose
+/// joystick buttons/axes - instead of trusting SDL's GameController layer, whose
 /// built-in database can shadow RetroBat's entry and hand back a different button
 /// order (this is what silently swapped X/Y for a DirectInput arcade encoder). By
 /// applying RetroBat's own mapping to the raw inputs, the identity we measure is
-/// exactly what RetroArch sees — so CabinetButtons drives both rmp and MAME cfg
+/// exactly what RetroArch sees - so CabinetButtons drives both rmp and MAME cfg
 /// correctly with no downstream change.
 ///
 /// The SDL→RetroPad face swap (a→b, b→a, x→y, y→x, shoulders, triggers) is the fixed
-/// sdl2 joypad-driver convention, universal to every controller — not a particularism.
+/// sdl2 joypad-driver convention, universal to every controller - not a particularism.
 /// </summary>
 public sealed class CabinetInputReader : IDisposable
 {
@@ -171,7 +171,7 @@ public sealed class CabinetInputReader : IDisposable
             var name = DeviceName(handle);
 
             // A virtual pad is not a panel. vJoy, ViGEm and the like are created by
-            // software — a mapping tool, a streaming client, a wheel driver — and they
+            // software - a mapping tool, a streaming client, a wheel driver - and they
             // report the same identities as a real pad. Left in, one would occupy a
             // panel slot the cabinet does not have, and its player numbering would push
             // the REAL panel to player 2.
@@ -189,7 +189,7 @@ public sealed class CabinetInputReader : IDisposable
         return _devices.Count(d => d.HasMapping);
     }
 
-    /// <summary>The names of the devices actually kept, in player order — what the log
+    /// <summary>The names of the devices actually kept, in player order - what the log
     /// has to show for "player 2 lit up" to ever be explainable.</summary>
     public IReadOnlyList<string> DeviceNames => _devices.Select(d => d.Name).ToList();
 
@@ -345,7 +345,7 @@ public sealed class CabinetInputReader : IDisposable
             var name = token[..colon];
             if (!FaceSwap.TryGetValue(name, out var identity))
             {
-                continue; // dpad / guide / misc — not a cabinet identity
+                continue; // dpad / guide / misc - not a cabinet identity
             }
 
             var value = token[(colon + 1)..].TrimEnd('~'); // '~' = inverted axis
@@ -375,7 +375,7 @@ public sealed class CabinetInputReader : IDisposable
             {
                 device.AxisToIdentity.Add((index, sign, identity));
             }
-            // 'h' (hat) inputs are dpad directions — not cabinet identities
+            // 'h' (hat) inputs are dpad directions - not cabinet identities
         }
     }
 

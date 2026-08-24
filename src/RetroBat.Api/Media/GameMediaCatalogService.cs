@@ -1,10 +1,10 @@
 namespace RetroBat.Api.Media;
 
 /// <summary>
-/// LOT 4 — builds a <see cref="GameMediaCatalog"/> by unifying the user gamelist (LOT 3) and the
+/// LOT 4 - builds a <see cref="GameMediaCatalog"/> by unifying the user gamelist (LOT 3) and the
 /// canonical store (the thin canonical source). It only AGGREGATES, with provenance kept intact;
 /// deciding which asset wins for a request is the <see cref="MediaResolver"/>'s job (§9.3). Purely
-/// read-only — no file is moved or written.
+/// read-only - no file is moved or written.
 /// </summary>
 public sealed class GameMediaCatalogService
 {
@@ -40,7 +40,7 @@ public sealed class GameMediaCatalogService
 }
 
 /// <summary>
-/// LOT 4 — resolves ONE media from a catalog WITHOUT the caller knowing the physical root (the
+/// LOT 4 - resolves ONE media from a catalog WITHOUT the caller knowing the physical root (the
 /// returned asset carries its own PathRoot). Applies the §9.3 precedence, then reports EXACT when
 /// the winner satisfies the requested region/language/style profile and FALLBACK when only that
 /// profile differs. This is the resolver the plan's §9 asks for; wiring it into the live

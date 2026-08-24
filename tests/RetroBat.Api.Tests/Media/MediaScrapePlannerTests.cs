@@ -7,7 +7,7 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 6 — the planner decides scrape needs from the resolver's view of the catalog, not from raw
+/// LOT 6 - the planner decides scrape needs from the resolver's view of the catalog, not from raw
 /// slots. These pin the exit criterion: only genuinely missing kinds are fetched (local-first), a
 /// user media is never re-scraped (even on a region mismatch), and variant enrichment is opt-in.
 /// </summary>
@@ -56,7 +56,7 @@ public class MediaScrapePlannerTests
     public void UserMedia_isNeverReScraped_evenOnRegionMismatch()
     {
         // User provided a US wheel; EU is requested. It resolves only as FALLBACK, but a user media
-        // is off-limits — not planned even in EnrichVariants.
+        // is off-limits - not planned even in EnrichVariants.
         var plan = _planner.Plan(
             Catalog(Candidate(MediaKinds.Wheel, MediaQualifications.FilenameConvention, 40, userGamelist: true, region: "us")),
             new[] { MediaKinds.Wheel },
@@ -80,7 +80,7 @@ public class MediaScrapePlannerTests
     [Fact]
     public void RegionFallback_isSatisfied_inMissingOnly()
     {
-        // Only a US wheel from the canonical store, EU asked. MissingOnly leaves it — a fallback is
+        // Only a US wheel from the canonical store, EU asked. MissingOnly leaves it - a fallback is
         // still a usable media.
         var plan = _planner.Plan(
             Catalog(Candidate(MediaKinds.Wheel, MediaQualifications.ApiExposeIndex, 80, region: "us")),

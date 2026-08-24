@@ -8,7 +8,7 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 8 — the secure asset resolver. The security cases are the point: a reference may only ever
+/// LOT 8 - the secure asset resolver. The security cases are the point: a reference may only ever
 /// resolve to a file at or under an ALLOWLISTED root. Traversal, absolute escape, crossing roots,
 /// an unknown root, or a malformed reference must all resolve to null; a real user/canonical media
 /// must round-trip.

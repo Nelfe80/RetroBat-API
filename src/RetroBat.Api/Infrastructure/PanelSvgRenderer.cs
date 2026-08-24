@@ -25,7 +25,7 @@ public static class PanelSvgRenderer
     private const double Margin = 28;
     private const double StickRadius = 34;
 
-    /// <summary>How far below the row midline the front view's base sits — resting
+    /// <summary>How far below the row midline the front view's base sits - resting
     /// exactly on the midline read a touch high.</summary>
     private const double StickBaseDrop = 14;
 
@@ -42,7 +42,7 @@ public static class PanelSvgRenderer
     /// One rendered view: the markup, its size, and where each button landed.
     ///
     /// The placements travel with the drawing on purpose. A consumer that lights a
-    /// button — the marquee panel — must put its light exactly where the artwork put
+    /// button - the marquee panel - must put its light exactly where the artwork put
     /// the button; recomputing that geometry on its side would be the same maths in two
     /// places, and the day one of them moves a row, the lights land next to the buttons.
     /// </summary>
@@ -53,7 +53,7 @@ public static class PanelSvgRenderer
 
     /// <summary>
     /// Renders and writes both copies. Returns the canonical path, or null when nothing
-    /// could be written — a theme that finds no file simply shows nothing, which is
+    /// could be written - a theme that finds no file simply shows nothing, which is
     /// better than a half-drawn panel.
     /// </summary>
     public static WrittenPanels Write(string systemId, string? gameName, int buttonsPerPlayer,
@@ -129,7 +129,7 @@ public static class PanelSvgRenderer
     /// <summary>
     /// Written aside, then MOVED into place. Writing straight to the file leaves it
     /// half-written for a few milliseconds, and this file is read live: a consumer that
-    /// looks while a game is launching — exactly when the panel is rewritten — gets a
+    /// looks while a game is launching - exactly when the panel is rewritten - gets a
     /// truncated SVG and shows nothing. The move is atomic, so a reader sees either the
     /// old drawing or the new one, never half of one.
     /// </summary>
@@ -154,8 +154,8 @@ public static class PanelSvgRenderer
     }
 
     /// <summary>
-    /// The drawing itself. A button the current game does not use is still drawn — at
-    /// 20 % opacity — because the panel must tell the truth about the CABINET: you see
+    /// The drawing itself. A button the current game does not use is still drawn - at
+    /// 20 % opacity - because the panel must tell the truth about the CABINET: you see
     /// your eight holes, and which of them this game speaks to.
     /// </summary>
     public static RenderedPanel Render(int buttonsPerPlayer, bool hasStick, IReadOnlyDictionary<int, Button> buttons,
@@ -170,7 +170,7 @@ public static class PanelSvgRenderer
 
         // A stick seen from the FRONT is a tall object: sized like the round top view it
         // came out tiny next to the buttons. Given a height ratio, it is measured against
-        // the panel instead, and the room reserved for it follows its real proportions —
+        // the panel instead, and the room reserved for it follows its real proportions -
         // otherwise it would spill over the first column.
         var stickArtPiece = hasStick ? PanelSvgArtwork.Load(stickFile) : null;
         var stickHeight = stickHeightRatio > 0 ? height * stickHeightRatio : StickRadius * 2;
@@ -182,7 +182,7 @@ public static class PanelSvgRenderer
 
         // A stick seen from the front stands ON the panel: its BASE belongs between the
         // two rows of buttons, not its middle. Raising it that far pushes its ball above
-        // the frame — the drawing gains the room it needs, and it must be claimed HERE,
+        // the frame - the drawing gains the room it needs, and it must be claimed HERE,
         // before the viewBox is written, or everything below simply falls outside it.
         var rowsMiddle = top + layout.Length * ButtonRadius + (layout.Length - 1) * RowGap / 2.0;
         if (hasStick && stickHeightRatio > 0)
@@ -198,7 +198,7 @@ public static class PanelSvgRenderer
 
         var svg = new StringBuilder();
         // xlink must be declared here: the artwork's own root carries it, and only its
-        // BODY is kept — without this the gradients referenced by xlink:href resolve to
+        // BODY is kept - without this the gradients referenced by xlink:href resolve to
         // nothing and the file fails to parse.
         svg.Append(Inv($"<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"0 0 {width:0.#} {height:0.#}\" "))
            .Append(Inv($"width=\"{width:0.#}\" height=\"{height:0.#}\" role=\"img\">"))
@@ -284,7 +284,7 @@ public static class PanelSvgRenderer
                 }
 
                 // no number on the cap: it read as the GAME's button number when the game
-                // used it, and as the physical slot when it did not — two different
+                // used it, and as the physical slot when it did not - two different
                 // meanings in one drawing. The function underneath says what it does.
 
                 if (used && !string.IsNullOrWhiteSpace(button!.Function))

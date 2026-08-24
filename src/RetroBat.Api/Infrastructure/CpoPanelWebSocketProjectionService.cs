@@ -67,13 +67,13 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
     /// <summary>
     /// The CABINET's own description: how many player panels it has, how many buttons
     /// each carries, which peripherals are wired, and WHERE those buttons sit. Static
-    /// configuration — it only changes when the user reconfigures — so it is published
+    /// configuration - it only changes when the user reconfigures - so it is published
     /// as a RETAINED event instead of riding on panel.state, which recomputes on every
     /// game selection and would repeat it hundreds of times for nothing.
     ///
     /// Retained means a client gets it the moment it connects: the "read the config once
     /// at startup" behaviour comes free from the stream, with no REST call and no
-    /// polling. Same stream as panel.state on purpose — it is the same subject, and a
+    /// polling. Same stream as panel.state on purpose - it is the same subject, and a
     /// separate stream would force two subscriptions to draw one panel.
     /// </summary>
     private void PublishPanelConfigIfChanged(string trigger)
@@ -136,7 +136,7 @@ public sealed class CpoPanelWebSocketProjectionService : IHostedService, IDispos
     /// <summary>
     /// Draws the resolved panel as an SVG for EmulationStation themes, next to the
     /// theme XML this service already exports. Arcade gets one file per game; the other
-    /// systems fall back to a "default" until a game of theirs earns its own — the
+    /// systems fall back to a "default" until a game of theirs earns its own - the
     /// resolution is per-system-then-per-game either way, arcade is simply where the
     /// per-game file is the norm.
     ///

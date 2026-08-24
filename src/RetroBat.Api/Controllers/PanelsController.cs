@@ -374,7 +374,7 @@ public class PanelsController : ControllerBase
     /// Saves one player's guided-measured cabinet cartography (physical button →
     /// RetroPad identity) into appsettings.json, invalidates the rmp/cfg caches and
     /// returns the PREVIOUS map so the caller can offer a one-click reverse. Does
-    /// not regenerate — the caller drives regeneration with progress afterwards.
+    /// not regenerate - the caller drives regeneration with progress afterwards.
     /// </summary>
     /// <response code="200">Saved; returns previous map for reverse.</response>
     /// <response code="400">Unknown identity or bad player.</response>

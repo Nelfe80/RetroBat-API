@@ -43,7 +43,7 @@ public class MameStartupConfigHostedService : IHostedService
             // Note: do NOT force log_to_file or log_verbosity here.
             // RetroArch already writes [RCHEEVOS]: messages to stdout (log_to_file=false),
             // which ES captures in es_launch_stdout.log. Forcing log_to_file=true would
-            // redirect output to the log file and remove it from stdout — breaking the monitor.
+            // redirect output to the log file and remove it from stdout - breaking the monitor.
             // RetroBat also overwrites retroarch.cfg after our changes anyway.
         }
 

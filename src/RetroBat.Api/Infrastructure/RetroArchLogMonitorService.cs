@@ -18,14 +18,14 @@ namespace RetroBat.Api.Infrastructure;
 ///   retroachievements.runtime.challenge.inactive   → retroachievements.challenge.changed   (state=inactive)
 ///
 /// Limitations:
-///   Challenge indicators (SHOW/HIDE) are NOT written to the log by rcheevos — they only
+///   Challenge indicators (SHOW/HIDE) are NOT written to the log by rcheevos - they only
 ///   update the gfx_widgets OSD. Challenge detection via log is therefore limited to any
 ///   verbose messages that future RetroArch/rcheevos versions may add. The framework is
 ///   ready to process them when they appear.
 /// </summary>
 public sealed class RetroArchLogMonitorService : BackgroundService
 {
-    private const string RcheevosTag = "[RCHEEVOS]"; // no colon — actual format: "[INFO] [RCHEEVOS] Message text"
+    private const string RcheevosTag = "[RCHEEVOS]"; // no colon - actual format: "[INFO] [RCHEEVOS] Message text"
     private const string InfoPrefix  = "[INFO]";
 
     // RetroArch is launched by ES which captures its stdout in es_launch_stdout.log.
@@ -119,7 +119,7 @@ public sealed class RetroArchLogMonitorService : BackgroundService
                 while (lineStart > 0 && bytes[lineStart - 1] != '\n') lineStart--;
                 return lineStart;
             }
-            // Marker not found — start from the current end to avoid replaying old sessions
+            // Marker not found - start from the current end to avoid replaying old sessions
             return bytes.Length;
         }
         catch { return 0; }
@@ -176,7 +176,7 @@ public sealed class RetroArchLogMonitorService : BackgroundService
         }
 
         // "Submitting 0:50.18 (3011) for leaderboard 2: Green Hill Zone - Act 1"
-        // Gives the exact submitted time — used as final FormattedValue in the result overlay.
+        // Gives the exact submitted time - used as final FormattedValue in the result overlay.
         if (msg.StartsWith("Submitting ", StringComparison.OrdinalIgnoreCase))
         {
             // Extract time: first token after "Submitting "

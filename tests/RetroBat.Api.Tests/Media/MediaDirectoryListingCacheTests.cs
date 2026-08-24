@@ -7,9 +7,9 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// HP3 — the cross-publication directory-listing cache. These pin the two guards the patch
+/// HP3 - the cross-publication directory-listing cache. These pin the two guards the patch
 /// leans on (a directory's own mtime, plus a safety TTL), the negative-cache window and its
-/// explicit invalidation, LRU bounding, and the default-off pass-through — so a regression in
+/// explicit invalidation, LRU bounding, and the default-off pass-through - so a regression in
 /// any of them fails CI rather than the cabinet.
 /// </summary>
 public sealed class MediaDirectoryListingCacheTests : IDisposable
@@ -89,7 +89,7 @@ public sealed class MediaDirectoryListingCacheTests : IDisposable
     public void Enabled_contentChangeWithSameMtime_staysHit()
     {
         // The listing is names only; a file whose CONTENT changed keeps its path, so the cache
-        // rightly does not re-enumerate — the projection re-stats each file for size/mtime.
+        // rightly does not re-enumerate - the projection re-stats each file for size/mtime.
         var dir = Dir("d", "a.png");
         var cache = NewCache();
         cache.List(dir);

@@ -32,7 +32,7 @@ public sealed class MemPersoController : ControllerBase
     }
 
     // Composant de chemin SÛR : pas de séparateur ni de traversée. Le wrapper lit exactement
-    // le dossier <système> et le fichier <slug>.MEM — on refuse tout ce qui sortirait de là.
+    // le dossier <système> et le fichier <slug>.MEM - on refuse tout ce qui sortirait de là.
     private static bool Safe(string? s) =>
         !string.IsNullOrWhiteSpace(s) && s.Length <= 190
         && s.IndexOfAny(new[] { '/', '\\', ':' }) < 0 && s != "." && s != ".." && !s.Contains("..");
@@ -80,7 +80,7 @@ public sealed class MemPersoController : ControllerBase
     }
 
     /// <summary>Arrête le test perso : le flag <c>PERSO</c> revient à la BASELINE de la borne
-    /// (toggle ES « Prioriser mes .MEM perso ») — donc <c>0</c> par défaut, mais <c>1</c> si
+    /// (toggle ES « Prioriser mes .MEM perso ») - donc <c>0</c> par défaut, mais <c>1</c> si
     /// l'utilisateur a explicitement activé la priorité perso. <c>?clear=1</c> supprime aussi
     /// les .user\ déposés.</summary>
     [HttpDelete]

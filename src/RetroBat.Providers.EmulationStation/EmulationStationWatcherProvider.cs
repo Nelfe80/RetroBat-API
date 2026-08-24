@@ -198,7 +198,7 @@ public class EmulationStationWatcherProvider : IProvider
 
     /// <summary>
     /// FileSystemWatcher misses rename notifications on this busy directory
-    /// (measured: 6 of 10 spaced events.ini replaces lost) — a single missed
+    /// (measured: 6 of 10 spaced events.ini replaces lost) - a single missed
     /// notification means a jump-to-game never updates the display. This cheap
     /// mtime/size probe catches anything the watcher dropped; the duplicate
     /// guard in HandleEventsIniChanged absorbs the overlap with FSW events.
@@ -315,7 +315,7 @@ public class EmulationStationWatcherProvider : IProvider
         var progress = TimeSpan.FromMilliseconds(Math.Max(options.SelectionBurstQuietMs, options.SelectionBurstProgressMs));
 
         // after APIExpose pushes addgames/reloadgames, ES re-fires game-selected
-        // for every refreshed view — first the stale cursors of non-visible views,
+        // for every refreshed view - first the stale cursors of non-visible views,
         // last the real one. Defer the leading edge inside that window so the
         // ghost pair collapses to its final (correct) selection before publishing.
         var deferLeadingEdge = _mediaRuntimeState.IsWithinPostEsRefreshWindow(PostEsRefreshDeferWindow);
@@ -427,7 +427,7 @@ public class EmulationStationWatcherProvider : IProvider
     /// <summary>
     /// A ghost is a selection that (a) arrives inside the post-ES-push window,
     /// (b) differs from the current context selection, and (c) was already seen
-    /// in the recent selection history — the signature of a non-visible view's
+    /// in the recent selection history - the signature of a non-visible view's
     /// stale cursor re-fired on refresh. A genuine cursor reveal (a game never
     /// seen before) always passes; a first-time ghost passes once, then is
     /// remembered and filtered on every later refresh cycle.
@@ -628,7 +628,7 @@ public class EmulationStationWatcherProvider : IProvider
                 if (publishBeforeDetails)
                 {
                     // marquee/panel only need system+rom to display: publish the
-                    // in-memory context NOW — the ES API calls below can take
+                    // in-memory context NOW - the ES API calls below can take
                     // seconds while ES reloads its gamelists, and the display
                     // used to inherit that whole delay
                     await PublishRawFrontendEventAsync(
@@ -672,7 +672,7 @@ public class EmulationStationWatcherProvider : IProvider
                     return;
                 }
                 _context.Ui.SelectedSystem = systemDetails ?? new SystemDetails { Name = systemId };
-                _logger?.LogInformation("game-selected STEP fetch-system done at {ElapsedMs}ms — system={SystemId}", perf.ElapsedMilliseconds, systemId);
+                _logger?.LogInformation("game-selected STEP fetch-system done at {ElapsedMs}ms - system={SystemId}", perf.ElapsedMilliseconds, systemId);
 
                 var gameDetails = detailsEnabled ? await FetchGameDetailsAsync(systemId, path, bypassCache) : null;
                 if (!IsLatestFrontendEvent(sequence))
@@ -680,7 +680,7 @@ public class EmulationStationWatcherProvider : IProvider
                     return;
                 }
                 var gameId = gameDetails?.Id ?? gameDetails?.Md5 ?? "";
-                _logger?.LogInformation("game-selected STEP fetch-game done at {ElapsedMs}ms — system={SystemId}, path={Path}", perf.ElapsedMilliseconds, systemId, path);
+                _logger?.LogInformation("game-selected STEP fetch-game done at {ElapsedMs}ms - system={SystemId}, path={Path}", perf.ElapsedMilliseconds, systemId, path);
 
                 _context.Ui.Selected = new GameReference
                 {
@@ -723,7 +723,7 @@ public class EmulationStationWatcherProvider : IProvider
                     // Fast path returns NOW; the heavy scrape/prefetch runs on the
                     // dedicated worker (latest-wins) so it never holds a thread-pool
                     // thread and never starves the marquee/system publishes.
-                    _logger?.LogInformation("game-selected fast-path done at {ElapsedMs}ms — scrape offloaded to worker (system={SystemId})", perf.ElapsedMilliseconds, systemId);
+                    _logger?.LogInformation("game-selected fast-path done at {ElapsedMs}ms - scrape offloaded to worker (system={SystemId})", perf.ElapsedMilliseconds, systemId);
                     EnqueueSelectionScrape(scrapeWork);
                     return;
                 }
@@ -765,7 +765,7 @@ public class EmulationStationWatcherProvider : IProvider
 
                 // Pre-warm this system's games list in the background so the first
                 // game-selected doesn't pay the cold gamelist API load (up to ~4s for a
-                // large system like mame — an ES-API round-trip + JSON of thousands of
+                // large system like mame - an ES-API round-trip + JSON of thousands of
                 // games). Idempotent (cached, no-op when fresh) and de-duplicated so a
                 // fast carousel scroll never piles up loads.
                 var warmSystemId = sysId;
@@ -1445,7 +1445,7 @@ public class EmulationStationWatcherProvider : IProvider
                 return;
             }
 
-            _logger?.LogInformation("game-selected STEP prefetch done at {ElapsedMs}ms — system={SystemId}, game={GameSlug}", perf.ElapsedMilliseconds, prefetchResult.SystemId, prefetchResult.GameSlug);
+            _logger?.LogInformation("game-selected STEP prefetch done at {ElapsedMs}ms - system={SystemId}, game={GameSlug}", perf.ElapsedMilliseconds, prefetchResult.SystemId, prefetchResult.GameSlug);
             _logger?.LogInformation(
                 "Local media projection prepared for game-selected: system={SystemId}, game={GameSlug}, queuedRemote={QueuedRemote}, missing={MissingCount}, arcadeLike={ArcadeLike}, folderSystem={FolderSystem}, skipCrc={SkipCrc}, biosFiltered={BiosFiltered}",
                 prefetchResult.SystemId,

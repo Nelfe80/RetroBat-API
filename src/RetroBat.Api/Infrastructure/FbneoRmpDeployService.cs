@@ -7,7 +7,7 @@ namespace RetroBat.Api.Infrastructure;
 /// (resources\controls\retroarch\fbneo\rom.rmp) into
 /// retroarch\config\remaps\FinalBurn Neo\rom.rmp. Conservative guard: a file the
 /// user modified is kept ("kept-user-file"); identical content is "up-to-date".
-/// FBNeo has no lamp outputs — this only covers the input side.
+/// FBNeo has no lamp outputs - this only covers the input side.
 /// </summary>
 public sealed class FbneoRmpDeployService
 {

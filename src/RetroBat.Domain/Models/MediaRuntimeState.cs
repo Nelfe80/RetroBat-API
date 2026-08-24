@@ -875,7 +875,7 @@ public class MediaRuntimeState
 
     /// <summary>Records that APIExpose just pushed a UI refresh to EmulationStation
     /// (live /addgames, /reloadgames). ES re-fires game-selected for every view it
-    /// refreshes shortly after — including stale cursors from non-visible views —
+    /// refreshes shortly after - including stale cursors from non-visible views -
     /// so selection consumers defer publication until that re-fire burst settles.</summary>
     public void RecordEsUiRefreshPush()
     {

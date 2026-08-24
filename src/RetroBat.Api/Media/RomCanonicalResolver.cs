@@ -8,7 +8,7 @@ namespace RetroBat.Api.Media;
 /// <summary>
 /// Identité CANONIQUE d'un jeu à partir du hash de sa ROM.
 ///
-/// Doctrine flotte : un jeu = système + contenu de la ROM — jamais un nom
+/// Doctrine flotte : un jeu = système + contenu de la ROM - jamais un nom
 /// (titre RetroAchievements ou nom d'affichage), sinon le même jeu existe sous
 /// plusieurs clés (palmarès dédoublé, jeu non relançable depuis l'app joueur).
 /// Le hash sert de clé de RECHERCHE ; l'identité renvoyée est l'entrée
@@ -17,16 +17,16 @@ namespace RetroBat.Api.Media;
 ///
 /// Résolution en cascade :
 ///  1. base ROM consolidée (resources/gamelist/systems/*_lt.json) : hash
-///     (md5/crc/sha1/RA) → « csys/grp » — les hacks/trainers gardent leur
+///     (md5/crc/sha1/RA) → « csys/grp » - les hacks/trainers gardent leur
 ///     propre identité (« csys/id »), leurs scores ne se mélangent pas au jeu
 ///     original ;
 ///  2. alias .MEM (resources/ram/&lt;system&gt;/alias.json) : md5 → slug de la
-///     définition de score — cohérent par construction avec la chaîne de
+///     définition de score - cohérent par construction avec la chaîne de
 ///     capture (tous les dumps d'un groupe chargent le même .MEM) ;
 ///  3. rien : l'appelant retombe sur « système/slug-du-fichier ».
 ///
 /// Index par système, chargé à la demande et mis en cache (même pattern que
-/// RomMetadataResolver — encaisse le mame.json de ~60 000 entrées).
+/// RomMetadataResolver - encaisse le mame.json de ~60 000 entrées).
 /// </summary>
 public sealed class RomCanonicalResolver
 {
@@ -52,7 +52,7 @@ public sealed class RomCanonicalResolver
         _logger = logger;
     }
 
-    /// <summary>Fiche canonique pour un hash (md5/crc/sha1, casse libre) — null
+    /// <summary>Fiche canonique pour un hash (md5/crc/sha1, casse libre) - null
     /// si aucun des deux référentiels ne connaît ce dump.</summary>
     public CanonicalGame? Resolve(string systemId, string? hash)
     {
@@ -86,7 +86,7 @@ public sealed class RomCanonicalResolver
     }
 
     /// <summary>Fiche canonique par NOM DE FICHIER ROM (tags de dump inclus,
-    /// « Zool - Ninja of the Nth Dimension (Europe) ») — identite DAT du dump,
+    /// « Zool - Ninja of the Nth Dimension (Europe) ») - identite DAT du dump,
     /// pas un nom d'affichage. C'est la couche qui garantit la couverture des
     /// packs : les roms installees et la base viennent du meme ecosysteme, le
     /// nom de fichier y est canonique. Null si inconnu.</summary>
@@ -153,7 +153,7 @@ public sealed class RomCanonicalResolver
                 // meme dump avec des groupes DIFFERENTS (« Zool (Gremlin)
                 // (Europe) » grp=zool et « Zool - Ninja... (Europe) »
                 // grp=zool-ninja..., meme md5). Si un des hash de l'entree est
-                // deja indexe, SA fiche fait foi pour toute l'entree — un meme
+                // deja indexe, SA fiche fait foi pour toute l'entree - un meme
                 // dump donne la meme cle, qu'on le resolve par hash ou par nom.
                 var hashes = ReadHashes(entry).ToList();
                 foreach (var hash in hashes)
@@ -336,7 +336,7 @@ public sealed class RomCanonicalResolver
 
     /// <summary>Le score de ce jeu est-il CAPTURABLE sur cette machine ? Vrai
     /// s'il existe une definition .MEM (resources/ram/&lt;system&gt;) pour ce
-    /// dump — cherchee par md5, hash RA, nom de fichier puis slug direct.
+    /// dump - cherchee par md5, hash RA, nom de fichier puis slug direct.
     /// C'est ce drapeau qui permet a l'app joueur d'afficher « pas de record
     /// possible » AVANT de lancer, au lieu de frustrer apres la partie.</summary>
     public bool HasScoreDefinition(string systemId, string? romFileName, string? md5, string? cheevosHash)
@@ -344,7 +344,7 @@ public sealed class RomCanonicalResolver
 
     /// <summary>Le SLUG de la définition .MEM (= le groupe canonique du jeu ouvert au
     /// scoring) pour ce dump, ou null si non capturable. C'est CE slug qui doit servir
-    /// d'identité pour un jeu scorable — le MÊME que le rom_group certifié — afin que la
+    /// d'identité pour un jeu scorable - le MÊME que le rom_group certifié - afin que la
     /// couche salle (HubScore) et la couche certifiée s'alignent sur une seule clé (sinon
     /// « sonic-the-hedgehog-rev-0 » côté salle vs « sonic-the-hedgehog » côté certifié).</summary>
     public string? ResolveScoreSlug(string systemId, string? romFileName, string? md5, string? cheevosHash)
@@ -408,7 +408,7 @@ public sealed class RomCanonicalResolver
             foreach (var file in Directory.EnumerateFiles(ramRoot, "*.MEM"))
             {
                 // Un .MEM SANS definition de score (events vides, ou lifecycle
-                // seulement — ex. Zool sur Game Boy) ne rend PAS le jeu
+                // seulement - ex. Zool sur Game Boy) ne rend PAS le jeu
                 // scorable : le compter promettait un record impossible et
                 // frustrait apres la partie.
                 string content;
@@ -509,7 +509,7 @@ public sealed class RomCanonicalResolver
             foreach (var property in parsed.RootElement.EnumerateObject())
             {
                 // Seules les clés qui SONT des hash md5 (32 hex) nous
-                // intéressent ici — les clés « nom de ROM » restent l'affaire
+                // intéressent ici - les clés « nom de ROM » restent l'affaire
                 // de la chaîne .MEM.
                 var key = property.Name.Trim().ToLowerInvariant();
                 if (key.Length != 32 || !key.All(Uri.IsHexDigit))
@@ -533,7 +533,7 @@ public sealed class RomCanonicalResolver
     }
 
     /// <summary>Normalise un identifiant de la base (« 64th._Street:_A_… ») en
-    /// slug sur — minuscules, alphanumerique et tirets — pour que la cle
+    /// slug sur - minuscules, alphanumerique et tirets - pour que la cle
     /// traverse URL, SQL et attributs HTML sans surprise, dans le meme charset
     /// que les cles de repli « systeme/slug-du-fichier ».</summary>
     private static string Slugify(string value)

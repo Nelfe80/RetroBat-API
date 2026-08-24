@@ -5,7 +5,7 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 5 — gamelists must never carry an empty media tag. When the FillMissing policy leaves a slot
+/// LOT 5 - gamelists must never carry an empty media tag. When the FillMissing policy leaves a slot
 /// unwritten, the in-place path must still drop a present-but-empty element (matching the legacy
 /// write helpers), while never disturbing a real binding.
 /// </summary>

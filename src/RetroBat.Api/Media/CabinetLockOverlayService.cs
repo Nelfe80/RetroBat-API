@@ -15,8 +15,8 @@ namespace RetroBat.Api.Media;
 /// <summary>
 /// Écran de verrouillage de la borne, poussé par le hub quand la salle la
 /// réserve (préparation d'événement, maintenance…). Plein écran : un beau
-/// fanart en fond — celui du jeu en cours, sinon un jeu du système en cours,
-/// sinon fond sombre — avec la raison en très grand (« Borne réservée »,
+/// fanart en fond - celui du jeu en cours, sinon un jeu du système en cours,
+/// sinon fond sombre - avec la raison en très grand (« Borne réservée »,
 /// « Borne en maintenance »). Le QR de check-in est masqué par le hub pendant
 /// le verrouillage : personne ne scanne pour rien.
 /// Même opt-in salle que le badge (CabinetBadgeOverlay:Enabled).
@@ -161,7 +161,7 @@ public sealed class CabinetLockOverlayService : BackgroundService
             ResolveTag(game, systemDir, "marquee"));
     }
 
-    /// <summary>Un jeu du système qui a un fanart — le premier venu d'un
+    /// <summary>Un jeu du système qui a un fanart - le premier venu d'un
     /// parcours mélangé, pour varier d'un verrouillage à l'autre.</summary>
     private static (string? Fanart, string? Logo) ResolveSystemMedia(string systemId)
     {
@@ -194,7 +194,7 @@ public sealed class CabinetLockOverlayService : BackgroundService
             return null;
         }
 
-        // Ne retirer QUE le préfixe "./" — les chemins gamelist traversent en
+        // Ne retirer QUE le préfixe "./" - les chemins gamelist traversent en
         // "./../../plugins/…" et un TrimStart aveugle casserait la remontée.
         if (value.StartsWith("./", StringComparison.Ordinal))
         {
@@ -332,7 +332,7 @@ public sealed class CabinetLockOverlayService : BackgroundService
             DoubleBuffered = true;
 
             // Cet écran reste affiché longtemps (réservation, maintenance) :
-            // même blindage que le badge — le timer ne meurt JAMAIS, et le flag
+            // même blindage que le badge - le timer ne meurt JAMAIS, et le flag
             // TopMost REEL est vérifié (la propriété WinForms répond sur son
             // cache) avec la séquence NOTOPMOST→TOPMOST qui le rétablit.
             _reassert = new System.Windows.Forms.Timer { Interval = 2000 };
@@ -433,7 +433,7 @@ public sealed class CabinetLockOverlayService : BackgroundService
                 g.DrawImage(_logo, (Width - lw) / 2, Height * 0.16f + (maxH - lh) / 2, lw, lh);
             }
 
-            // La raison, en très grand — ombre portée douce puis blanc pur.
+            // La raison, en très grand - ombre portée douce puis blanc pur.
             var titleFont = FitFont(g, _title, new Font("Segoe UI", 64, FontStyle.Bold), Width * 0.9f);
             var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             var titleRect = new RectangleF(0, Height * 0.42f, Width, Height * 0.22f);

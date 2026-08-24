@@ -1016,7 +1016,7 @@ public sealed class ScreenScraperRemoteProvider
             // already on disk. ScreenScraper routinely returns the world ("wor") image
             // identical to the game's own region, and a screentitle-wor.jpg next to an
             // identical screentitle.jpg only wastes space and spawns a phantom "image-wor"
-            // asset. Path-only aliases are already neutralized at /addgames — this stops them
+            // asset. Path-only aliases are already neutralized at /addgames - this stops them
             // being written at all. The KNOWN region is stripped (not a stem guess), so
             // hyphenated kinds like screenmarquee-small are left intact.
             if (!string.IsNullOrWhiteSpace(region))

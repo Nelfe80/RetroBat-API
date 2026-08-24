@@ -5,13 +5,13 @@ using System.Text.Json.Serialization;
 namespace RetroBat.Api.Media;
 
 /// <summary>
-/// LOT 5 (§11.4→§11.7) — durable record of which gamelist media bindings APIExpose owns, so a
+/// LOT 5 (§11.4→§11.7) - durable record of which gamelist media bindings APIExpose owns, so a
 /// FillMissing allocation can update its own past writes without ever clobbering a user's binding.
 ///
 /// One JSON document per system, at <c>&lt;base&gt;/&lt;systemId&gt;/sidecar.json</c>, kept OUT of
 /// <c>roms/</c> (it is bookkeeping, not media). Keyed by normalized rom path; each entry records,
 /// per slot, whether APIExpose manages it and the exact value it last wrote. Ownership is only ever
-/// asserted when the value we wrote is STILL what the gamelist holds — the caller checks with
+/// asserted when the value we wrote is STILL what the gamelist holds - the caller checks with
 /// <see cref="OwnsCurrentValue"/>, and any external edit silently drops ownership. Writes are atomic
 /// (temp + replace) and skipped entirely when nothing changed.
 /// </summary>
@@ -78,7 +78,7 @@ public sealed class MediaSidecarStore
                 && existing.Managed
                 && string.Equals(existing.LastValue, value, StringComparison.Ordinal))
             {
-                return; // no real change — do not touch updatedUtc, do not dirty
+                return; // no real change - do not touch updatedUtc, do not dirty
             }
 
             game.Bindings[slot] = new BindingRecord { Managed = true, LastValue = value, WrittenUtc = nowUtc };
@@ -112,7 +112,7 @@ public sealed class MediaSidecarStore
         }
     }
 
-    /// <summary>Persist a system's sidecar atomically — but only when something actually changed.</summary>
+    /// <summary>Persist a system's sidecar atomically - but only when something actually changed.</summary>
     public void Save(string systemId)
     {
         var state = GetSystem(systemId);

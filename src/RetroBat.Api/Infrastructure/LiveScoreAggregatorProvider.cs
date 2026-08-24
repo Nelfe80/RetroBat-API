@@ -603,7 +603,7 @@ public sealed class LiveScoreAggregatorProvider : IProvider
     {
         // BCD place PAIR: one byte carries TWO decimal digits named by their places
         // ("tens, units", "hundreds, thousands", "ten thousands, hundred thousands").
-        // The byte's weight is the LOWEST named place and its value the BCD pair —
+        // The byte's weight is the LOWEST named place and its value the BCD pair -
         // read binary with weight 1, Zool's displayed 6700 (0x67 at the
         // hundreds/thousands byte) came out as 103.
         if (TryResolvePlacePair(description, rawValueHex, value, out var placePair))
@@ -612,7 +612,7 @@ public sealed class LiveScoreAggregatorProvider : IProvider
         }
 
         // 32-bit literal score split in two u16 halves ("upper 16" / "lower 16"):
-        // the halves must not be summed raw — the upper one weighs 65536.
+        // the halves must not be summed raw - the upper one weighs 65536.
         if (Regex.IsMatch(description, @"\bupper\s*16\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
         {
             return new ScorePartTransform(value, 65536L, "u32-split");
@@ -683,7 +683,7 @@ public sealed class LiveScoreAggregatorProvider : IProvider
         return new ScorePartTransform(bcdValue, weight, "bcd-pairs");
     }
 
-    // Two place names for one byte, separated by a comma / "and" / slash — the DOFLinx
+    // Two place names for one byte, separated by a comma / "and" / slash - the DOFLinx
     // vocabulary for BCD pairs. Anchored near the tail so prose merely mentioning
     // magnitudes is not caught.
     private static readonly Regex PlacePairRegex = new(
@@ -839,15 +839,15 @@ public sealed class LiveScoreAggregatorProvider : IProvider
     /// <summary>
     /// Files the part, unless a WIDER one already covers its bytes.
     ///
-    /// A score is often scattered — one digit per byte, a BCD pair, an upper and a lower
-    /// half — and this provider exists to add those back together. Nothing in a .MEM says
+    /// A score is often scattered - one digit per byte, a BCD pair, an upper and a lower
+    /// half - and this provider exists to add those back together. Nothing in a .MEM says
     /// "this entry IS the whole score" rather than a piece of it, so everything is treated
     /// as a piece.
     ///
     /// The ranges say it though: two pieces of one number cannot cover the same byte. When
     /// they do, one of them describes the whole thing, and it is the wider one. Sonic's
-    /// score arrived three times — the two halves of the RA note, and a u24be covering both,
-    /// added by hand without removing them — and 100 was displayed as 110.
+    /// score arrived three times - the two halves of the RA note, and a u24be covering both,
+    /// added by hand without removing them - and 100 was displayed as 110.
     ///
     /// The narrower part is dropped, said once per pair: a file that describes the same
     /// score twice is worth fixing, and silence would let it live forever.
@@ -886,7 +886,7 @@ public sealed class LiveScoreAggregatorProvider : IProvider
 
         _logger.LogWarning(
             "Score: {Dropped} ({DroppedWidth} octet(s), \"{DroppedDesc}\") est couvert par {Kept} " +
-            "({KeptWidth} octet(s), \"{KeptDesc}\") — le morceau le plus etroit est ignore. " +
+            "({KeptWidth} octet(s), \"{KeptDesc}\") - le morceau le plus etroit est ignore. " +
             "Deux entrees decrivent le meme score dans {Definition}.",
             dropped.Address, dropped.Width, dropped.Description,
             kept.Address, kept.Width, kept.Description, definitionFile);

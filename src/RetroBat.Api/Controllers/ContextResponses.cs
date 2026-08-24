@@ -70,7 +70,7 @@ public sealed class VersionResponse
     public string Name { get; set; } = string.Empty;
 }
 
-/// <summary>Readiness payload (GET startup/ready — also the 503 body while starting).</summary>
+/// <summary>Readiness payload (GET startup/ready - also the 503 body while starting).</summary>
 public sealed class StartupReadyResponse
 {
     /// <example>ready</example>

@@ -14,7 +14,7 @@ namespace RetroBat.Api.Media;
 /// cabinet's check-in QR code and its number, so a player identifies from
 /// their phone without any printed sticker. Driven by the fleet hub
 /// (visible on a free cabinet, hidden while a player is checked in).
-/// Disabled by default — venue opt-in (CabinetBadgeOverlay:Enabled).
+/// Disabled by default - venue opt-in (CabinetBadgeOverlay:Enabled).
 /// </summary>
 public sealed class CabinetBadgeOverlayService : BackgroundService
 {
@@ -50,7 +50,7 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
     {
         // Si la fenêtre a disparu (fermée/plantée) alors qu'on la croyait
         // affichée, on rapporte visible:false : le hub, voyant l'écart, RE-POUSSE
-        // au poll suivant et on la RECRÉE — au lieu de rester bloqué sur un état
+        // au poll suivant et on la RECRÉE - au lieu de rester bloqué sur un état
         // « visible » mensonger qui n'affiche plus rien.
         BadgeForm? form;
         lock (_sync)
@@ -78,7 +78,7 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
     }
 
     /// <summary>Shows, updates or hides the badge. Mode « qr » : image
-    /// telechargee (checkin-qr du hub). Mode « player » : plaque joueur —
+    /// telechargee (checkin-qr du hub). Mode « player » : plaque joueur -
     /// avatar pixel DESSINE localement (seed+colors, meme algorithme que la
     /// plateforme), pseudo en label, rang en sous-titre.</summary>
     public async Task ApplyAsync(
@@ -112,7 +112,7 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
         }
 
         // En mode QR, « visible » n'est VRAI que si on a une image a montrer.
-        // Sinon (hub injoignable au moment du fetch — redemarrage), l'etat
+        // Sinon (hub injoignable au moment du fetch - redemarrage), l'etat
         // rapportait visible:true sans rien a l'ecran, et le hub, voyant l'etat
         // conforme, ne re-poussait JAMAIS : le QR ne « popait » pas jusqu'au
         // prochain changement. En rapportant visible:false, le hub re-pousse au
@@ -348,7 +348,7 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
             _reassert.Tick += (_, _) =>
             {
                 // BLINDE : une exception ici (resolveScreen pendant un restart
-                // d'ES, ecran debranche…) tuait le timer — le badge perdait son
+                // d'ES, ecran debranche…) tuait le timer - le badge perdait son
                 // TopMost a la premiere occasion et ne remontait JAMAIS
                 // (« il faut redemarrer ES pour le voir pop »).
                 try
@@ -363,7 +363,7 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
                     // Le flag REEL (pas la propriete WinForms, qui repond sur
                     // son cache) : quand Windows a retire WS_EX_TOPMOST, un
                     // simple SetWindowPos(TOPMOST) est parfois refuse en
-                    // silence — la sequence documentee NOTOPMOST puis TOPMOST
+                    // silence - la sequence documentee NOTOPMOST puis TOPMOST
                     // le retablit.
                     var exStyle = GetWindowLong(Handle, GwlExstyle);
                     if ((exStyle & WsExTopmost) == 0)
@@ -375,7 +375,7 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
                 }
                 catch (Exception)
                 {
-                    // On retentera au prochain tick — le timer ne meurt jamais.
+                    // On retentera au prochain tick - le timer ne meurt jamais.
                 }
             };
             _reassert.Start();
@@ -383,11 +383,11 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
             // Overlay d'affichage seul : pas de fermeture accidentelle (Alt+F4 /
-            // clic) — voir OnFormClosing. ControlBox retire aussi le menu système.
+            // clic) - voir OnFormClosing. ControlBox retire aussi le menu système.
             ControlBox = false;
             TopMost = true;
             Opacity = Math.Clamp(opacity, 0.3, 1.0);
-            // Fond NOIR (discret sur l'ecran de la borne) — le blanc est
+            // Fond NOIR (discret sur l'ecran de la borne) - le blanc est
             // reserve au QR lui-meme, indispensable au scan.
             _qrTitle = title;
             var dark = Color.FromArgb(12, 12, 18);
@@ -464,7 +464,7 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // Fermeture par l'utilisateur (Alt+F4, clic) : refusée — c'est un
+            // Fermeture par l'utilisateur (Alt+F4, clic) : refusée - c'est un
             // overlay permanent piloté par le hub. Seul l'arrêt de l'appli (le
             // service qui ferme le thread UI) peut la fermer.
             if (e.CloseReason == CloseReason.UserClosing)
@@ -507,7 +507,7 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
             SetLabel(cabinetLabel);
         }
 
-        /// <summary>Plaque joueur DISCRETE : une seule ligne — avatar pixel a
+        /// <summary>Plaque joueur DISCRETE : une seule ligne - avatar pixel a
         /// gauche, pseudo + trophees, contest et rang s'il y en a un. Avec un
         /// challenge chronométré : cartouche ⏱ temps restant AU-DESSUS.</summary>
         public void SetPlayer(string seed, int colors, string pseudo, string honors, string subtitle, DateTime? challengeEndsAtUtc = null)
@@ -544,7 +544,7 @@ public sealed class CabinetBadgeOverlayService : BackgroundService
             previous?.Dispose();
         }
 
-        /// <summary>Identicon 8x8 symetrique — portage GDI de l'algorithme SVG
+        /// <summary>Identicon 8x8 symetrique - portage GDI de l'algorithme SVG
         /// de la plateforme (SHA-256, palette HSL par niveau de couleurs).</summary>
         private static Bitmap RenderIdenticon(string seed, int colors, int size)
         {

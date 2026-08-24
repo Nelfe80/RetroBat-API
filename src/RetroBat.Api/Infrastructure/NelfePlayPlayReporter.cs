@@ -20,7 +20,7 @@ namespace RetroBat.Api.Infrastructure;
 ///
 /// Le but est de mesurer une audience, pas de suivre quelqu'un : ce qui part
 /// d'ici est le titre lance, le systeme, et la duree. Aucun identifiant de
-/// joueur ne quitte la machine — le serveur reduit sur-le-champ ce qu'il
+/// joueur ne quitte la machine - le serveur reduit sur-le-champ ce qu'il
 /// recoit a un pseudonyme dont le sel est detruit chaque mois.
 ///
 /// Deux natures de machine :
@@ -57,7 +57,7 @@ public sealed class NelfePlayPlayReporter : BackgroundService
     /// <summary>
     /// En deca de cette duree, le jeu ne s'est pas lance : il a rendu la main
     /// avant meme d'afficher quoi que ce soit. C'est le seul echec qu'une
-    /// machine puisse constater seule, et il vaut d'etre dit — un titre qui ne
+    /// machine puisse constater seule, et il vaut d'etre dit - un titre qui ne
     /// demarre pas sur une configuration doit se voir sur la fiche.
     ///
     /// Entre ce seuil et <see cref="MinimumSeconds"/>, on ne conclut RIEN :
@@ -167,7 +167,7 @@ public sealed class NelfePlayPlayReporter : BackgroundService
         // GamePath. Elle n'existe pas : le bus publie un objet anonyme
         // { EventName, RawArgs, Context }, et le jeu vit dans Context.Running.
         // Mon extraction exigeait un JsonElement, recevait un objet .NET, et
-        // rendait null a chaque fois — aucune partie n'etait donc enregistree,
+        // rendait null a chaque fois - aucune partie n'etait donc enregistree,
         // sans qu'aucune erreur ne le signale.
         //
         // On lit maintenant le contexte typé, ou l'objet ne peut pas mentir sur
@@ -407,7 +407,7 @@ public sealed class NelfePlayPlayReporter : BackgroundService
     ///
     /// Le releve part avec les VERSIONS de la machine : RetroBat, RetroArch,
     /// EmulationStation, Windows. Le materiel accompagne le releve mais ne le
-    /// definit pas — cote serveur, c'est la pile logicielle seule qui regroupe
+    /// definit pas - cote serveur, c'est la pile logicielle seule qui regroupe
     /// les machines, faute de quoi aucune configuration n'atteindrait jamais
     /// les trois exemplaires qui confirment un resultat.
     /// </summary>
@@ -444,7 +444,7 @@ public sealed class NelfePlayPlayReporter : BackgroundService
 
             // 400 : ce releve ne sera jamais accepte (titre inconnu du serveur,
             // pile vide). Le garder bloquerait la file derriere lui pour
-            // toujours — on le jette en le declarant traite.
+            // toujours - on le jette en le declarant traite.
             return response.IsSuccessStatusCode || (int)response.StatusCode == 400;
         }
         catch (Exception ex)
@@ -531,7 +531,7 @@ public sealed class NelfePlayPlayReporter : BackgroundService
 
     /// <summary>
     /// Le secret a presenter : celui de l'appareil appaire, sinon celui de
-    /// l'installation anonyme — inscrite au premier besoin.
+    /// l'installation anonyme - inscrite au premier besoin.
     /// </summary>
     private async Task<string?> ResolveCredentialAsync(CancellationToken cancellationToken)
     {
@@ -677,7 +677,7 @@ public sealed class NelfePlayPlayReporter : BackgroundService
     /// <summary>
     /// Le jeu en cours, tel que la charge de l'evenement le transporte.
     ///
-    /// La charge est un objet ANONYME — { EventName, RawArgs, Context } — donc
+    /// La charge est un objet ANONYME - { EventName, RawArgs, Context } - donc
     /// impossible a typer depuis ici : on va chercher sa propriete Context par
     /// reflexion, une fois, et on retombe sur le contexte partage si sa forme
     /// change un jour. Le repli n'est pas de la prudence decorative : c'est ce

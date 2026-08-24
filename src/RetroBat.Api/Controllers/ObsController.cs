@@ -8,10 +8,10 @@ namespace RetroBat.Api.Controllers;
 
 /// <summary>
 /// OBS de la borne, au service du hub de salle (diffusion des parties sur les
-/// écrans et les streams — Lot B des Écrans de la salle) :
+/// écrans et les streams - Lot B des Écrans de la salle) :
 /// - status : OBS installé ? websocket configuré ? en marche ?
 /// - websocket : active obs-websocket (mot de passe généré ou existant
-///   conservé) — le hub s'en sert ensuite pour piloter scènes et sorties ;
+///   conservé) - le hub s'en sert ensuite pour piloter scènes et sorties ;
 /// - launch/quit : démarrage minimisé avec profil/collection dédiés (le
 ///   setup personnel de la machine n'est jamais touché).
 /// Aucune installation ici : OBS est provisionné par l'installateur du hub à
@@ -63,9 +63,9 @@ public sealed class ObsController : ControllerBase
         bool Installed, string? Path, bool Running,
         bool WebSocketEnabled, int WebSocketPort, GameScreen? GameScreen = null);
 
-    /// <summary>OBS presence, run state, obs-websocket configuration — and the
+    /// <summary>OBS presence, run state, obs-websocket configuration - and the
     /// bounds of the RETROBAT screen (les bornes ont souvent plusieurs écrans :
-    /// jeu, marquee, écran carte… — la capture doit viser le bon).</summary>
+    /// jeu, marquee, écran carte… - la capture doit viser le bon).</summary>
     [HttpGet("status")]
     [ProducesResponseType(typeof(ObsStatus), StatusCodes.Status200OK)]
     public ActionResult<ObsStatus> Status()
@@ -85,7 +85,7 @@ public sealed class ObsController : ControllerBase
     private struct NativeRect { public int Left, Top, Right, Bottom; }
 
     /// <summary>Écran où tourne EmulationStation (même logique que le badge
-    /// QR) — celui que la diffusion doit capturer.</summary>
+    /// QR) - celui que la diffusion doit capturer.</summary>
     private static GameScreen? ResolveGameScreen()
     {
         try
@@ -124,7 +124,7 @@ public sealed class ObsController : ControllerBase
 
     /// <summary>
     /// Ensures obs-websocket is enabled and returns its credentials (the hub
-    /// stores them). An existing password is KEPT — this call is idempotent.
+    /// stores them). An existing password is KEPT - this call is idempotent.
     /// OBS must be closed for a fresh write to stick (it rewrites its config
     /// on exit) ; when running with websocket already on, current values are
     /// returned as-is.
@@ -149,7 +149,7 @@ public sealed class ObsController : ControllerBase
         if (IsRunning())
         {
             // Écrire pendant qu'OBS tourne serait perdu à sa fermeture.
-            return Conflict(new { error = "OBS est ouvert — fermez-le pour activer le websocket." });
+            return Conflict(new { error = "OBS est ouvert - fermez-le pour activer le websocket." });
         }
 
         var newPassword = password.Length > 0
@@ -173,7 +173,7 @@ public sealed class ObsController : ControllerBase
     /// <summary>
     /// Écrit le profil OBS « RetroBorne » COMPLET sur disque, OBS FERMÉ (il
     /// est quitté d'abord s'il tourne) : sortie « enregistrement » avancée
-    /// FFmpeg → SRT vers le hub. C'est la seule façon fiable — les
+    /// FFmpeg → SRT vers le hub. C'est la seule façon fiable - les
     /// paramètres poussés en websocket sur un profil actif ne rebranchent
     /// pas les sorties (leçon : un StartRecord partait en mp4 Simple).
     /// Le profil par défaut de la machine n'est jamais touché.
@@ -210,7 +210,7 @@ public sealed class ObsController : ControllerBase
             "obs-studio", "basic", "profiles", "RetroBorne");
         Directory.CreateDirectory(profileDir);
         // FFVEncoderId/FFAEncoderId : identifiants de codec FFmpeg (H264=27,
-        // AAC=86018) — la sortie FFmpeg d'OBS choisit l'encodeur par id.
+        // AAC=86018) - la sortie FFmpeg d'OBS choisit l'encodeur par id.
         var ini = $"""
             [General]
             Name=RetroBorne
@@ -248,7 +248,7 @@ public sealed class ObsController : ControllerBase
         return Ok(new { ok = true, profile = "RetroBorne" });
     }
 
-    /// <summary>Starts OBS minimized on the dedicated profile/collection —
+    /// <summary>Starts OBS minimized on the dedicated profile/collection -
     /// never the machine's default setup. No-op when already running.</summary>
     [HttpPost("launch")]
     [ProducesResponseType(StatusCodes.Status200OK)]

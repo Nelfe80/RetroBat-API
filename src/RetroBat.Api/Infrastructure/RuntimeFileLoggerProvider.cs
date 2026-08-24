@@ -8,7 +8,7 @@ namespace RetroBat.Api.Infrastructure;
 /// General file logger for APIExpose runtime diagnostics. APIExpose runs as a hidden
 /// window (--hide-console), so Console output is lost; without this, every existing
 /// _logger.LogInformation/Warning/Debug (marquee snapshot published, physical media
-/// published, "Unable to publish…") vanishes — leaving black-marquee incidents (e.g.
+/// published, "Unable to publish…") vanishes - leaving black-marquee incidents (e.g.
 /// after a media migration) impossible to diagnose. This provider captures ALL of
 /// them into .log/apiexpose-runtime.log with no code change to the services.
 ///

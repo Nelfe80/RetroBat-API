@@ -7,7 +7,7 @@ public sealed class ToastNotification
     public string Type { get; set; } = string.Empty;
     /// <example>APIExpose</example>
     public string Title { get; set; } = string.Empty;
-    /// <example>Hello from Swagger — this toast really shows above EmulationStation.</example>
+    /// <example>Hello from Swagger - this toast really shows above EmulationStation.</example>
     public string Message { get; set; } = string.Empty;
     /// <summary>Optional absolute image path displayed in the toast.</summary>
     public string? ImagePath { get; set; }

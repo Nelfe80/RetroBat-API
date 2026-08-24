@@ -199,7 +199,7 @@ public class MediaController : ControllerBase
     /// </summary>
     /// <remarks>
     /// While EmulationStation is running, its next full gamelist rewrite can
-    /// overwrite a merge done from here — prefer running this when
+    /// overwrite a merge done from here - prefer running this when
     /// EmulationStation is closed (the automatic merge-on-exit does exactly that).
     /// </remarks>
     [HttpPost("gamelist/pending-extended/apply")]

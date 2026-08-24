@@ -578,10 +578,10 @@ public sealed class RetroArchConsoleHiscoreProvider : IProvider
 
     private string ResolvePlayerName()
     {
-        // Identity of a local score — same resolution order as the certified reporter:
+        // Identity of a local score - same resolution order as the certified reporter:
         //  1. VENUE : the checked-in player's pseudo, published by the badge at check-in.
         //  2. HOME  : the pseudo of the account paired to this cabinet.
-        //  3. else  : ANO (anonymous) — reattached to the account on pairing (recovery).
+        //  3. else  : ANO (anonymous) - reattached to the account on pairing (recovery).
         // Never es_settings, never the RetroAchievements username.
         var pseudo = _context.SessionPseudo;
         if (string.IsNullOrWhiteSpace(pseudo)) pseudo = _context.PlayerPseudo;

@@ -5,7 +5,7 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 2 — the shared qualification lifted out of the migration. These pin the two things that
+/// LOT 2 - the shared qualification lifted out of the migration. These pin the two things that
 /// must not drift: the SUFFIX PRECEDENCE (most specific wins) and the folder constraints, plus the
 /// qualification-source label each path reports. A file is typed here without any migration.
 /// </summary>

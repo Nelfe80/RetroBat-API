@@ -87,7 +87,7 @@ public static class MediaKinds
     /// This is the single source of truth for a TARGETED media inventory: instead of
     /// walking a whole subtree (and everything under <c>games/</c>) then discarding what
     /// does not qualify, the inventory lists exactly these directories. It therefore MUST
-    /// move in lock-step with the switch in <see cref="FromRelativePath"/> — a qualifier
+    /// move in lock-step with the switch in <see cref="FromRelativePath"/> - a qualifier
     /// case with no directory here would make its media silently vanish from snapshots.
     /// A guard test asserts every entry qualifies, and the FromRelativePath
     /// characterisation tests prove nothing qualifies OUTSIDE this set.
@@ -115,7 +115,7 @@ public static class MediaKinds
     /// root ("artwork/box/3d.png" → box-3d). Naming by file stem alone cannot do this:
     /// "3d.png" and "front.png" only mean something under "artwork/box/", and
     /// "marquee.png" under "artwork/marquee/" is not the same thing as a folder called
-    /// marquee. Null when the file is not a recognised medium — the caller publishes
+    /// marquee. Null when the file is not a recognised medium - the caller publishes
     /// nothing rather than inventing a name.
     /// </summary>
     public static string? FromRelativePath(string? relativePath)

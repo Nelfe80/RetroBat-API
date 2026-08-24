@@ -87,7 +87,7 @@ internal static class EsNotificationText
             .Replace('«', '"')
             .Replace('»', '"')
             .Replace('–', '-')
-            .Replace('—', '-')
+            .Replace('-', '-')
             .Replace('…', '.');
     }
 

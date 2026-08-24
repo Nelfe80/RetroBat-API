@@ -1,6 +1,6 @@
 namespace RetroBat.Api.Media;
 
-/// <summary>LOT 5 (§10.1) — how APIExpose writes a resolved medium into a generic ES gamelist slot.</summary>
+/// <summary>LOT 5 (§10.1) - how APIExpose writes a resolved medium into a generic ES gamelist slot.</summary>
 public enum MediaWritePolicy
 {
     /// <summary>Default: fill an empty slot and update a slot APIExpose still owns, but NEVER
@@ -11,7 +11,7 @@ public enum MediaWritePolicy
     /// back to the user. Behaves like <see cref="FillMissing"/> for the update/preserve decision.</summary>
     Managed,
 
-    /// <summary>Deliberate reallocation — overwrite whatever is there. Only on an explicit user
+    /// <summary>Deliberate reallocation - overwrite whatever is there. Only on an explicit user
     /// action.</summary>
     Force
 }
@@ -27,7 +27,7 @@ public readonly record struct MediaWriteDecision(
 }
 
 /// <summary>
-/// LOT 5 — the pure decision at the heart of Media Allocation, kept out of the gamelist-writing
+/// LOT 5 - the pure decision at the heart of Media Allocation, kept out of the gamelist-writing
 /// machinery so it can be reasoned about and tested on its own. Given the policy, the value
 /// APIExpose resolved for a slot, what the gamelist currently holds, and whether APIExpose OWNS
 /// that current value (it wrote it and the value has not changed since), it returns whether to
@@ -74,7 +74,7 @@ public static class MediaAllocationPolicy
             return MediaWriteDecision.Skip;
         }
 
-        // Non-empty and NOT ours — a user binding, or one we owned but the user has changed.
+        // Non-empty and NOT ours - a user binding, or one we owned but the user has changed.
         // Preserve it untouched, and release any ownership we thought we had.
         return new MediaWriteDecision(Write: false, Value: null, MarkManaged: false, AbandonOwnership: true);
     }

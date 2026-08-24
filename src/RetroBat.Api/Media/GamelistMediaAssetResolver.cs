@@ -3,7 +3,7 @@ using System.Text;
 namespace RetroBat.Api.Media;
 
 /// <summary>
-/// LOT 8 — serves a game's media over HTTP whether it lives in the canonical store OR is a user
+/// LOT 8 - serves a game's media over HTTP whether it lives in the canonical store OR is a user
 /// binding under roms/, without ever exposing the filesystem or allowing escape. A media path is
 /// turned into an OPAQUE reference ("&lt;rootId&gt;|&lt;relPath&gt;", base64url) scoped to an
 /// ALLOWLIST of roots; resolving a reference re-validates the root and canonicalizes the path,
@@ -32,7 +32,7 @@ public sealed class GamelistMediaAssetResolver
 
     /// <summary>Build an opaque reference for a gamelist media value (relative to roms/&lt;systemId&gt;/
     /// or absolute), or null when it does not fall inside any allowlisted root. Existence is NOT
-    /// checked here — the endpoint returns 404 for a reference whose file is gone.</summary>
+    /// checked here - the endpoint returns 404 for a reference whose file is gone.</summary>
     public string? BuildReference(string systemId, string? gamelistMediaPath)
     {
         if (string.IsNullOrWhiteSpace(gamelistMediaPath))

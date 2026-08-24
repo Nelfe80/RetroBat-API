@@ -34,7 +34,7 @@ public class GamelistsController : ControllerBase
 
     /// <summary>Additif (doctrine contrat) : `md5` (du gamelist.xml) et
     /// `gameKey`/`gameName` canoniques (résolus par hash) s'ajoutent aux champs
-    /// historiques — les consommateurs existants ne voient rien changer.</summary>
+    /// historiques - les consommateurs existants ne voient rien changer.</summary>
     public sealed record GamelistGameEntry(
         string Rom, string Name, string Path = "", bool Ra = false,
         string Md5 = "", string GameKey = "", string GameName = "",
@@ -109,7 +109,7 @@ public class GamelistsController : ControllerBase
     /// <response code="200">Installed games of the system.</response>
     /// <response code="404">The system has no readable gamelist.</response>
     /// <summary>Fiche COMPLÈTE d'un jeu (description, genre, année, éditeur,
-    /// joueurs + médias en URLs /api/v1/media) — pour l'app joueur en salle
+    /// joueurs + médias en URLs /api/v1/media) - pour l'app joueur en salle
     /// (fiche détaillée / mode Match). Match par nom de fichier ROM (sans
     /// extension) ou nom d'affichage.</summary>
     [HttpGet("{systemId}/game")]
@@ -125,7 +125,7 @@ public class GamelistsController : ControllerBase
 
         // Un joueur qui consulte un jeu depuis son telephone lit dans SA
         // langue ; la borne, elle, ne bascule pas. On sert le cache localise
-        // quand il existe, et la gamelist vivante sinon — un repli qui donne
+        // quand il existe, et la gamelist vivante sinon - un repli qui donne
         // toujours quelque chose plutot qu'une erreur.
         var path = _localized?.TryResolveCachedGamelistPath(lng, systemId)
             ?? Path.Combine(RetroBatPaths.RomsRoot, systemId, "gamelist.xml");
@@ -257,7 +257,7 @@ public class GamelistsController : ControllerBase
             // sert de second essai (dumps headered dont le md5 differe).
             var md5 = ((string?)game.Element("md5") ?? "").Trim().ToLowerInvariant();
             // Cascade : hash (contenu) → nom de FICHIER (identite DAT du dump,
-            // garantie par les packs — le md5 du gamelist est celui du fichier
+            // garantie par les packs - le md5 du gamelist est celui du fichier
             // archive, pas de la rom decompressee, donc il ne suffit pas).
             var canonical = _canonical.Resolve(systemId, md5)
                 ?? _canonical.Resolve(systemId, cheevosHash)
@@ -318,7 +318,7 @@ public class GamelistsController : ControllerBase
         var hash = (md5 ?? "").ToLowerInvariant();
         // Jeu SCORABLE : son identité canonique EST celle de sa définition .MEM (= le
         // rom_group certifié). On l'impose comme gameKey pour que la couche salle
-        // (HubScore) et la couche certifiée s'alignent sur UNE seule clé — fini le
+        // (HubScore) et la couche certifiée s'alignent sur UNE seule clé - fini le
         // « …-rev-0 » côté salle vs « … » côté certifié (« match ton jeu » et le
         // classement salle se retrouvent, dédoublonnage RGPC fiable).
         var scoreSlug = _canonical.ResolveScoreSlug(system, rom, md5, null);

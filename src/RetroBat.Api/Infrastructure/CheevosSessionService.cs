@@ -7,7 +7,7 @@ namespace RetroBat.Api.Infrastructure;
 /// Identifiants RetroAchievements DE SESSION : poses par le hub au check-in
 /// du joueur, retires au checkout (ou auto-checkout). Les valeurs d'origine
 /// de retroarch.cfg sont sauvegardees avant le premier patch et restaurees a
-/// la fin — le proprietaire de la borne retrouve toujours sa configuration.
+/// la fin - le proprietaire de la borne retrouve toujours sa configuration.
 /// RetroArch lit le cfg au lancement d'un jeu : la session etant ouverte
 /// avant de jouer, les succes partent sur le compte RA du joueur.
 /// </summary>

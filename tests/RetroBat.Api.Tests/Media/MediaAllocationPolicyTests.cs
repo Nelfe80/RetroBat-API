@@ -4,7 +4,7 @@ using Xunit;
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// LOT 5 (§10.1) — the pure allocation decision. These pin the exit criterion: enriching the
+/// LOT 5 (§10.1) - the pure allocation decision. These pin the exit criterion: enriching the
 /// catalog never overwrites a user binding, fills empty slots, updates only slots APIExpose still
 /// owns, and releases ownership the moment the gamelist value no longer matches what we wrote.
 /// </summary>

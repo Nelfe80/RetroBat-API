@@ -11,7 +11,7 @@ namespace RetroBat.Api.Infrastructure;
 /// <summary>
 /// Client Live Contest natif : une fois le playToken remis par la page de
 /// participation (POST /api/v1/livecontest/enroll), CE service orchestre tout
-/// en local — la page web ne pilote rien. Il interroge la plateforme en
+/// en local - la page web ne pilote rien. Il interroge la plateforme en
 /// HTTPS SORTANT uniquement : resolution du jeu dans la ludotheque LOCALE
 /// (le chemin du streamer ne circule jamais), lancement via EmulationStation,
 /// pause au signal GAME_PLAYING (vraie partie), ready, comptage natif de la
@@ -163,7 +163,7 @@ public sealed class LiveContestClientService : BackgroundService
         _startAtMs = 0;
         _phase = "idle";
 
-        // ÉTAGE 3 — on désarme la session STREAM du contest (désenrôlement /
+        // ÉTAGE 3 - on désarme la session STREAM du contest (désenrôlement /
         // ré-enrôlement). On ne touche PAS une session STATION (armée par le hub) :
         // Live Contest et check-in salle sont mutuellement exclusifs, mais on reste
         // prudent pour ne jamais clobber le contexte salle.
@@ -254,7 +254,7 @@ public sealed class LiveContestClientService : BackgroundService
         switch (status)
         {
             // des que le viewer a confirme, son jeu se lance : il appuie sur
-            // START, la pause tombe sur GAME_PLAYING — chacun se met pret a
+            // START, la pause tombe sur GAME_PLAYING - chacun se met pret a
             // son rythme pendant que les inscriptions restent ouvertes
             case "open" or "test" or "locked" when !_prepared:
                 _prepared = true;
@@ -328,7 +328,7 @@ public sealed class LiveContestClientService : BackgroundService
             return;
         }
 
-        // ÉTAGE 3 — armer la session certifiée STREAM pour ce contest : le record
+        // ÉTAGE 3 - armer la session certifiée STREAM pour ce contest : le record
         // joué portera context.world=stream + channel + contest_id, attribué au
         // compte RGPC LIÉ (playerCode du /link). Machine non liée → playerCode null
         // → record stream anonyme (le contest marche quand même). La session sera
@@ -351,7 +351,7 @@ public sealed class LiveContestClientService : BackgroundService
             _phase = "rom-not-found";
             _lastError = "aucun fichier ne matche « " + slug + " » dans roms\\" + system;
             _overlay.Show(null, T("Jeu introuvable dans ta ludothèque", "Game not found in your library"),
-                slug + " (" + system + ") — " + T("lance-le toi-même puis appuie sur START.", "launch it yourself then press START."), 0);
+                slug + " (" + system + ") - " + T("lance-le toi-même puis appuie sur START.", "launch it yourself then press START."), 0);
         }
         else
         {
@@ -481,8 +481,8 @@ public sealed class LiveContestClientService : BackgroundService
         _phase = "ready";
         _overlay.ShowCenter(T("Tiens-toi prêt !", "Get ready!"),
             string.IsNullOrWhiteSpace(_brief)
-                ? T("Le départ sera donné pour tout le monde en même temps — attends le décompte.",
-                    "The start fires for everyone at once — wait for the countdown.")
+                ? T("Le départ sera donné pour tout le monde en même temps - attends le décompte.",
+                    "The start fires for everyone at once - wait for the countdown.")
                 : _brief!, 0);
     }
 
@@ -558,8 +558,8 @@ public sealed class LiveContestClientService : BackgroundService
 
         _phase = "target-reached";
         _overlay.ShowCenter(T("🏁 Objectif atteint !", "🏁 Target reached!"),
-            T("Ton temps est enregistré — regarde le classement sur le stream !",
-              "Your time is in — watch the stream for the standings!"), 0);
+            T("Ton temps est enregistré - regarde le classement sur le stream !",
+              "Your time is in - watch the stream for the standings!"), 0);
 
         // le joueur a fini : on le sort du jeu tout de suite, le streamer
         // peut prendre son temps pour clore le contest
@@ -639,7 +639,7 @@ public sealed class LiveContestClientService : BackgroundService
     /// RetroBat/RetroArch pausent le jeu quand la fenetre perd le focus
     /// (pause_nonactive) : incompatible avec le depart pilote. Le canal
     /// DURABLE est es_settings.cfg (global.retroarch.pause_nonactive=false,
-    /// injecte par RetroBat dans retroarch.cfg a CHAQUE lancement — un
+    /// injecte par RetroBat dans retroarch.cfg a CHAQUE lancement - un
     /// template, lui, peut etre reecrit). On corrige aussi la config live
     /// pour un jeu deja lance.
     /// </summary>
@@ -742,7 +742,7 @@ public sealed class LiveContestClientService : BackgroundService
     }
 
     /// <summary>
-    /// EMULATOR: AUTO pour le systeme du contest — un override (emulateur
+    /// EMULATOR: AUTO pour le systeme du contest - un override (emulateur
     /// standalone) casserait le pilotage RetroArch et l'equite. L'entree
     /// es_settings est retiree dynamiquement au moment de la preparation.
     /// </summary>
@@ -794,7 +794,7 @@ public sealed class LiveContestClientService : BackgroundService
 
     /// <summary>
     /// Resolution LOCALE du jeu : le contest donne systeme + slug, on cherche
-    /// dans roms\{system} du RetroBat du viewer (normalisation des noms —
+    /// dans roms\{system} du RetroBat du viewer (normalisation des noms -
     /// « sonic-the-hedgehog » matche « Sonic The Hedgehog (USA, Europe).zip »).
     /// </summary>
     internal static string? ResolveLocalRom(string? system, string? slug, string? romsRoot = null)
@@ -903,7 +903,7 @@ public sealed class LiveContestClientService : BackgroundService
 
             var loaded = JsonSerializer.Deserialize<Enrollment>(File.ReadAllText(_statePath));
             // Un contest est court : on NE reprend PAS un enrôlement trop vieux au
-            // redémarrage — sinon un simple restart ré-ouvre un contest déjà fini et
+            // redémarrage - sinon un simple restart ré-ouvre un contest déjà fini et
             // bloque la borne sur « Tiens-toi prêt ». Périmé (>30 min) → on l'efface.
             if (loaded is null || DateTimeOffset.UtcNow - loaded.EnrolledAt > TimeSpan.FromMinutes(30))
             {

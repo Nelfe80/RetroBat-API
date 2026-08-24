@@ -45,7 +45,7 @@ public sealed class CngDeviceKey : IDisposable
     /// <summary>Clé publique en PEM (à publier via /scores/enroll-key).</summary>
     public string PublicKeyPem => _ecdsa.ExportSubjectPublicKeyInfoPem();
 
-    /// <summary>key_id = SHA-256(SPKI DER) — l'identifiant du champ device.key_id.</summary>
+    /// <summary>key_id = SHA-256(SPKI DER) - l'identifiant du champ device.key_id.</summary>
     public string KeyId => Crypto.KeyId(SpkiDer);
 
     /// <summary>Signe un message (les octets JCS du corps) → base64url ASN.1 DER.</summary>

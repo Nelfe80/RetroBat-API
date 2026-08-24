@@ -5,27 +5,27 @@ using RetroBat.Domain.Paths;
 
 namespace RetroBat.Api.Media;
 
-/// <summary>LOT 3 — what the user gamelist knows about ONE game's media: the raw bindings
+/// <summary>LOT 3 - what the user gamelist knows about ONE game's media: the raw bindings
 /// (slot → file) and the qualified candidates (file → kind + provenance).</summary>
 public sealed record GamelistGameMedia(
     IReadOnlyList<MediaBinding> Bindings,
     IReadOnlyList<QualifiedMediaCandidate> Candidates);
 
 /// <summary>
-/// LOT 3 — reads a user gamelist as a MEDIA source, so a <c>game-selected</c> can get its media
+/// LOT 3 - reads a user gamelist as a MEDIA source, so a <c>game-selected</c> can get its media
 /// from <c>roms/&lt;system&gt;/gamelist.xml</c> without an <c>/systems/{system}/games</c> call. It is
 /// READ-ONLY (never writes the XML), cached per system on the gamelist's path + mtime + length, and
 /// indexed by the game's NORMALIZED rom path (not the basename). It reuses <see cref="IGamelistStore"/>
 /// to load and <see cref="MediaQualificationService"/> to type the referenced files:
 ///  - every media tag becomes a <see cref="MediaBinding"/> (slot → resolved, existing file);
 ///  - a durable tag names a kind on its own (explicit-gamelist);
-///  - the file name may add a kind (filename-convention) — a generic slot alone never does (§7.3).
+///  - the file name may add a kind (filename-convention) - a generic slot alone never does (§7.3).
 /// Relative media paths resolve against the gamelist folder and carry PathRoot "retrobat".
 /// </summary>
 public sealed class GamelistMediaCatalogReader
 {
     // The media tags an ES gamelist can carry. The generic slots (image/marquee/thumbnail) are here
-    // too — they still produce a Binding; they just never imply a Kind on their own.
+    // too - they still produce a Binding; they just never imply a Kind on their own.
     private static readonly string[] MediaTags =
     [
         "image", "marquee", "thumbnail", "fanart", "video", "boxart", "box",
@@ -166,7 +166,7 @@ public sealed class GamelistMediaCatalogReader
         catch { info = null!; }
 
         // Gamelist media lives under the RetroBat root (roms/…): PathRoot "retrobat", path relative
-        // to it — the HP5 contract, so MarqueeManager resolves it against the right root.
+        // to it - the HP5 contract, so MarqueeManager resolves it against the right root.
         var relative = IsUnderRoot(absolute, RetroBatPaths.RetroBatRoot)
             ? Path.GetRelativePath(RetroBatPaths.RetroBatRoot, absolute).Replace('\\', '/')
             : absolute.Replace('\\', '/');

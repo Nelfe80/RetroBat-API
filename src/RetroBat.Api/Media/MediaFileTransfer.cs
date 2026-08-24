@@ -1,6 +1,6 @@
 namespace RetroBat.Api.Media;
 
-/// <summary>LOT 9 — how the migration relocates one asset.</summary>
+/// <summary>LOT 9 - how the migration relocates one asset.</summary>
 public enum MigrationTransferMode
 {
     /// <summary>Non-destructive: the source stays in roms/, a verified copy lands in the store.</summary>
@@ -19,10 +19,10 @@ public readonly record struct MediaTransferResult(bool Success, string? Reason)
 }
 
 /// <summary>
-/// LOT 9 — the one primitive that relocates a media file, safe by construction. It copies the source
+/// LOT 9 - the one primitive that relocates a media file, safe by construction. It copies the source
 /// to a temp beside the target, verifies the copy's SHA-256 matches the source, atomically swaps it
-/// into place, and — for <see cref="MigrationTransferMode.Move"/> only, and only once that verified
-/// copy is in place — deletes the source. A hash mismatch or any failure leaves the source intact and
+/// into place, and - for <see cref="MigrationTransferMode.Move"/> only, and only once that verified
+/// copy is in place - deletes the source. A hash mismatch or any failure leaves the source intact and
 /// removes the partial target: the source is NEVER deleted before its replacement is proven good.
 /// </summary>
 public static class MediaFileTransfer

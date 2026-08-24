@@ -18,7 +18,7 @@ namespace RetroBat.Api.Infrastructure;
 ///
 /// 2. **The artwork is red.** Its shading is a ramp of reds, not a flat fill, so a
 ///    plain colour swap would flatten it. The hue is transferred instead, leaving
-///    saturation and lightness alone — the button keeps its highlight, its body and
+///    saturation and lightness alone - the button keeps its highlight, its body and
 ///    its shadow, in the colour the panel asks for. Greys and whites (the plastic rim,
 ///    the specular) have almost no saturation and are left untouched.
 /// </summary>
@@ -34,7 +34,7 @@ public static class PanelSvgArtwork
     /// <summary>An artwork ready to be placed: its natural size and its inner markup.</summary>
     public sealed record Piece(double Width, double Height, string Body);
 
-    /// <summary>Loads a piece by file name ("top-button-v2.svg"), or null when absent —
+    /// <summary>Loads a piece by file name ("top-button-v2.svg"), or null when absent -
     /// the caller then falls back to drawing a plain circle.</summary>
     public static Piece? Load(string fileName)
     {
@@ -71,7 +71,7 @@ public static class PanelSvgArtwork
 
     /// <summary>
     /// The piece as a REUSABLE definition, recoloured once. Inlining the artwork at
-    /// every button gave a 77 KB file for eight buttons — times 1591 arcade games, that
+    /// every button gave a 77 KB file for eight buttons - times 1591 arcade games, that
     /// is 120 MB of theme folder. A panel uses two or three colours, so the artwork is
     /// defined once per colour and referenced afterwards.
     /// </summary>
@@ -117,8 +117,8 @@ public static class PanelSvgArtwork
         }
 
         // …then the attributes, in ONE pass per class="a b c". Renaming class by class
-        // suffixed the same token twice — the next rule matched the "cls-1" it had just
-        // written inside "cls-1-c0" — so every element pointed at a rule that did not
+        // suffixed the same token twice - the next rule matched the "cls-1" it had just
+        // written inside "cls-1-c0" - so every element pointed at a rule that did not
         // exist and every fill fell back to black.
         return Regex.Replace(body, "class=\"([^\"]*)\"", match =>
         {
@@ -130,14 +130,14 @@ public static class PanelSvgArtwork
     }
 
     /// <summary>Transfers the target hue onto every saturated colour, keeping each one's
-    /// saturation and lightness — the shading survives, only the colour family moves.</summary>
+    /// saturation and lightness - the shading survives, only the colour family moves.</summary>
     private static string Recolor(string body, string color)
     {
         if (!TryParseHex(color, out var r, out var g, out var b)) return body;
         var (targetHue, targetSaturation, targetLightness) = ToHsl(r, g, b);
 
         // The artwork's own level has to move too. Transferring only the hue kept the
-        // RED ramp's lightness, so a button declared White came out dark grey — the
+        // RED ramp's lightness, so a button declared White came out dark grey - the
         // right hue, at the wrong level. The ramp is therefore re-centred on the target:
         // each nuance keeps its DISTANCE to the middle, so the highlight, the body and
         // the shadow survive, and the button as a whole lands where its colour says.

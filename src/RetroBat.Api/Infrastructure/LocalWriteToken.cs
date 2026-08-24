@@ -10,7 +10,7 @@ namespace RetroBat.Api.Infrastructure;
 /// Une page web ne peut pas prouver qu'elle est des notres par son en-tete
 /// d'origine : un overlay maison charge dans un WebView2 et un site hostile
 /// ouvert dans un onglet se presentent exactement pareil. Ce qui les separe
-/// vraiment, c'est l'acces au DISQUE de la machine — le premier l'a, le second
+/// vraiment, c'est l'acces au DISQUE de la machine - le premier l'a, le second
 /// jamais.
 ///
 /// Ce jeton est donc ecrit dans un fichier local. Un overlay qui tourne sur la
@@ -20,7 +20,7 @@ namespace RetroBat.Api.Infrastructure;
 /// Il voyage dans un en-tete PERSONNALISE, et c'est deliberé : une requete
 /// portant un en-tete non standard cesse d'etre « simple » pour le navigateur,
 /// qui doit alors demander l'autorisation avant de l'envoyer. La politique
-/// d'origine reprend donc la main — ce qu'elle n'a pas sur un formulaire ou une
+/// d'origine reprend donc la main - ce qu'elle n'a pas sur un formulaire ou une
 /// image, envoyes sans rien demander a personne.
 /// </summary>
 public static class LocalWriteToken

@@ -9,7 +9,7 @@ namespace RetroBat.Api.Infrastructure;
 ///
 /// This is what turns a drawn panel into a WIRING CHECK: press the bottom-left button,
 /// see the bottom-left button light up on the marquee. If another one lights up, the
-/// wiring is wrong and it shows in a second — no config file to read, no guessing.
+/// wiring is wrong and it shows in a second - no config file to read, no guessing.
 ///
 /// A consumer receives a slot and a function, never a raw button index. The translation
 /// chain is the cabinet's own, end to end:
@@ -85,8 +85,8 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
 
                 // A pad plugged in after startup, or an emulator that took the device and
                 // gave it back. The rescan CLOSES and reopens every joystick, so doing it
-                // blindly on a timer meant one unlucky moment — a reopen refused while
-                // something else held the device — left the watcher deaf for good, with
+                // blindly on a timer meant one unlucky moment - a reopen refused while
+                // something else held the device - left the watcher deaf for good, with
                 // nothing in the log to say so. It now runs only when the number of
                 // joysticks actually changed, and says what it found.
                 if (++_ticks % RescanEveryTicks == 0) RescanIfChanged();
@@ -115,7 +115,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
             {
                 // Debug-only was a trap: a poll failing every tick is EXACTLY the state
                 // that explains "I press and nothing happens", and it was the one thing
-                // the log did not say. Loud once, then quiet — a repeating failure must
+                // the log did not say. Loud once, then quiet - a repeating failure must
                 // not drown the file.
                 if (!_pollFailed)
                 {
@@ -156,7 +156,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
 
         // One line for the first press of a session: proof the cabinet is being read at
         // all. Without it, "nothing lights up" cannot be told apart from "nothing was
-        // pressed" — and the two need opposite fixes.
+        // pressed" - and the two need opposite fixes.
         if (type.EndsWith(".pressed", StringComparison.Ordinal) && !_firstPressLogged)
         {
             _firstPressLogged = true;
@@ -173,7 +173,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
                 Slot = slot,
                 // START and COIN are wired on their own pins, outside the numbered
                 // slots. Reporting them as "no slot" left a consumer unable to tell an
-                // unwired button from one that simply is not part of the eight — which
+                // unwired button from one that simply is not part of the eight - which
                 // is precisely the question a wiring check is asking.
                 System = system,
                 Identity = identity,
@@ -184,7 +184,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
 
     /// <summary>
     /// The slot this identity reaches on THIS cabinet. The per-player map wins when it
-    /// exists — a two-panel cabinet can be wired differently on each side — and the
+    /// exists - a two-panel cabinet can be wired differently on each side - and the
     /// shared map answers otherwise. Null when the identity reaches no slot: a face
     /// button of a pad that is not part of the panel is not a panel event.
     /// </summary>
@@ -201,21 +201,21 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
 
     private int? ResolveSlot(int player, string identity)
     {
-        // THE GLOBAL MAP FIRST — deliberately the opposite order to the remap and cfg
+        // THE GLOBAL MAP FIRST - deliberately the opposite order to the remap and cfg
         // exports, and it is not a mistake.
         //
         // A cabinet is cartographed TWICE, because two chains name the same physical
         // button differently:
         //
-        //   CabinetButtons          what SDL + gamecontrollerdb call it — the chain
+        //   CabinetButtons          what SDL + gamecontrollerdb call it - the chain
         //                           THIS reader uses
-        //   CabinetButtonsByPlayer  what RetroArch calls it — the chain the remaps and
+        //   CabinetButtonsByPlayer  what RetroArch calls it - the chain the remaps and
         //                           the MAME cfg are written against
         //
         // Measured button by button on a real cabinet, the two disagree on six of eight
         // places: the top-left button answers to "x" for the reader and to "y" for the
         // launcher, and the shoulders and triggers swap the same way. Resolving a press
-        // through the launcher's map lit the neighbouring button — while the games
+        // through the launcher's map lit the neighbouring button - while the games
         // themselves stayed correctly mapped, since their remaps read the other map.
         //
         // So each chain resolves against the map that was measured THROUGH IT. The

@@ -3,7 +3,7 @@ using RetroBat.Api.Infrastructure;
 namespace RetroBat.Api.Media;
 
 /// <summary>
-/// HP4 — the seam a media WRITER calls once it has committed a file, so the HP3 directory
+/// HP4 - the seam a media WRITER calls once it has committed a file, so the HP3 directory
 /// cache never serves a listing that predates the write. It is deliberately small and free of
 /// the cache's read details: a producer depends on "I changed this file", not on how the
 /// discovery path is stored.

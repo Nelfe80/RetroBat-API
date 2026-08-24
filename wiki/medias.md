@@ -2,7 +2,7 @@
 
 ## Vos médias sont toujours prioritaires
 
-APIExpose trouve, range et projette les médias des jeux : screenshots, logos et wheels, boxarts, fanarts, vidéos, manuels, magazines, cartes et médias de thèmes. Mais **vos fichiers passent d'abord** — placez-les ici et APIExpose les utilisera avant tout média téléchargé :
+APIExpose trouve, range et projette les médias des jeux : screenshots, logos et wheels, boxarts, fanarts, vidéos, manuels, magazines, cartes et médias de thèmes. Mais **vos fichiers passent d'abord** - placez-les ici et APIExpose les utilisera avant tout média téléchargé :
 
 ```text
 media\user\systems\<système>\games\<jeu>\
@@ -28,7 +28,7 @@ Pour surcharger les médias d'un **système** entier :
 media\user\systems\<système>\
 ```
 
-Si aucun média système local n'existe, APIExpose cherche dans le thème EmulationStation courant, puis dans `es-theme-carbon` — il ne parcourt pas tous les thèmes installés.
+Si aucun média système local n'existe, APIExpose cherche dans le thème EmulationStation courant, puis dans `es-theme-carbon` - il ne parcourt pas tous les thèmes installés.
 
 ## Le scraping automatique
 

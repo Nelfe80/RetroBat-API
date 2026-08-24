@@ -1,5 +1,5 @@
 ﻿; ─────────────────────────────────────────────────────────────────────────────
-; APIExpose — installeur de BORNE (Inno Setup)
+; APIExpose - installeur de BORNE (Inno Setup)
 ; Installe le moteur dans <RetroBat>\plugins\APIExpose : exe unique, hook de
 ; démarrage EmulationStation, configuration préservée aux mises à jour.
 ; Le Data Pack (définitions .MEM + médias) se déploie séparément.
@@ -54,7 +54,7 @@ Source: "..\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createalls
 Source: "..\appsettings.json"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Dirs]
-; état local (sessions RA, sauvegardes de config) — préservé à la désinstallation
+; état local (sessions RA, sauvegardes de config) - préservé à la désinstallation
 Name: "{app}\state"; Flags: uninsneveruninstall
 
 [Run]

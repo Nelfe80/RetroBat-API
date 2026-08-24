@@ -1,6 +1,6 @@
 # Local API
 
-APIExpose exposes a REST API and WebSockets **locally only** (`127.0.0.1`) — nothing leaves your machine.
+APIExpose exposes a REST API and WebSockets **locally only** (`127.0.0.1`) - nothing leaves your machine.
 
 ## The basics
 
@@ -14,7 +14,7 @@ APIExpose exposes a REST API and WebSockets **locally only** (`127.0.0.1`) — n
 | General WebSocket | `ws://127.0.0.1:12345/ws` |
 
 !!! tip "Swagger is your friend"
-    The Swagger UI documents and lets you test every endpoint from the browser, with **pre-filled examples that actually return data** (megadrive/sonic for consoles, mame/1943 for arcade). It is the up-to-date API reference — always in sync with the installed version, and published as a `swagger.json` artifact with every release.
+    The Swagger UI documents and lets you test every endpoint from the browser, with **pre-filled examples that actually return data** (megadrive/sonic for consoles, mame/1943 for arcade). It is the up-to-date API reference - always in sync with the installed version, and published as a `swagger.json` artifact with every release.
 
 ## How the API is organized
 
@@ -35,7 +35,7 @@ Endpoints are grouped with the **same logic as the EmulationStation menu**: each
 | Internal & Prototype | maintenance, ingestion, future surfaces |
 
 !!! warning "Experimental endpoints"
-    `es/controller/goto-system` and `goto-game` are not yet reliable on every theme/view — prefer `tap`/`combo` sequences. `reloadgames` must never be used as an automatic refresh (the user's cursor is lost).
+    `es/controller/goto-system` and `goto-game` are not yet reliable on every theme/view - prefer `tap`/`combo` sequences. `reloadgames` must never be used as an automatic refresh (the user's cursor is lost).
 
 ## The WebSocket streams
 
@@ -53,13 +53,13 @@ Each stream only delivers the event types of its prefixes; some replay their las
 | `/ws/hiscore` | High score captures and updates |
 | `/ws/media`, `/ws/roms`, `/ws/system`, `/ws/control`, `/ws/esevent` | Media store, Roms Manager, service, commands, raw ES hooks |
 
-Surface snapshots carry `Media` (legacy fields, unchanged) and, in addition, `Assets` — a table keyed by canonical media kind (`box-3d`, `mixrbv2`, `wheel`…) holding only what the entry really owns. In game scope, `SystemAssets` carries the same table for its system: that is what tells the game's fanart apart from the system's, where the legacy fields silently fall back from one to the other. **A key exists only when the file does.**
+Surface snapshots carry `Media` (legacy fields, unchanged) and, in addition, `Assets` - a table keyed by canonical media kind (`box-3d`, `mixrbv2`, `wheel`…) holding only what the entry really owns. In game scope, `SystemAssets` carries the same table for its system: that is what tells the game's fanart apart from the system's, where the legacy fields silently fall back from one to the other. **A key exists only when the file does.**
 
-Streams that print something about a game — topper, instruction card — also carry `Text`: description, genre, player count and rating in the language EmulationStation is set to, with the languages available for that entry.
+Streams that print something about a game - topper, instruction card - also carry `Text`: description, genre, player count and rating in the language EmulationStation is set to, with the languages available for that entry.
 
 `/ws/instruction-card` also carries `Controls`: what each button does and its colour, projected from `resources/dynpanels`. Enough to compose a card (logo, box art, description, coloured panel over a fanart) rather than only display a ready-made one; the full panel geometry stays on `/ws/panel`.
 
-Every event shares one envelope: `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` — the contract is additive (fields are added, never removed).
+Every event shares one envelope: `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` - the contract is additive (fields are added, never removed).
 
 !!! note "Hiscores: arcade **and** consoles"
     High scores now cover **console** (non-MAME) games as well as arcade. The current game's board is served by `GET /api/v1/hiscores` (its `Me` field names the player at the cabinet). The game's **world** ranking (Top 100, when the cabinet is linked to NelfePlay) is relayed by `GET /api/v1/nelfeplay/records/leaderboard`. Details and schemas in Swagger.
@@ -74,4 +74,4 @@ A browser overlay, a rich presence, a homemade scoreboard: any WebSocket/REST co
 4. move to the filtered streams (`/api/v1/ws/streams`) once you know what you need.
 
 !!! note "Stability"
-    The streams listed here are the ones MarqueeManager and LedManager consume — they are maintained with priority and evolve in a backward-compatible way.
+    The streams listed here are the ones MarqueeManager and LedManager consume - they are maintained with priority and evolve in a backward-compatible way.

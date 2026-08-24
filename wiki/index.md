@@ -6,10 +6,10 @@
 
 ## Ce que fait APIExpose
 
-- **Médias** : trouve, range et projette screenshots, logos, boxarts, vidéos, manuels — vos fichiers personnels restent toujours prioritaires.
+- **Médias** : trouve, range et projette screenshots, logos, boxarts, vidéos, manuels - vos fichiers personnels restent toujours prioritaires.
 - **Scraping** : local d'abord, ScreenScraper si besoin, avec mise à jour de la fiche du jeu courant sans recharger la liste.
 - **Gamelists localisées** : descriptions, genres et données dans la langue d'EmulationStation, réalignées quand la langue change.
-- **Packs de ROMs et collections** : déposez une archive, APIExpose l'importe — avec mode « à la demande » pour les gros packs.
+- **Packs de ROMs et collections** : déposez une archive, APIExpose l'importe - avec mode « à la demande » pour les gros packs.
 - **Données arcade** : boutons, couleurs et layouts des panels (dynpanels), définitions RAM des jeux, high scores.
 - **API et WebSockets locaux** : tout est exposé sur `http://127.0.0.1:12345` pour les plugins, thèmes et outils.
 
@@ -17,11 +17,11 @@
 
 <div class="grid cards" markdown>
 
-- **[Premiers pas](premiers-pas.md)** — installer APIExpose et vérifier qu'il tourne.
-- **[Menus et options](menus.md)** — toutes les options APIExpose dans EmulationStation.
-- **[Médias et scraping](medias.md)** — vos médias prioritaires et le scraping automatique.
-- **[API locale](api.md)** — endpoints et flux temps réel pour outils et thèmes.
-- **[Guides par profil](https://nelfe80.github.io/NelfeTech-Guides/)** — joueurs, streamers, salles, organisateurs, assembleurs : les parcours pas à pas vivent sur leur propre wiki.
+- **[Premiers pas](premiers-pas.md)** - installer APIExpose et vérifier qu'il tourne.
+- **[Menus et options](menus.md)** - toutes les options APIExpose dans EmulationStation.
+- **[Médias et scraping](medias.md)** - vos médias prioritaires et le scraping automatique.
+- **[API locale](api.md)** - endpoints et flux temps réel pour outils et thèmes.
+- **[Guides par profil](https://nelfe80.github.io/NelfeTech-Guides/)** - joueurs, streamers, salles, organisateurs, assembleurs : les parcours pas à pas vivent sur leur propre wiki.
 
 </div>
 

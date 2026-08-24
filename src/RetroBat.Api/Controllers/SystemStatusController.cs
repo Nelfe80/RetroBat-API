@@ -207,7 +207,7 @@ public sealed class SystemStatusResponse
 
 /// <summary>Where APIExpose thinks RetroBat is, and whether it's really there. When
 /// RomsFound is false the plugin sits outside a real &lt;RetroBat&gt;\plugins\ tree and every
-/// game/system list will be empty — check the install location.</summary>
+/// game/system list will be empty - check the install location.</summary>
 public sealed class RetroBatStatus
 {
     /// <summary>Resolved RetroBat root (grandparent of the plugin folder).</summary>

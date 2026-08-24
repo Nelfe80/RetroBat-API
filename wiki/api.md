@@ -1,6 +1,6 @@
 # API locale
 
-APIExpose expose une API REST et des WebSockets **en local uniquement** (`127.0.0.1`) — rien ne sort de votre machine.
+APIExpose expose une API REST et des WebSockets **en local uniquement** (`127.0.0.1`) - rien ne sort de votre machine.
 
 ## Les bases
 
@@ -14,7 +14,7 @@ APIExpose expose une API REST et des WebSockets **en local uniquement** (`127.0.
 | WebSocket généraliste | `ws://127.0.0.1:12345/ws` |
 
 !!! tip "Swagger est votre ami"
-    L'interface Swagger documente et permet de tester chaque endpoint depuis le navigateur, avec des **exemples pré-remplis qui répondent vraiment** (megadrive/sonic pour les consoles, mame/1943 pour l'arcade). C'est la référence à jour de l'API — toujours synchronisée avec la version installée, et publiée en artefact (`swagger.json`) avec chaque release.
+    L'interface Swagger documente et permet de tester chaque endpoint depuis le navigateur, avec des **exemples pré-remplis qui répondent vraiment** (megadrive/sonic pour les consoles, mame/1943 pour l'arcade). C'est la référence à jour de l'API - toujours synchronisée avec la version installée, et publiée en artefact (`swagger.json`) avec chaque release.
 
 ## Comment l'API est organisée
 
@@ -35,7 +35,7 @@ Les endpoints sont regroupés selon la **même logique que le menu EmulationStat
 | Internal & Prototype | maintenance, ingestion, surfaces futures |
 
 !!! warning "Endpoints expérimentaux"
-    `es/controller/goto-system` et `goto-game` ne sont pas encore fiables sur tous les thèmes/vues — préférez des séquences `tap`/`combo`. `reloadgames` ne doit jamais servir de rafraîchissement automatique (le curseur de l'utilisateur est perdu).
+    `es/controller/goto-system` et `goto-game` ne sont pas encore fiables sur tous les thèmes/vues - préférez des séquences `tap`/`combo`. `reloadgames` ne doit jamais servir de rafraîchissement automatique (le curseur de l'utilisateur est perdu).
 
 ## Les flux WebSocket
 
@@ -53,13 +53,13 @@ Chaque flux ne délivre que les types d'événements de ses préfixes ; certains
 | `/ws/hiscore` | Captures et mises à jour de high scores |
 | `/ws/media`, `/ws/roms`, `/ws/system`, `/ws/control`, `/ws/esevent` | Store médias, Roms Manager, service, commandes, hooks ES bruts |
 
-Les instantanes de surface portent `Media` (champs historiques, inchanges) et, en plus, `Assets` — une table indexee sur le type de media canonique (`box-3d`, `mixrbv2`, `wheel`…) ne contenant que ce que l'entree possede vraiment. En portee jeu, `SystemAssets` porte la meme table pour son systeme : c'est ce qui permet de distinguer le fanart du jeu de celui du systeme, la ou les champs historiques replient silencieusement de l'un sur l'autre. **Une cle n'existe que si le fichier existe.**
+Les instantanes de surface portent `Media` (champs historiques, inchanges) et, en plus, `Assets` - une table indexee sur le type de media canonique (`box-3d`, `mixrbv2`, `wheel`…) ne contenant que ce que l'entree possede vraiment. En portee jeu, `SystemAssets` porte la meme table pour son systeme : c'est ce qui permet de distinguer le fanart du jeu de celui du systeme, la ou les champs historiques replient silencieusement de l'un sur l'autre. **Une cle n'existe que si le fichier existe.**
 
-Les flux qui impriment quelque chose sur un jeu — topper, carte d'instructions — portent en plus `Text` : description, genre, nombre de joueurs, note, dans la langue reglee dans EmulationStation, avec la liste des langues disponibles pour cette entree.
+Les flux qui impriment quelque chose sur un jeu - topper, carte d'instructions - portent en plus `Text` : description, genre, nombre de joueurs, note, dans la langue reglee dans EmulationStation, avec la liste des langues disponibles pour cette entree.
 
 `/ws/instruction-card` porte en plus `Controls` : ce que fait chaque bouton et sa couleur, projete depuis `resources/dynpanels`. De quoi composer une carte (logo, jaquette, description, panel colore sur un fond de fanart) et pas seulement en afficher une deja faite ; la geometrie complete du panel reste sur `/ws/panel`.
 
-Toute l'enveloppe est commune : `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` — le contrat est additif (les champs s'ajoutent, jamais retirés).
+Toute l'enveloppe est commune : `{ "Type": "ui.game.selected", "Ts": "...", "NodeId": "...", "CorrelationId": "...", "Payload": { ... } }` - le contrat est additif (les champs s'ajoutent, jamais retirés).
 
 !!! note "Hiscores : arcade **et** consoles"
     Les high scores couvrent désormais les jeux **consoles** (non-MAME) en plus de l'arcade. Le classement du jeu courant s'obtient via `GET /api/v1/hiscores` (le champ `Me` y indique le pseudo du joueur à la borne). Le classement **mondial** du jeu (Top 100, quand la borne est reliée à NelfePlay) est relayé par `GET /api/v1/nelfeplay/records/leaderboard`. Détails et schémas dans Swagger.
@@ -74,4 +74,4 @@ Un overlay pour navigateur, un rich presence, un tableau de scores maison : tout
 4. passer aux flux spécialisés (`/api/v1/ws/streams`) quand vous savez ce que vous cherchez.
 
 !!! note "Stabilité"
-    Les flux listés ici sont ceux que consomment MarqueeManager et LedManager — ils sont maintenus en priorité et évoluent de façon rétrocompatible.
+    Les flux listés ici sont ceux que consomment MarqueeManager et LedManager - ils sont maintenus en priorité et évoluent de façon rétrocompatible.

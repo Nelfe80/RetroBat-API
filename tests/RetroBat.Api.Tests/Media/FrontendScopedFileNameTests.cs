@@ -6,7 +6,7 @@ namespace RetroBat.Api.Tests.Media;
 /// <summary>
 /// The generated logo/marquee caches key on the FRONTEND id so arcade sub-systems
 /// (mame/fbneo/fba/hbmame, all collapsed to systemId "arcade") stop overwriting each
-/// other's single file. A 1:1 system keeps the plain name — no new files, no migration.
+/// other's single file. A 1:1 system keeps the plain name - no new files, no migration.
 /// </summary>
 public class FrontendScopedFileNameTests
 {

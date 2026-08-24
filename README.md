@@ -1,6 +1,6 @@
 # APIExpose pour RetroBat
 
-**APIExpose** ajoute des automatismes à RetroBat et EmulationStation : médias, gamelists localisées, packs de ROMs, scraping, thèmes, collections, données arcade et API locale temps réel — le moteur dont se nourrissent les plugins [MarqueeManager](https://github.com/Nelfe80/RetroBat-Marquee-Manager) et [LedManager](https://github.com/Nelfe80/RetroBat-Led-Manager).
+**APIExpose** ajoute des automatismes à RetroBat et EmulationStation : médias, gamelists localisées, packs de ROMs, scraping, thèmes, collections, données arcade et API locale temps réel - le moteur dont se nourrissent les plugins [MarqueeManager](https://github.com/Nelfe80/RetroBat-Marquee-Manager) et [LedManager](https://github.com/Nelfe80/RetroBat-Led-Manager).
 
 ## 📖 Documentation
 
@@ -19,13 +19,13 @@ Vérification : `http://127.0.0.1:12345/api/v1/health` doit répondre `healthy`.
 
 ## 📄 Licences
 
-Usage personnel et non commercial libre. Toute utilisation commerciale nécessite une licence écrite — voir [LICENSE.md](LICENSE.md), [PERSONAL-LICENSE.md](PERSONAL-LICENSE.md), [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md). Les données (`resources\`) constituent le **Data Pack**, protégé par [DATA-LICENSE.md](DATA-LICENSE.md).
+Usage personnel et non commercial libre. Toute utilisation commerciale nécessite une licence écrite - voir [LICENSE.md](LICENSE.md), [PERSONAL-LICENSE.md](PERSONAL-LICENSE.md), [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md). Les données (`resources\`) constituent le **Data Pack**, protégé par [DATA-LICENSE.md](DATA-LICENSE.md).
 
 ---
 
 # APIExpose for RetroBat
 
-**APIExpose** adds automation to RetroBat and EmulationStation: media, localized gamelists, ROM packs, scraping, themes, collections, arcade data and a real-time local API — the engine that feeds the [MarqueeManager](https://github.com/Nelfe80/RetroBat-Marquee-Manager) and [LedManager](https://github.com/Nelfe80/RetroBat-Led-Manager) plugins.
+**APIExpose** adds automation to RetroBat and EmulationStation: media, localized gamelists, ROM packs, scraping, themes, collections, arcade data and a real-time local API - the engine that feeds the [MarqueeManager](https://github.com/Nelfe80/RetroBat-Marquee-Manager) and [LedManager](https://github.com/Nelfe80/RetroBat-Led-Manager) plugins.
 
 ## 📖 Documentation
 
@@ -42,4 +42,4 @@ Check: `http://127.0.0.1:12345/api/v1/health` should answer `healthy`.
 
 ## 📄 Licensing
 
-Free for personal, non-commercial use. Any commercial use requires a written license — see [LICENSE.md](LICENSE.md), [PERSONAL-LICENSE.md](PERSONAL-LICENSE.md), [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md). The data (`resources\`) forms the **Data Pack**, protected by [DATA-LICENSE.md](DATA-LICENSE.md).
+Free for personal, non-commercial use. Any commercial use requires a written license - see [LICENSE.md](LICENSE.md), [PERSONAL-LICENSE.md](PERSONAL-LICENSE.md), [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md). The data (`resources\`) forms the **Data Pack**, protected by [DATA-LICENSE.md](DATA-LICENSE.md).

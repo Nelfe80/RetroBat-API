@@ -205,7 +205,7 @@ public sealed class RetroAchievementsLeaderboardHistoryStore
     }
 
     // Several level leaderboards tie on the KNOWN start selectors when a discriminating
-    // selector address was never emitted — a change-triggered progression byte still
+    // selector address was never emitted - a change-triggered progression byte still
     // sitting at its power-on value (0). Assume unknown selectors equal 0 and keep only
     // the leaderboard(s) fully satisfied under that assumption (e.g. Green Hill Act 1 vs
     // Act 2/3 at cold start). Prefer the initial candidate as a last resort; never let

@@ -14,7 +14,7 @@
   </style>
 
   <rect class="bg" width="880" height="560"/>
-  <text class="title" x="28" y="34">Options APIExpose — qui dépend de qui</text>
+  <text class="title" x="28" y="34">Options APIExpose - qui dépend de qui</text>
 
   <rect class="root" x="28" y="52" width="220" height="34" rx="6"/>
   <text class="roottxt" x="44" y="74">ENABLE API EXPOSE</text>
@@ -30,7 +30,7 @@
   <path class="line" d="M 120 136 L 120 168 L 140 168"/>
   <rect class="sub" x="140" y="152" width="220" height="30" rx="5"/>
   <text class="subtxt" x="154" y="172">AUTO SCRAPING MANAGER</text>
-  <text class="desc" x="374" y="172">et tous ses interrupteurs par média — sans le</text>
+  <text class="desc" x="374" y="172">et tous ses interrupteurs par média - sans le</text>
   <text class="desc" x="374" y="186">Local Media Manager, aucun scraping ne tourne</text>
 
   <path class="line" d="M 52 222 L 76 222"/>

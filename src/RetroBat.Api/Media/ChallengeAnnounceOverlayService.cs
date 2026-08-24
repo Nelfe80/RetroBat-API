@@ -14,7 +14,7 @@ namespace RetroBat.Api.Media;
 /// <summary>
 /// Annonce de challenge sur l'écran de la borne : fenêtre centrée (80 % de la
 /// surface) avec le fanart du jeu en fond, son logo (marquee), l'objectif du
-/// challenge, « Tenez-vous prêt ! » et un compte à rebours — plus le QR de
+/// challenge, « Tenez-vous prêt ! » et un compte à rebours - plus le QR de
 /// check-in pour que les joueurs prennent la borne et valident leur
 /// participation depuis leur téléphone. Poussée par le hub avant le coup
 /// d'envoi ; le jeu est lancé à zéro et l'annonce se retire toute seule.
@@ -45,7 +45,7 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
 
     /// <summary>
     /// La langue de l'annonce : celle du joueur checke-in s'il y en a un, sinon
-    /// celle de la borne. Relue a chaque affichage — un joueur peut arriver
+    /// celle de la borne. Relue a chaque affichage - un joueur peut arriver
     /// entre deux annonces.
     /// </summary>
     private string Locale() => CabinetAnnounceText.Resolve(
@@ -101,7 +101,7 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
         }
 
         // Médias résolus LOCALEMENT depuis le gamelist de la borne (fanart ou
-        // image en fond, marquee en logo) — aucun aller-retour réseau.
+        // image en fond, marquee en logo) - aucun aller-retour réseau.
         var (fanart, logo) = visible ? ResolveMedia(gamePath) : (null, null);
 
         EnsureUiThreadStarted(cancellationToken);
@@ -214,7 +214,7 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
                 }
 
                 // Ne retirer QUE le préfixe "./" : les chemins gamelist de
-                // RetroBat traversent en "./../../plugins/…" — un TrimStart
+                // RetroBat traversent en "./../../plugins/…" - un TrimStart
                 // aveugle des '.' et '/' détruirait la remontée.
                 if (value.StartsWith("./", StringComparison.Ordinal))
                 {
@@ -421,7 +421,7 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
                 {
                     text = "GO !";
                     // Le jeu est lancé automatiquement au coup d'envoi (le hub pousse
-                    // le launch à zéro) : on n'invite plus à « Appuyer sur START » —
+                    // le launch à zéro) : on n'invite plus à « Appuyer sur START » -
                     // trompeur tant qu'on est dans ES / pendant le chargement.
                     _ready.Text = T("launching");
                     // Filet de sécurité : l'annonce disparaît seule 20 s après
@@ -589,7 +589,7 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
             var w = Width;
             var h = Height;
             // Haut : logo/titre, puis l'OBJECTIF en gros et les conditions
-            // juste en dessous — pleine largeur.
+            // juste en dessous - pleine largeur.
             _logo.Bounds = new Rectangle(w / 4, (int)(h * 0.03), w / 2, (int)(h * 0.18));
             _title.Bounds = new Rectangle(0, (int)(h * 0.05), w, (int)(h * 0.13));
             _objective.Bounds = new Rectangle((int)(w * 0.04), (int)(h * 0.23), (int)(w * 0.92), (int)(h * 0.14));
@@ -597,7 +597,7 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
             if (_qr.Visible)
             {
                 // Bas en DEUX colonnes : QR GÉANT à gauche (on le scanne à
-                // plusieurs mètres), « Tenez-vous prêt ! » + chrono à droite —
+                // plusieurs mètres), « Tenez-vous prêt ! » + chrono à droite -
                 // plus jamais l'un qui cache l'autre.
                 var qrSize = Math.Min((int)(h * 0.42), 440);
                 var qrLeft = (int)(w * 0.25) - qrSize / 2;
@@ -610,7 +610,7 @@ public sealed class ChallengeAnnounceOverlayService : BackgroundService
             else
             {
                 // Pas de QR (joueur déjà checké-in) : « prêt » + chrono CENTRÉS
-                // pleine largeur (labels alignés au centre) — plus de décalage.
+                // pleine largeur (labels alignés au centre) - plus de décalage.
                 _ready.Bounds = new Rectangle(0, (int)(h * 0.45), w, (int)(h * 0.09));
                 _timer.Bounds = new Rectangle(0, (int)(h * 0.54), w, (int)(h * 0.32));
             }

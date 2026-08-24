@@ -3,10 +3,10 @@ using RetroBat.Api.Infrastructure;
 namespace RetroBat.Api.Media;
 
 /// <summary>
-/// LOT 4 — the CANONICAL media of a game (the APIExpose store), as qualified candidates. A thin,
+/// LOT 4 - the CANONICAL media of a game (the APIExpose store), as qualified candidates. A thin,
 /// injectable seam so <see cref="GameMediaCatalogService"/> stays testable: the real implementation
 /// delegates to the pragmatic inventory (BuildAssetTable) that HP1-HP3 already build and cache; a
-/// test supplies its own. This is the "just enough" alternative to the full IGameMediaDiscovery —
+/// test supplies its own. This is the "just enough" alternative to the full IGameMediaDiscovery -
 /// the catalog needs "canonical media by kind for this game", not a whole discovery abstraction.
 /// </summary>
 public interface ICanonicalMediaCatalogSource

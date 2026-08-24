@@ -227,10 +227,10 @@ public class CommandsController : ControllerBase
     /// </summary>
     /// <remarks>
     /// A plain RetroArch <c>QUIT</c> only works for RetroArch cores with network
-    /// commands enabled — a standalone emulator (MAME, PCSX2, Dolphin…) never
+    /// commands enabled - a standalone emulator (MAME, PCSX2, Dolphin…) never
     /// hears it. This endpoint does both: a best-effort RetroArch QUIT (clean
     /// SRAM/hiscore flush for RetroArch cores), then a graceful window close
-    /// (WM_CLOSE — MAME writes NVRAM) of every emulator process launched from
+    /// (WM_CLOSE - MAME writes NVRAM) of every emulator process launched from
     /// <c>{RetroBatRoot}\emulators\</c>, and finally a forced kill of any that
     /// ignored the close request. EmulationStation regains the foreground on its
     /// own once the emulator exits.
@@ -250,7 +250,7 @@ public class CommandsController : ControllerBase
         var forceKill = payload?.ForceKill ?? true;
         var steps = new List<object>();
 
-        // 1. RetroArch clean QUIT — flushes SRAM/hiscores for RetroArch cores;
+        // 1. RetroArch clean QUIT - flushes SRAM/hiscores for RetroArch cores;
         //    silently useless (UDP to a closed port) for standalone emulators.
         try
         {
@@ -264,7 +264,7 @@ public class CommandsController : ControllerBase
             steps.Add(new { step = "retroarch-quit", ok = false, error = ex.Message });
         }
 
-        // 2. Emulators launched by RetroBat live under {root}\emulators\ —
+        // 2. Emulators launched by RetroBat live under {root}\emulators\ -
         //    WM_CLOSE lets them save (MAME writes NVRAM/cfg), then any that
         //    ignore it are force-killed with their child tree.
         var emulatorsRoot = Path.GetFullPath(Path.Combine(RetroBatPaths.RetroBatRoot, "emulators"))
@@ -287,7 +287,7 @@ public class CommandsController : ControllerBase
             }
             catch
             {
-                // Protected/foreign-bitness processes cannot be inspected — never ours.
+                // Protected/foreign-bitness processes cannot be inspected - never ours.
                 process.Dispose();
             }
         }

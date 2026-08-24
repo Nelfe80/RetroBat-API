@@ -36,7 +36,7 @@ public sealed class LiveContestOverlayService : IDisposable
     }
 
     /// <summary>Bandeau HAUT d'écran (challenge de salle) : « Appuyez sur
-    /// START… », « Ne touchez plus à rien ! » — centré en haut du jeu.</summary>
+    /// START… », « Ne touchez plus à rien ! » - centré en haut du jeu.</summary>
     public void ShowTop(string? title, string text, string? sub, int? durationMs)
     {
         EnsureForm();

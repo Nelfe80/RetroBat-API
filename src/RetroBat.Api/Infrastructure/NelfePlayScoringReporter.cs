@@ -12,13 +12,13 @@ using RetroBat.Domain.Interfaces;
 namespace RetroBat.Api.Infrastructure;
 
 /// <summary>
-/// Scoring certifié — côté agent (étape 3c). Ce service enrôle la clé de signature de
+/// Scoring certifié - côté agent (étape 3c). Ce service enrôle la clé de signature de
 /// l'appareil (CNG/NCrypt), demande un ticket au lancement, capte l'attestation du
 /// listener, le score cumulé (agrégateur) et la session (checkpoints/timing/intégrité),
 /// puis à la fin de partie ASSEMBLE le passeport, le signe (CNG) et le soumet.
 ///
-/// Le score des checkpoints vient de l'AGRÉGATEUR (LiveScoreAggregator, score.live.changed) —
-/// jamais des lectures brutes du wrapper — corrélé aux checkpoints par le n° de frame.
+/// Le score des checkpoints vient de l'AGRÉGATEUR (LiveScoreAggregator, score.live.changed) -
+/// jamais des lectures brutes du wrapper - corrélé aux checkpoints par le n° de frame.
 /// Les empreintes gated (listener/core/mem) viennent de l'attestation. Les autres
 /// empreintes (modules/process/content) restent à calibrer une fois le profil ouvert.
 /// </summary>
@@ -91,7 +91,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     /// <summary>
     /// Battement recovery : interroge l'état « share datas » (endpoint public, sans SQL)
     /// et, s'il est armé, re-verse les records auto-conservés. On n'agit JAMAIS
-    /// spontanément — uniquement quand l'admin a explicitement armé une reconstruction.
+    /// spontanément - uniquement quand l'admin a explicitement armé une reconstruction.
     /// </summary>
     private async Task RecoveryCheckAsync(CancellationToken cancellationToken)
     {
@@ -408,7 +408,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             return;
         }
         // L'identité de l'appareil vient du ticket (résolue par le serveur : appairé ou
-        // anonyme) — l'agent n'a pas besoin de la connaître lui-même.
+        // anonyme) - l'agent n'a pas besoin de la connaître lui-même.
         var deviceId = ticket.Value.TryGetProperty("device_id", out var did) ? did.GetString() : null;
         if (string.IsNullOrEmpty(deviceId))
         {
@@ -603,8 +603,8 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             using var content = new StringContent(passport.ToJsonString(), Encoding.UTF8, "application/json");
             using var response = await client.PostAsync("/api/v1/agent/scores/submissions", content, cancellationToken).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            Trace($"VERDICT HTTP {(int)response.StatusCode} — {body}");
-            _logger?.LogInformation("Scoring : verdict serveur {Status} — {Body}", (int)response.StatusCode, body);
+            Trace($"VERDICT HTTP {(int)response.StatusCode} - {body}");
+            _logger?.LogInformation("Scoring : verdict serveur {Status} - {Body}", (int)response.StatusCode, body);
             PersistCertified(passport, body);
             MaybeShowClaimOverlay(passport, body);
         }
@@ -618,7 +618,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     /// Score anonyme PUBLIÉ → le verdict porte un <c>claim_code</c> : on affiche la
     /// surimpression « Réclame ton record ! » sur l'écran de la machine. Une machine
     /// appairée/liée soumet un score attribué (non anonyme) : pas de code, donc pas
-    /// d'overlay — le gating par identité est implicite côté serveur.
+    /// d'overlay - le gating par identité est implicite côté serveur.
     /// </summary>
     private void MaybeShowClaimOverlay(JsonObject passport, string responseBody)
     {
@@ -661,7 +661,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     /// <c>state/nelfeplay/certified/{session_id}.json</c>. C'est la sauvegarde distribuée
     /// de la flotte : en cas de recovery serveur (mode « contribute »), cette machine
     /// re-verse ses propres exploits, chacun re-vérifiable (signature d'appareil + OTS).
-    /// Le joueur DÉTIENT ses records — rien ne dépend d'un seul serveur.
+    /// Le joueur DÉTIENT ses records - rien ne dépend d'un seul serveur.
     /// </summary>
     private void PersistCertified(JsonObject passport, string responseBody)
     {

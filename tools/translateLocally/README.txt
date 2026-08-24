@@ -6,7 +6,7 @@ EN
 Purpose:
 translateLocally is an optional offline translation helper used to translate
 game descriptions. Since APIExpose 1.7.2 the engine (~40 MB) is NOT bundled in
-the installer — provide it in ONE of these ways:
+the installer - provide it in ONE of these ways:
 
 A. Run get-translatelocally.bat (in this folder). It downloads the engine here.
 B. Let the API fetch it on demand: set
@@ -30,7 +30,7 @@ FR
 Role :
 translateLocally est un helper de traduction hors-ligne optionnel, utilise pour
 traduire les descriptions de jeux. Depuis APIExpose 1.7.2 le moteur (~40 Mo)
-n'est PLUS bundle dans l'installeur — fournis-le d'UNE de ces facons :
+n'est PLUS bundle dans l'installeur - fournis-le d'UNE de ces facons :
 
 A. Lance get-translatelocally.bat (dans ce dossier). Il telecharge le moteur ici.
 B. Laisse l'API le telecharger a la demande : renseigne

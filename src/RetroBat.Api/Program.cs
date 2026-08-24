@@ -97,8 +97,8 @@ builder.Services.AddControllers()
 //
 // « N'importe laquelle » etait le reglage d'une API qu'on croyait cantonnee a
 // la machine. Elle ne l'est pas : tout onglet ouvert sur le poste peut la
-// joindre. On accepte donc la boucle locale — d'ou viennent les overlays et les
-// outils — la plateforme, et ce que la configuration ajoute explicitement.
+// joindre. On accepte donc la boucle locale - d'ou viennent les overlays et les
+// outils - la plateforme, et ce que la configuration ajoute explicitement.
 //
 // Cette liste ne protege PAS a elle seule : un navigateur envoie quand meme une
 // requete « simple » et n'en cache que la reponse. C'est la garde d'ecriture,
@@ -143,7 +143,7 @@ builder.Services.AddSwaggerGen(options =>
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "dev";
     options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
     {
-        Title = "APIExpose — RetroBat Local API",
+        Title = "APIExpose - RetroBat Local API",
         Version = apiVersion,
         Description =
             "Local API of the APIExpose plugin for RetroBat / EmulationStation.\n\n" +
@@ -212,7 +212,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infra
 // Joueur de session (Lot 6 / Station) : code joueur RGPC posé au check-in par le hub,
 // lu par le reporter pour attribuer le record certifié au joueur + tag salle.
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayScoringSessionService>();
-// Scoring certifié — enrôlement de la clé d'appareil, ticket de session, capture
+// Scoring certifié - enrôlement de la clé d'appareil, ticket de session, capture
 // attestation + score (soumission du passeport = étape 3c).
 builder.Services.AddSingleton<RetroBat.Api.Infrastructure.NelfePlayScoringReporter>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Infrastructure.NelfePlayScoringReporter>());
@@ -229,7 +229,7 @@ builder.Services.AddSingleton<ChallengeAnnounceOverlayService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ChallengeAnnounceOverlayService>());
 builder.Services.AddSingleton<CabinetLockOverlayService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CabinetLockOverlayService>());
-// « Réclame ton record ! » — surimpression de fin de partie pour rattacher un
+// « Réclame ton record ! » - surimpression de fin de partie pour rattacher un
 // score anonyme certifié à un compte (déclenchée par le scoring reporter).
 builder.Services.AddSingleton<ClaimOverlayService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ClaimOverlayService>());
@@ -267,15 +267,15 @@ builder.Services.AddSingleton<GamelistMediaCatalogReader>();
 builder.Services.AddSingleton<ICanonicalMediaCatalogSource, ProjectionCanonicalMediaCatalogSource>();
 builder.Services.AddSingleton<GameMediaCatalogService>();
 builder.Services.AddSingleton<MediaResolver>();
-// LOT 6 — resolver-driven scrape-need planner (not yet wired into the live scrape path).
+// LOT 6 - resolver-driven scrape-need planner (not yet wired into the live scrape path).
 builder.Services.AddSingleton<MediaScrapePlanner>();
-// LOT 8 — secure, allowlist-scoped resolver for serving gamelist media (canonical + user) over HTTP.
+// LOT 8 - secure, allowlist-scoped resolver for serving gamelist media (canonical + user) over HTTP.
 builder.Services.AddSingleton(new GamelistMediaAssetResolver(new Dictionary<string, string>
 {
     ["media"] = RetroBatPaths.MediaRoot,
     ["roms"] = RetroBatPaths.RomsRoot
 }));
-// LOT 5 — ownership sidecar, kept out of roms/ under the plugin's resources tree.
+// LOT 5 - ownership sidecar, kept out of roms/ under the plugin's resources tree.
 builder.Services.AddSingleton(new MediaSidecarStore(
     Path.Combine(RetroBatPaths.PluginRoot, "resources", "gamelist", "media-sidecar")));
 builder.Services.AddSingleton<IMediaDiscoveryInvalidator, MediaDiscoveryInvalidator>();
@@ -415,13 +415,13 @@ app.UseSwaggerUI(options =>
 {
     options.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None);
     options.DisplayRequestDuration();
-    options.DocumentTitle = "APIExpose — RetroBat Local API";
+    options.DocumentTitle = "APIExpose - RetroBat Local API";
 });
 
 app.UseWebSockets();
 app.UseRouting();
 
-// X-04 — cle API de la borne : facultative (vide = LAN de confiance, defaut
+// X-04 - cle API de la borne : facultative (vide = LAN de confiance, defaut
 // historique). Quand Security:ApiKey est renseignee, toute requete NON
 // loopback vers /api ou /ws doit presenter X-Api-Key (le hub la pose sur tous
 // ses appels via Hub:CabinetApiKey). Obligatoire avant toute exposition hors
@@ -459,7 +459,7 @@ if (cabinetApiKey.Length > 0)
 
 // Fail LOUD when RetroBat can't be located: APIExpose resolves it as the grandparent
 // of its plugin folder, so an install placed outside <RetroBat>\plugins\ points at an
-// empty tree — the #1 cause of "empty game/system lists". Surfaced here + in /api/v1/status.
+// empty tree - the #1 cause of "empty game/system lists". Surfaced here + in /api/v1/status.
 {
     var retroBatRoot = RetroBatPaths.RetroBatRoot;
     var romsFound = Directory.Exists(RetroBatPaths.RomsRoot);
@@ -480,15 +480,15 @@ if (cabinetApiKey.Length > 0)
 // Le jeton local est cree AU DEMARRAGE, pas a la premiere verification : un
 // overlay qui se lance en meme temps que nous doit pouvoir le lire tout de
 // suite. Le creer paresseusement laissait le fichier absent tant que personne
-// n'avait essaye d'ecrire — c'est-a-dire, en pratique, toujours.
+// n'avait essaye d'ecrire - c'est-a-dire, en pratique, toujours.
 app.Logger.LogInformation(
     "Jeton d'ecriture locale pret ({Length} caracteres).",
     LocalWriteToken.Value.Length);
 
 // ── Garde d'ECRITURE : aucun site web ne pilote cette machine ─────────────
 //
-// La garde d'origine qui suit ne couvrait que deux prefixes. Tout le reste —
-// lancer un jeu, deployer une configuration, appairer un compte — restait
+// La garde d'origine qui suit ne couvrait que deux prefixes. Tout le reste -
+// lancer un jeu, deployer une configuration, appairer un compte - restait
 // joignable depuis n'importe quelle page. Et deux details rendaient la chose
 // pire qu'elle n'en avait l'air :
 //
@@ -501,7 +501,7 @@ app.Logger.LogInformation(
 // On interdit donc par VERBE : tout ce qui modifie est refuse aux navigateurs,
 // et il faut ajouter une route a la liste pour l'OUVRIR, non pour la fermer.
 //
-// Le navigateur se reconnait a Sec-Fetch-Site, que tous envoient depuis 2020 —
+// Le navigateur se reconnait a Sec-Fetch-Site, que tous envoient depuis 2020 -
 // y compris sur les images et les formulaires, la ou Origin manque. Un client
 // natif (Marquee, Led, le hub) ne l'envoie pas et passe comme avant.
 //
@@ -539,7 +539,7 @@ app.Use(async (context, next) =>
 
     // Inscription Live Contest : ecriture cross-site LEGITIME depuis la page de
     // participation de la plateforme (elle remet le playToken a cet APIExpose).
-    // Le navigateur envoie Sec-Fetch-Site: cross-site et n'a PAS le jeton local —
+    // Le navigateur envoie Sec-Fetch-Site: cross-site et n'a PAS le jeton local -
     // on ne l'exige donc pas ici. La garde d'ORIGINE juste en dessous valide que
     // l'appelant est bien la plateforme officielle (ou le loopback).
     if (context.Request.Path.StartsWithSegments("/api/v1/livecontest"))
@@ -593,7 +593,7 @@ app.Use(async (context, next) =>
 
 // Private Network Access (Chrome) : une page PUBLIQUE en HTTPS (nelfetech.com)
 // qui appelle cette API en LOOPBACK (127.0.0.1) doit recevoir, sur le preflight,
-// l'en-tete « Access-Control-Allow-Private-Network: true » — que le CORS ASP.NET
+// l'en-tete « Access-Control-Allow-Private-Network: true » - que le CORS ASP.NET
 // n'ajoute pas. Sans lui, Chrome bloque le POST (ex. enroll Live Contest) alors
 // qu'un simple GET passe. On le pose sur tout preflight qui le demande.
 app.Use(async (context, next) =>
@@ -625,7 +625,7 @@ app.MapControllers();
 
 // Écoute configurable (X-04) : loopback par défaut (borne solo, domicile) ;
 // une SALLE multi-bornes passe "Urls": "http://0.0.0.0:12345" dans
-// appsettings pour que le hub joigne la borne par le LAN — et active alors
+// appsettings pour que le hub joigne la borne par le LAN - et active alors
 // Security:ApiKey (les requêtes non-loopback exigent X-Api-Key).
 app.Run(app.Configuration["Urls"] ?? "http://127.0.0.1:12345");
 

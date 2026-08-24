@@ -8,7 +8,7 @@ namespace RetroBat.Domain.Models;
 /// Reads the accumulated LOCAL console leaderboard. The RetroArch console hiscore
 /// capture appends "#rank name score" lines into the game's theme gameinfos XML
 /// (an APIEXPOSE:HISCORE block) on game-end. Those XMLs are named by the game SLUG
-/// (e.g. sonic-the-hedgehog.xml), not the rom filename — so we resolve candidate
+/// (e.g. sonic-the-hedgehog.xml), not the rom filename - so we resolve candidate
 /// slugs from the game name and rom. Shared so the hiscore extraction serves console
 /// scores through /api/v1/hiscores and the WS exactly like arcade (hi2txt).
 /// </summary>

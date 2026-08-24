@@ -1,5 +1,5 @@
 [Code]
-// retrobat-detect.iss — DETECTION + VALIDATION du RetroBat cible, partagee par les
+// retrobat-detect.iss - DETECTION + VALIDATION du RetroBat cible, partagee par les
 // installeurs de plugins RetroBat (APIExpose, MarqueeManager, LedManager, HubManager,
 // RetroCreator). Un plugin DOIT vivre dans <RetroBat>\plugins\<Plugin> : le runtime
 // resout RetroBat comme le grand-parent du dossier plugin, sans quoi les listes de

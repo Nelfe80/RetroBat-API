@@ -619,7 +619,7 @@ public class WebSocketConnectionManager
 
     /// <summary>
     /// Authoritative stream catalog: event-type prefixes delivered on each
-    /// /ws/{stream}. Also served by GET /api/v1/ws/streams — keep this the
+    /// /ws/{stream}. Also served by GET /api/v1/ws/streams - keep this the
     /// single source of truth.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string[]> StreamPrefixes =

@@ -322,7 +322,7 @@ public sealed class LiveTimerAggregatorProvider : IProvider
         var isSecond = IsSecondComponent(timerEvent);
         if (!isMinute && !isSecond)
         {
-            // Not part of a split MM:SS clock (single-value timer, effect, countdown…) — pass through.
+            // Not part of a split MM:SS clock (single-value timer, effect, countdown…) - pass through.
             return timerEvent;
         }
 
@@ -342,7 +342,7 @@ public sealed class LiveTimerAggregatorProvider : IProvider
 
             // The second is the fast-moving part: it drives the clock and its freshness tells
             // us the timer is active. The minute is slow and authoritative from its own change
-            // events (it emits 0 on a level reset and n+1 on a real rollover) — so we keep its
+            // events (it emits 0 on a level reset and n+1 on a real rollover) - so we keep its
             // last known value with no expiry and never infer a rollover.
             if (isSecond)
             {

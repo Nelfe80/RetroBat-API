@@ -2,7 +2,7 @@ namespace RetroBat.Api.Infrastructure;
 
 /// <summary>
 /// A once-built, in-memory index of the SYSTEM logo and fanart shipped by the
-/// EmulationStation themes — the active theme first, then <c>es-theme-carbon</c> as a
+/// EmulationStation themes - the active theme first, then <c>es-theme-carbon</c> as a
 /// guaranteed fallback. It replaces a per-system-selected glob over the themes (dozens of
 /// <c>Directory.Exists</c> / <c>Directory.EnumerateFiles</c> calls against a fixed, shipped
 /// set of files) with an O(1) dictionary lookup, built lazily on first use and cached for
@@ -38,7 +38,7 @@ internal sealed class ThemeSystemArtIndex
     private ThemeSystemArtIndex(IReadOnlyList<ThemeArt> themes) => _themes = themes;
 
     /// <summary>Builds an index over the given theme roots, in priority order (each root is a
-    /// <c>themes/&lt;name&gt;</c> directory — the active theme, then es-theme-carbon). The
+    /// <c>themes/&lt;name&gt;</c> directory - the active theme, then es-theme-carbon). The
     /// caller (the projection) provides the roots, so this type never reads es_settings.</summary>
     internal static ThemeSystemArtIndex Build(IEnumerable<string> themeRootsInPriorityOrder)
     {
@@ -76,7 +76,7 @@ internal sealed class ThemeSystemArtIndex
         return null;
     }
 
-    /// <summary>Fanart (background) path — candidate names in priority order, no white
+    /// <summary>Fanart (background) path - candidate names in priority order, no white
     /// variant, no language. Null when no theme carries one.</summary>
     public string? ResolveFanartPath(IReadOnlyList<string?> names)
     {

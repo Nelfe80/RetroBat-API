@@ -1,7 +1,7 @@
 namespace RetroBat.Api.Tests.Media;
 
 /// <summary>
-/// A throwaway media tree under the OS temp dir — deliberately OUTSIDE the RetroBat
+/// A throwaway media tree under the OS temp dir - deliberately OUTSIDE the RetroBat
 /// roots, so <c>CreateAsset</c> relativises nothing and the stored <c>Path</c> stays a
 /// bare file name, keeping golden assertions predictable. Disposable: deletes itself.
 /// </summary>

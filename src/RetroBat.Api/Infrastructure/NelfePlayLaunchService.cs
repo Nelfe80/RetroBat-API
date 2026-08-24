@@ -17,7 +17,7 @@ namespace RetroBat.Api.Infrastructure;
 /// l'emulateur ; a la fin de la partie, la ROM en clair est ECRASEE puis
 /// supprimee, et le placeholder revient.
 ///
-/// Rien de clair ne survit a la partie — ni apres un arret brutal : un balayage
+/// Rien de clair ne survit a la partie - ni apres un arret brutal : un balayage
 /// au demarrage nettoie ce qu'un plantage aurait laisse.
 /// </summary>
 [SupportedOSPlatform("windows")]
@@ -36,7 +36,7 @@ public sealed class NelfePlayLaunchService : BackgroundService
     /// La charge SIGNEE vient du serveur, qui nomme en snake_case (device_id,
     /// session_id, expires_at). Le fichier de licence local, lui, est ecrit par
     /// l'agent en PascalCase. Deux conventions, deux jeux d'options : les
-    /// melanger ferait lire des champs vides d'un cote ou de l'autre — et ici,
+    /// melanger ferait lire des champs vides d'un cote ou de l'autre - et ici,
     /// un champ vide c'est une contrainte qui ne s'applique plus.
     /// </summary>
     private static readonly JsonSerializerOptions SignedPayloadJsonOptions = new()
@@ -141,7 +141,7 @@ public sealed class NelfePlayLaunchService : BackgroundService
             if (!IsLicenseUsable(license, out var refusal))
             {
                 _logger.LogInformation(
-                    "Nelfe Play : lancement refuse pour {File} — {Reason}.",
+                    "Nelfe Play : lancement refuse pour {File} - {Reason}.",
                     license.TargetFileName,
                     refusal);
                 return;
@@ -271,8 +271,8 @@ public sealed class NelfePlayLaunchService : BackgroundService
     ///
     /// LA PREMIERE : une licence sans signature etait acceptee, au motif qu'une
     /// installation durable n'en porte pas. Il suffisait donc d'effacer deux
-    /// champs d'un fichier JSON pour transformer une licence de session — qui
-    /// expire — en licence perpetuelle.
+    /// champs d'un fichier JSON pour transformer une licence de session - qui
+    /// expire - en licence perpetuelle.
     ///
     /// LA SECONDE, plus discrete : la signature couvre la charge signee, mais
     /// c'etaient les champs EN CLAIR qu'on faisait respecter. On pouvait donc
@@ -281,7 +281,7 @@ public sealed class NelfePlayLaunchService : BackgroundService
     /// rien.
     ///
     /// Desormais : la charge signee fait foi, et une signature est EXIGEE des
-    /// lors que la machine detient une cle publique de verification — c'est-a-
+    /// lors que la machine detient une cle publique de verification - c'est-a-
     /// dire des qu'elle a ete appairee. Une machine qui n'en a pas ne peut rien
     /// verifier, et l'installation sans signature y reste possible : c'est le
     /// cas d'un serveur qui ne signe pas encore.
@@ -393,7 +393,7 @@ public sealed class NelfePlayLaunchService : BackgroundService
 
     /// <summary>
     /// Le cas degrade : aucune signature nulle part. On applique alors les
-    /// champs en clair, faute de mieux — et en sachant qu'ils ne prouvent rien.
+    /// champs en clair, faute de mieux - et en sachant qu'ils ne prouvent rien.
     /// </summary>
     private bool IsWithinPlainConstraints(LocalLicense license, out string refusal)
     {

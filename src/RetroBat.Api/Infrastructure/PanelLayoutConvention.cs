@@ -1,18 +1,18 @@
 namespace RetroBat.Api.Infrastructure;
 
 /// <summary>
-/// Where the buttons of a RetroBat cabinet physically sit — the "retrobat_standard"
+/// Where the buttons of a RetroBat cabinet physically sit - the "retrobat_standard"
 /// convention every dynpanel declares (`panel.convention`).
 ///
 /// The convention is APIExpose's: dynpanels are built on it, and LedManager's own
 /// layout file names its source as "panel_curator LAYOUT_SLOTS / dynpanels convention
 /// retrobat_standard". It lives here because a consumer must be able to draw a panel
-/// WITHOUT LedManager installed — that is the whole point of the wiring check, and a
+/// WITHOUT LedManager installed - that is the whole point of the wiring check, and a
 /// cabinet with no LED board still deserves to know whether its buttons are wired
 /// right.
 ///
 /// The arrangement holds from 2 to 8 buttons without rewiring: each button keeps its
-/// RetroBat identity, and growing the panel only ADDS columns — it never moves an
+/// RetroBat identity, and growing the panel only ADDS columns - it never moves an
 /// existing button. That property is what makes a single convention usable across
 /// every cabinet size.
 /// </summary>

@@ -11,7 +11,7 @@ namespace RetroBat.Api.Infrastructure;
 /// <summary>
 /// Agent local Nelfe Play : la borne va CHERCHER ce que le joueur a acquis.
 ///
-/// Rien n'est pousse depuis l'exterieur — c'est APIExpose qui interroge
+/// Rien n'est pousse depuis l'exterieur - c'est APIExpose qui interroge
 /// nelfeplay.com en HTTPS sortant, avec le credential de l'appareil appaire.
 /// Pour chaque demande d'installation, l'agent recupere le paquet CHIFFRE et
 /// une licence scellee POUR CETTE MACHINE, verifie l'empreinte du paquet, puis
@@ -19,7 +19,7 @@ namespace RetroBat.Api.Infrastructure;
 /// EmulationStation, mais la ROM en clair n'existe nulle part sur le disque.
 ///
 /// Le dechiffrement n'a lieu qu'au lancement (chaine on-the-fly du pack
-/// manager), et le clair est efface juste apres — voir docs/10.
+/// manager), et le clair est efface juste apres - voir docs/10.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class NelfePlayAgentService : BackgroundService
@@ -29,7 +29,7 @@ public sealed class NelfePlayAgentService : BackgroundService
 
     /// <summary>
     /// Le serveur nomme ses champs en snake_case : system_id, target_file_name,
-    /// content_key. « Insensible a la casse » ne suffit PAS a les reconnaitre —
+    /// content_key. « Insensible a la casse » ne suffit PAS a les reconnaitre -
     /// cette option rapproche systemId de SystemId, jamais system_id. Les champs
     /// restaient donc vides, et l'installation s'arretait faute de systeme et de
     /// nom de fichier, sans que rien ne dise pourquoi.
@@ -78,7 +78,7 @@ public sealed class NelfePlayAgentService : BackgroundService
     ///
     /// Une seule regle pour les deux mondes : le poste local est proprietaire
     /// du nom. En salle, HubManager le pousse quand l'exploitant renomme la
-    /// borne ; chez un particulier — qui n'a pas HubManager — le nom de la
+    /// borne ; chez un particulier - qui n'a pas HubManager - le nom de la
     /// machine Windows sert de defaut, et le joueur peut le remplacer depuis
     /// APIExpose. Nelfe Play ne fait que l'afficher.
     /// </summary>
@@ -207,7 +207,7 @@ public sealed class NelfePlayAgentService : BackgroundService
             // Le serveur ne REMET pas une demande d'installation, il la
             // RESERVE : sans accuse de reception, elle revient d'elle-meme a
             // expiration du bail. C'est ce qui la rend robuste a une machine
-            // qui s'eteint au mauvais moment — mais sans acquittement du tout,
+            // qui s'eteint au mauvais moment - mais sans acquittement du tout,
             // le meme paquet se retelechargeait et se reinstallait a chaque
             // tour, indefiniment, sur une machine ou tout allait bien.
             //
@@ -378,7 +378,7 @@ public sealed class NelfePlayAgentService : BackgroundService
 
         WritePlaceholder(systemId, package.TargetFileName, intent, header);
         _logger.LogInformation(
-            "Nelfe Play : {Slug} installe (systeme {System}, profil {Profile}) — ROM chiffree, dechiffrement au lancement.",
+            "Nelfe Play : {Slug} installe (systeme {System}, profil {Profile}) - ROM chiffree, dechiffrement au lancement.",
             intent.Slug,
             systemId,
             header.Profile);
@@ -543,7 +543,7 @@ public sealed class NelfePlayAgentService : BackgroundService
             client.DefaultRequestHeaders.Add("X-Nelfeplay-Device", credential);
         }
         // Le NOM de la machine part avec chaque appel : Nelfe Play l'affiche (« Mes machines »)
-        // sans jamais le posséder — un renommage local se propage au relevé suivant.
+        // sans jamais le posséder - un renommage local se propage au relevé suivant.
         if (!string.IsNullOrEmpty(MachineLabel))
         {
             client.DefaultRequestHeaders.Add("X-Nelfeplay-Label", MachineLabel);
@@ -565,7 +565,7 @@ public sealed class NelfePlayAgentService : BackgroundService
         /// Ce qui reste a faire apres ce releve.
         ///
         /// Sans ce chiffre, « 0 installe » se lit comme un echec alors qu'il
-        /// veut presque toujours dire « rien a faire » — jeu deja pose, ou
+        /// veut presque toujours dire « rien a faire » - jeu deja pose, ou
         /// demande deja reservee. Zero installe ET zero en attente est un
         /// systeme au repos, pas un systeme en panne.
         /// </summary>
