@@ -1064,11 +1064,36 @@ public sealed class ApiExposeRuntimeOptionsService
     {
         var appOptions = _options.CurrentValue;
         var esSettings = ReadEsSettings();
+
+        // Advanced override: an explicit mode (copy/move) set in appsettings or es_settings always
+        // wins — this is how a power user opts into the DESTRUCTIVE "move".
         var raw = ResolveString(
             "global.apiexpose.media_migration.mode",
             appOptions.MediaMigration?.Mode ?? "none",
             esSettings).Trim().ToLowerInvariant();
-        return raw is "copy" or "move" ? raw : "none";
+        if (raw is "copy" or "move")
+        {
+            return raw;
+        }
+
+        // Simple ES-menu toggle: ON runs the NON-DESTRUCTIVE "copy" at next start (with the startup
+        // confirmation). The destructive "move" stays reserved to the advanced `mode` key above, so
+        // a checkbox can never delete a user's roms/ media.
+        return ResolveBool("global.apiexpose.media_migration.enabled", false, esSettings) ? "copy" : "none";
+    }
+
+    /// <summary>LOT 5 — whether gamelist media writes go through the FillMissing allocation policy
+    /// (never overwrite a user binding). es_settings key
+    /// <c>global.apiexpose.media_allocation.write_policy_enabled</c> overrides appsettings; OFF by
+    /// default so a fresh install keeps the legacy overwrite behaviour.</summary>
+    public bool IsMediaWritePolicyEnabled()
+    {
+        var appOptions = _options.CurrentValue;
+        var esSettings = ReadEsSettings();
+        return ResolveBool(
+            "global.apiexpose.media_allocation.write_policy_enabled",
+            appOptions.MediaAllocation?.WritePolicyEnabled ?? false,
+            esSettings);
     }
 
     public string GetRemoteScrapingProvider()

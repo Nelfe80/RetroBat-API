@@ -439,6 +439,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
     private readonly RomMetadataResolver _romMetadataResolver;
     private readonly EsNotifyDeduplicationService _notifyDeduplication;
     private readonly MediaSidecarStore _mediaSidecar;
+    private readonly ApiExposeRuntimeOptionsService _runtimeOptions;
     private readonly ILogger<GamelistUpdateService>? _logger;
     private readonly object _selectionNormalizationStateLock = new();
     private GamelistSelectionNormalizationState? _selectionNormalizationState;
@@ -468,6 +469,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         RomMetadataResolver romMetadataResolver,
         EsNotifyDeduplicationService notifyDeduplication,
         MediaSidecarStore mediaSidecar,
+        ApiExposeRuntimeOptionsService runtimeOptions,
         ILogger<GamelistUpdateService>? logger = null)
     {
         _settingsService = settingsService;
@@ -488,6 +490,7 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         _romMetadataResolver = romMetadataResolver;
         _notifyDeduplication = notifyDeduplication;
         _mediaSidecar = mediaSidecar;
+        _runtimeOptions = runtimeOptions;
         _logger = logger;
     }
 
@@ -2479,8 +2482,9 @@ public class GamelistUpdateService : IGamelistSelectionSyncService, IDisposable
         }
     }
 
-    // LOT 5 (2/2) — gate reads. OFF by default: the whole write path keeps its legacy overwrite.
-    private bool MediaWritePolicyEnabled => _options.CurrentValue.MediaAllocation?.WritePolicyEnabled == true;
+    // LOT 5 (2/2) — gate reads (es_settings-aware, so the ES menu toggle drives it). OFF by default:
+    // the whole write path keeps its legacy overwrite.
+    private bool MediaWritePolicyEnabled => _runtimeOptions.IsMediaWritePolicyEnabled();
 
     private MediaWritePolicy ResolveMediaWritePolicy()
         => MediaAllocationPolicy.Parse(_options.CurrentValue.MediaAllocation?.WritePolicy);
