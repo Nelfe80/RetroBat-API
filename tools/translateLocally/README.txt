@@ -4,38 +4,49 @@ translateLocally tool folder / Dossier outil translateLocally
 EN
 --
 Purpose:
-translateLocally is an optional local translation helper used by APIExpose data
-curation scripts when offline or reproducible translation passes are needed.
+translateLocally is an optional offline translation helper used to translate
+game descriptions. Since APIExpose 1.7.2 the engine (~40 MB) is NOT bundled in
+the installer — provide it in ONE of these ways:
 
-Installation:
-1. Restore the translateLocally application and any required language models
-   from your local package or vendor archive.
-2. Copy the application files into APIExpose/tools/translateLocally.
-3. The expected executable path is:
-   APIExpose/tools/translateLocally/translateLocally.windows-2019.x86-64.exe
-4. Do not keep the executable inside a bin subfolder. It must stay directly in
-   APIExpose/tools/translateLocally.
-5. Keep downloaded models and caches inside this folder unless a script expects
-   another configured path.
-6. Git ignores the application, models, and cache files. Only this README.txt is
-   tracked.
+A. Run get-translatelocally.bat (in this folder). It downloads the engine here.
+B. Let the API fetch it on demand: set
+   Scraping.TranslateLocallyEngineDownloadUrl (appsettings) to a portable-engine
+   URL; the API downloads it into this folder on first translation.
+C. Manually: download from the official project
+   https://github.com/XapaJIaMnu/translateLocally
+   and place translateLocally.windows-2019.x86-64.exe directly in this folder
+   (NOT in a bin subfolder).
+
+Notes:
+- Expected executable path:
+  APIExpose/tools/translateLocally/translateLocally.windows-2019.x86-64.exe
+- Language models download automatically on first translation (into models\).
+- If the engine is absent, translation degrades gracefully; nothing else breaks.
+- Git ignores the application, models and caches. Only README.txt and
+  get-translatelocally.bat are tracked.
 
 FR
 --
 Role :
-translateLocally est un helper de traduction locale optionnel utilise par les
-scripts de curation APIExpose lorsqu'une passe de traduction hors ligne ou
-reproductible est necessaire.
+translateLocally est un helper de traduction hors-ligne optionnel, utilise pour
+traduire les descriptions de jeux. Depuis APIExpose 1.7.2 le moteur (~40 Mo)
+n'est PLUS bundle dans l'installeur — fournis-le d'UNE de ces facons :
 
-Installation :
-1. Restaurer l'application translateLocally et les modeles de langue requis
-   depuis ton package local ou une archive fournisseur.
-2. Copier les fichiers de l'application dans APIExpose/tools/translateLocally.
-3. Le chemin attendu de l'executable est :
-   APIExpose/tools/translateLocally/translateLocally.windows-2019.x86-64.exe
-4. Ne pas garder l'executable dans un sous-dossier bin. Il doit rester
-   directement dans APIExpose/tools/translateLocally.
-5. Garder les modeles telecharges et caches dans ce dossier sauf si un script
-   attend un autre chemin configure.
-6. Git ignore l'application, les modeles et les caches. Seul ce README.txt est
-   suivi.
+A. Lance get-translatelocally.bat (dans ce dossier). Il telecharge le moteur ici.
+B. Laisse l'API le telecharger a la demande : renseigne
+   Scraping.TranslateLocallyEngineDownloadUrl (appsettings) avec une URL de
+   moteur portable ; l'API le telecharge ici a la premiere traduction.
+C. Manuellement : depuis le projet officiel
+   https://github.com/XapaJIaMnu/translateLocally
+   place translateLocally.windows-2019.x86-64.exe directement dans ce dossier
+   (PAS dans un sous-dossier bin).
+
+Notes :
+- Chemin attendu de l'executable :
+  APIExpose/tools/translateLocally/translateLocally.windows-2019.x86-64.exe
+- Les modeles de langue se telechargent automatiquement a la premiere
+  traduction (dans models\).
+- Si le moteur est absent, la traduction se degrade proprement ; rien d'autre
+  n'est casse.
+- Git ignore l'application, les modeles et les caches. Seuls README.txt et
+  get-translatelocally.bat sont suivis.
