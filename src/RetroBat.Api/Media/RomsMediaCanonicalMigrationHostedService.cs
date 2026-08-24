@@ -120,23 +120,17 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
         // LOT 1 — the migration is now an EXPLICIT opt-in, never an autorun, and no longer tied
         // to LocalMediaManager.Enabled (which stays the master of the media subsystem +
         // auto-scraping). Default "none" => nothing happens at startup.
-        var mode = _runtimeOptions.GetMediaMigrationMode();
-        if (mode == "none")
+        var modeName = _runtimeOptions.GetMediaMigrationMode();
+        if (modeName == "none")
         {
             return;
         }
 
-        if (mode == "copy")
-        {
-            // Non-destructive migration (keep the roms/ copies) is a rewrite of the move-based
-            // engine below — deferred to LOT 9. Until then, "copy" performs no migration rather
-            // than silently deleting anything.
-            _logger?.LogInformation(
-                "Media migration mode 'copy' is not implemented yet (LOT 9): no migration performed, roms/ media left in place.");
-            return;
-        }
+        // LOT 9 — "copy" (non-destructive: the roms/ originals are kept) and "move" (destructive:
+        // the source is removed, but ONLY after a verified copy is in place) share one engine. The
+        // mode only changes the per-file transfer and whether gamelists are relinked to the store.
+        var mode = MediaFileTransfer.ParseMode(modeName);
 
-        // mode == "move": the existing migrate-then-remove behaviour, now behind an explicit choice.
         var inventory = await ComputeLegacyInventorySnapshotAsync(cancellationToken);
         if (inventory.FileCount == 0)
         {
@@ -162,8 +156,14 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
             return;
         }
 
-        var result = await MigrateAsync(cancellationToken);
-        await UpdateGamelistsAfterMigrationAsync(result, cancellationToken);
+        var result = await MigrateAsync(mode, cancellationToken);
+        if (mode == MigrationTransferMode.Move)
+        {
+            // Relink gamelists to the store only when the originals are gone. In copy mode the
+            // roms/ files stay in place, so the gamelist keeps pointing at them (relink on demand).
+            await UpdateGamelistsAfterMigrationAsync(result, cancellationToken);
+        }
+
         if (!result.GamelistUpdateFailed)
         {
             var postMigrationInventory = await ComputeLegacyInventorySnapshotAsync(cancellationToken);
@@ -501,7 +501,7 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
         return true;
     }
 
-    private async Task<MigrationResult> MigrateAsync(CancellationToken cancellationToken)
+    private async Task<MigrationResult> MigrateAsync(MigrationTransferMode mode, CancellationToken cancellationToken)
     {
         var result = new MigrationResult();
         if (!Directory.Exists(RetroBatPaths.RomsRoot))
@@ -546,7 +546,7 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
                 }
                 else
                 {
-                    await MigrateFileAsync(entry.SourcePath, systemTargetPath, userTargetPath, plan.FrontendSystemId, plan.CanonicalSystemId, gameSlug, kind, result, cancellationToken);
+                    await MigrateFileAsync(entry.SourcePath, systemTargetPath, userTargetPath, plan.FrontendSystemId, plan.CanonicalSystemId, gameSlug, kind, mode, result, cancellationToken);
                 }
 
                 processedSystemFiles++;
@@ -557,9 +557,13 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
                 }
             }
 
-            foreach (var folder in LegacyFolders)
+            if (mode == MigrationTransferMode.Move)
             {
-                TryDeleteEmptyDirectory(Path.Combine(plan.SystemDirectory, folder), result);
+                // Copy keeps the roms/ originals, so their folders are never empty to reclaim.
+                foreach (var folder in LegacyFolders)
+                {
+                    TryDeleteEmptyDirectory(Path.Combine(plan.SystemDirectory, folder), result);
+                }
             }
 
             processedSystems++;
@@ -879,6 +883,7 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
         string canonicalSystemId,
         string gameSlug,
         string kind,
+        MigrationTransferMode mode,
         MigrationResult result,
         CancellationToken cancellationToken)
     {
@@ -886,33 +891,51 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
         {
             Directory.CreateDirectory(Path.GetDirectoryName(userTargetPath)!);
 
+            var destructive = mode == MigrationTransferMode.Move;
+
             if (File.Exists(userTargetPath))
             {
                 var sourceHash = await JsonMediaAliasStore.ComputeSha256Async(sourcePath, cancellationToken);
                 var userHash = await JsonMediaAliasStore.ComputeSha256Async(userTargetPath, cancellationToken);
                 if (string.Equals(sourceHash, userHash, StringComparison.OrdinalIgnoreCase))
                 {
+                    // The store already holds an identical copy. Move deletes the redundant roms/
+                    // original; copy leaves it in place (nothing to do).
                     result.ExistingSameHash++;
-                    var duplicateBytes = GetFileLength(sourcePath);
-                    File.Delete(sourcePath);
-                    result.Deleted++;
-                    result.BytesFreed += duplicateBytes;
+                    if (destructive)
+                    {
+                        var duplicateBytes = GetFileLength(sourcePath);
+                        File.Delete(sourcePath);
+                        result.Deleted++;
+                        result.BytesFreed += duplicateBytes;
+                    }
 
-                    await WriteAuditAsync("existing-user-same-hash", sourcePath, userTargetPath, frontendSystemId, canonicalSystemId, gameSlug, kind, null, cancellationToken);
+                    await WriteAuditAsync(destructive ? "existing-user-same-hash" : "copy-existing-user-same-hash", sourcePath, userTargetPath, frontendSystemId, canonicalSystemId, gameSlug, kind, null, cancellationToken);
                     return;
                 }
 
                 var previousUserPath = BuildUniqueSiblingPath(userTargetPath, ".previous-user");
                 File.Move(userTargetPath, previousUserPath);
                 var sourceBytes = GetFileLength(sourcePath);
-                File.Move(sourcePath, userTargetPath);
+                var priorityTransfer = await MediaFileTransfer.TransferAsync(sourcePath, userTargetPath, mode, cancellationToken);
+                if (!priorityTransfer.Success)
+                {
+                    File.Move(previousUserPath, userTargetPath); // restore: the source stays untouched
+                    result.Skipped++;
+                    await WriteAuditAsync("failed-verify", sourcePath, userTargetPath, frontendSystemId, canonicalSystemId, gameSlug, kind, new { previousUserPath, reason = priorityTransfer.Reason }, cancellationToken);
+                    return;
+                }
+
                 result.Moved++;
-                result.BytesFreed += sourceBytes;
+                if (destructive)
+                {
+                    result.BytesFreed += sourceBytes;
+                }
                 result.Migrated++;
                 result.UserPriorityMoved++;
 
                 await WriteAuditAsync(
-                    "migrated-user-priority-replaced-existing-user",
+                    destructive ? "migrated-user-priority-replaced-existing-user" : "copied-user-priority-replaced-existing-user",
                     sourcePath,
                     userTargetPath,
                     frontendSystemId,
@@ -931,24 +954,37 @@ public sealed class RomsMediaCanonicalMigrationHostedService : IHostedService
                 if (string.Equals(sourceHash, targetHash, StringComparison.OrdinalIgnoreCase))
                 {
                     result.ExistingSameHash++;
-                    var duplicateBytes = GetFileLength(sourcePath);
-                    File.Delete(sourcePath);
-                    result.Deleted++;
-                    result.BytesFreed += duplicateBytes;
+                    if (destructive)
+                    {
+                        var duplicateBytes = GetFileLength(sourcePath);
+                        File.Delete(sourcePath);
+                        result.Deleted++;
+                        result.BytesFreed += duplicateBytes;
+                    }
 
-                    await WriteAuditAsync("existing-same-hash", sourcePath, systemTargetPath, frontendSystemId, canonicalSystemId, gameSlug, kind, null, cancellationToken);
+                    await WriteAuditAsync(destructive ? "existing-same-hash" : "copy-existing-same-hash", sourcePath, systemTargetPath, frontendSystemId, canonicalSystemId, gameSlug, kind, null, cancellationToken);
                     return;
                 }
             }
 
             var movedBytes = GetFileLength(sourcePath);
-            File.Move(sourcePath, userTargetPath);
+            var plainTransfer = await MediaFileTransfer.TransferAsync(sourcePath, userTargetPath, mode, cancellationToken);
+            if (!plainTransfer.Success)
+            {
+                result.Skipped++;
+                await WriteAuditAsync("failed-verify", sourcePath, userTargetPath, frontendSystemId, canonicalSystemId, gameSlug, kind, new { systemTargetPath, reason = plainTransfer.Reason }, cancellationToken);
+                return;
+            }
+
             result.Moved++;
-            result.BytesFreed += movedBytes;
+            if (destructive)
+            {
+                result.BytesFreed += movedBytes;
+            }
             result.Migrated++;
             result.UserPriorityMoved++;
 
-            await WriteAuditAsync("migrated-user-priority", sourcePath, userTargetPath, frontendSystemId, canonicalSystemId, gameSlug, kind, new { systemTargetPath }, cancellationToken);
+            await WriteAuditAsync(destructive ? "migrated-user-priority" : "copied-user-priority", sourcePath, userTargetPath, frontendSystemId, canonicalSystemId, gameSlug, kind, new { systemTargetPath }, cancellationToken);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
