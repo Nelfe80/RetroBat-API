@@ -321,7 +321,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
                 return;
             }
 
-            var marquee = BuildGameMarqueeMedia(roots, fallbackSystemRoots);
+            var marquee = BuildGameMarqueeMedia(frontendSystemId, systemId, roots, fallbackSystemRoots);
 
             // LOT 7 - one merged game asset table for all three surfaces: canonical store, plus a
             // fill from the user gamelist when the flag is on (off by default = the old table).
@@ -476,11 +476,23 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
     }
 
     private MarqueeMediaSnapshot BuildGameMarqueeMedia(
+        string frontendSystemId,
+        string systemId,
         IReadOnlyList<string> gameRoots,
         IReadOnlyList<string> fallbackSystemRoots)
     {
         var game = BuildMarqueeMedia(gameRoots);
-        var system = BuildMarqueeMedia(fallbackSystemRoots);
+        // The system fallback must stay FRONTEND-SCOPED: the collapsed "arcade" systemId holds
+        // generated-system-marquee.<frontend>.png (and wheel.<frontend>.png) for mame/fbneo/fba/…,
+        // and the plain glob in BuildMarqueeMedia returns the alphabetically-first sibling (fbneo).
+        // Pin the same frontend-scoped assets the system snapshot uses, so a mame/arcade game with no
+        // marquee of its own no longer falls back to fbneo's system marquee/logo.
+        var system = BuildMarqueeMedia(fallbackSystemRoots) with
+        {
+            GeneratedMarquee = ResolveSystemGeneratedMarqueeAsset(frontendSystemId, systemId, fallbackSystemRoots),
+            Logo = ResolveSystemLogoAsset(frontendSystemId, systemId, fallbackSystemRoots),
+            Fanart = ResolveSystemFanartAsset(frontendSystemId, systemId, fallbackSystemRoots),
+        };
         var gameDmd = (DmdMediaSnapshot)game.Dmd;
         var systemDmd = (DmdMediaSnapshot)system.Dmd;
 
@@ -973,7 +985,7 @@ public sealed class PhysicalMediaWebSocketProjectionService : IHostedService, ID
             }
 
             var selection = BuildGameSelection(selectionSequence, frontendSystemId, systemId, gameSlug, selected, state);
-            var marquee = BuildGameMarqueeMedia(roots, fallbackSystemRoots);
+            var marquee = BuildGameMarqueeMedia(frontendSystemId, systemId, roots, fallbackSystemRoots);
             var gameAssets = BuildGameAssets(systemId, gameSlug, selected.GamePath, roots); // LOT 7
             var text = await BuildTextBlockAsync(systemId, gameSlug, selected.Details, roots);
 
