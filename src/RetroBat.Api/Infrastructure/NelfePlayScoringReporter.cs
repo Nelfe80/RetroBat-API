@@ -448,6 +448,16 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         long monotonicMs = (long?)session["monotonic_ms"] ?? 0;
         long resets = (long?)session["resets"] ?? 0;
         long saveStateLoads = (long?)session["save_state_loads"] ?? 0;
+        // Anti-triche (Gap 2) : le wrapper homologué compte ces vecteurs et les émet dans
+        // la session ; absents (vieux wrapper / autre backend) → 0 = neutre. Le certifié
+        // n'existe QUE via un listener whitelisté (CoreVerifier profile.listener_unauthorized),
+        // donc « 0 » ne vaut jamais « présumé propre » là où on n'observe pas.
+        long cheats = (long?)session["cheats"] ?? 0;
+        long rewind = (long?)session["rewind"] ?? 0;
+        long runahead = (long?)session["runahead"] ?? 0;
+        long fastForward = (long?)session["fast_forward"] ?? 0;
+        long netplay = (long?)session["netplay"] ?? 0;
+        long continues = (long?)session["continues"] ?? 0;
 
         string ruleset = profile.GetProperty("ruleset").GetString() ?? "";
         long profileVersion = profile.GetProperty("profile_version").GetInt64();
@@ -557,9 +567,9 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             },
             ["sensitive"] = new JsonObject
             {
-                ["cheats"] = false, ["save_state_loaded"] = saveStateLoads > 0, ["resets"] = resets,
-                ["rewind"] = false, ["runahead"] = false, ["fast_forward"] = false,
-                ["netplay"] = false, ["continues"] = 0,
+                ["cheats"] = cheats > 0, ["save_state_loaded"] = saveStateLoads > 0, ["resets"] = resets,
+                ["rewind"] = rewind > 0, ["runahead"] = runahead > 0, ["fast_forward"] = fastForward > 0,
+                ["netplay"] = netplay > 0, ["continues"] = continues,
             },
             ["metric"] = new JsonObject
             {
