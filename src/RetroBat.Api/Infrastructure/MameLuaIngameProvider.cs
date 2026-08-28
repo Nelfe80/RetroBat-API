@@ -250,6 +250,15 @@ public sealed class MameLuaIngameProvider : IProvider
                     await EvaluateTargetAsync(definition, targetId, oldValue, value, initialized: true);
                     await EvaluateCompositesAsync(definition, targetId, previousValues, composedLast, fired);
                 }
+                else if (command.Equals("SENSITIVE", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Anti-triche MAME (parite wrapper) : le plugin Lua remonte les vecteurs
+                    // detectes cette session (ex. fast_forward via l'etat throttle, que genesis
+                    // ne detecte pas). Capture + trace ; alimentera le passeport certifie MAME
+                    // (attestation + session) quand ce chemin sera cable.
+                    var flags = string.Join(", ", parts.Skip(1).Select(p => p.Trim()).Where(p => p.Length > 0));
+                    _logger.LogInformation("MAME Lua anti-triche (rom={Rom}) : {Flags}", definition?.Rom ?? "?", flags);
+                }
                 else if (command.Equals("BYE", StringComparison.OrdinalIgnoreCase))
                 {
                     break;
