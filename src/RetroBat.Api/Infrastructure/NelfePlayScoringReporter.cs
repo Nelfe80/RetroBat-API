@@ -44,6 +44,13 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private long? _finalTotal;
     private bool _inDemo;   // attract mode : le jeu se joue seul → on ignore le score
     private readonly List<(long frame, long total)> _trajectory = new();
+    // Phase D (segmentation en RUNS, 100% APIExpose) : frames où le jeu QUITTE l'état
+    // de jeu (mort/game over/titre/continue…). Au unload, on découpe la trajectoire à ces
+    // bornes et on ne soumet QUE le meilleur run (segment monotone) → un super score n'est
+    // plus perdu si on rejoue, et un continue n'inflate plus un 1cc. Le wrapper n'est PAS
+    // touché : ces états viennent du flux d'actions .MEM qu'APIExpose reçoit déjà.
+    private readonly List<long> _runBoundaries = new();
+    private bool _wasPlaying;
 
     public static bool Enabled { get; set; } = true;
 
@@ -278,6 +285,10 @@ public sealed class NelfePlayScoringReporter : BackgroundService
                 case "retroarch.state":
                     CaptureState(ToJson(envelope.Payload));
                     break;
+                case "retroarch.memory.changed":
+                case "ingame.memory.changed":
+                    CaptureLifecycleSignal(ToJson(envelope.Payload));
+                    break;
                 case "score.live.changed":
                     CaptureTotal(ToJson(envelope.Payload));
                     break;
@@ -302,6 +313,8 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             _finalTotal = null;
             _inDemo = false;
             _trajectory.Clear();
+            _runBoundaries.Clear();
+            _wasPlaying = false;
         }
     }
 
@@ -335,7 +348,61 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         {
             if (action.Contains("DEMO")) _inDemo = true;
             else if (action.Contains("PLAYING") || action.Contains("GAME_PLAY")) _inDemo = false;
+            ObserveLifecycle(action);
         }
+    }
+
+    // Signaux lifecycle du .MEM (retroarch.memory.changed, Channel=STATE) : source fiable
+    // et complète des états (GAME_PLAYING / TITLE_SCREEN / GAME_OVER / CONTINUE_SCREEN…),
+    // la même que IngameGameplayStateService. Sert à borner les runs.
+    private void CaptureLifecycleSignal(JsonElement root)
+    {
+        if (!root.TryGetProperty("signal", out var signal) && !root.TryGetProperty("Signal", out signal)) return;
+        var channel = (GetString(signal, "Channel") ?? "").ToUpperInvariant();
+        if (channel != "STATE" && channel != "ACTION") return;
+        var name = (GetString(signal, "Name") ?? "").ToUpperInvariant();
+        if (name.Length == 0) return;
+        lock (_sync) { ObserveLifecycle(name); }
+    }
+
+    // Détecte la transition JEU → HORS-JEU (= fin de run) et note la frame comme borne.
+    // La pause ne coupe PAS un run (état inchangé). À appeler sous _sync.
+    private void ObserveLifecycle(string action)
+    {
+        var playing = ResolvePlaying(action);
+        if (playing is null) return;   // pause / état inconnu : on ne change rien
+        if (_wasPlaying && !playing.Value) _runBoundaries.Add(_lastFrame);
+        _wasPlaying = playing.Value;
+    }
+
+    private static bool? ResolvePlaying(string action) => action.Trim().ToUpperInvariant() switch
+    {
+        "GAME_PLAYING" or "RUNNING" or "PLAYING" or "IN_GAME" or "GAME_PLAY" => true,
+        "TITLE_SCREEN" or "SELECT_SCREEN" or "DEMO_MODE" or "ATTRACT_MODE" or "MENU" or "MAIN_MENU"
+            or "CONTINUE_SCREEN" or "GAME_OVER" or "CREDITS_SCREEN" or "CORPORATE_SCREEN" or "INTRO_SCREEN" => false,
+        _ => null,   // PAUSE_*, actions de jeu diverses : n'affectent pas l'état de run
+    };
+
+    // Phase D : découpe la trajectoire aux bornes de run et renvoie l'intervalle de frames
+    // du MEILLEUR run (pic le plus haut). Sans borne → un seul run = toute la trajectoire.
+    private static (long start, long end) SelectBestRun(List<(long frame, long total)> traj, List<long> boundaries)
+    {
+        if (traj.Count == 0) return (long.MinValue, long.MaxValue);
+        long first = traj[0].frame, lastF = traj[^1].frame;
+        var edges = new List<long> { first - 1 };
+        foreach (var b in boundaries) if (b > first && b < lastF) edges.Add(b);
+        edges.Add(lastF);
+        edges.Sort();
+        long bestPeak = long.MinValue, bestStart = first, bestEnd = lastF;
+        for (var i = 0; i + 1 < edges.Count; i++)
+        {
+            long lo = edges[i], hi = edges[i + 1];   // segment = frames (lo, hi]
+            long peak = long.MinValue, segStart = long.MaxValue, segEnd = long.MinValue;
+            foreach (var (f, t) in traj)
+                if (f > lo && f <= hi) { if (t > peak) peak = t; if (f < segStart) segStart = f; if (f > segEnd) segEnd = f; }
+            if (segEnd >= segStart && peak > bestPeak) { bestPeak = peak; bestStart = segStart; bestEnd = segEnd; }
+        }
+        return (bestStart, bestEnd);
     }
 
     private void CaptureTotal(JsonElement root)
@@ -375,12 +442,21 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         string? listenerSha, coreSha, memSha, contentSha, wrapperVersion;
         long? finalTotal;
         List<(long frame, long total)> trajectory;
+        List<long> boundaries;
         lock (_sync)
         {
             listenerSha = _listenerSha256; coreSha = _coreSha256; memSha = _memSha256;
             contentSha = _contentSha256; wrapperVersion = _wrapperVersion; finalTotal = _finalTotal;
             trajectory = new List<(long, long)>(_trajectory);
+            boundaries = new List<long>(_runBoundaries);
         }
+
+        // Phase D : le score soumis = le MEILLEUR run (segment monotone entre deux bornes).
+        // Calculé tôt + tracé, pour valider la segmentation même hors chemin certifié.
+        var (runStart, runEnd) = SelectBestRun(trajectory, boundaries);
+        long runPeak = 0;
+        foreach (var (f, t) in trajectory) if (f >= runStart && f <= runEnd && t > runPeak) runPeak = t;
+        Trace($"segmentation : {boundaries.Count} borne(s), meilleur run [{runStart}..{runEnd}] pic={runPeak} (traj {trajectory.Count} pts, total global {finalTotal})");
 
         // Rien à certifier sans score ni attestation : on s'arrête AVANT de consommer
         // quoi que ce soit (démo, navigation, jeu non joué).
@@ -417,6 +493,8 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         }
         Trace($"assemblage du passeport (device={deviceId})…");
 
+        if (runPeak <= 0) runPeak = finalTotal.Value;   // filet : aucun segment exploitable
+
         using var deviceKey = CngDeviceKey.OpenOrCreate(ScoringKeyName);
         JsonObject passport;
         try
@@ -424,7 +502,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             passport = BuildPassport(
                 systemId, romGroup, sessionJson, ticket.Value, profile.Value,
                 deviceId!, deviceKey, listenerSha, coreSha, memSha, contentSha, wrapperVersion,
-                finalTotal.Value, trajectory);
+                runPeak, trajectory, runStart, runEnd);
             var body = passport.DeepClone()!.AsObject();
             body.Remove("signature");
             passport["signature"] = deviceKey.SignB64Url(Jcs.CanonicalBytes(body));
@@ -441,7 +519,8 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private JsonObject BuildPassport(
         string systemId, string romGroup, string sessionJson, JsonElement ticket, JsonElement profile,
         string deviceId, CngDeviceKey deviceKey, string listenerSha, string? coreSha, string? memSha,
-        string? contentSha, string? wrapperVersion, long finalTotal, List<(long frame, long total)> trajectory)
+        string? contentSha, string? wrapperVersion, long finalTotal, List<(long frame, long total)> trajectory,
+        long runStart, long runEnd)
     {
         var session = JsonNode.Parse(sessionJson)!.AsObject();
         long frameCount = (long?)session["frame_count"] ?? 0;
@@ -476,13 +555,22 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         // metric doit égaler metric.value (result_source=final).
         var checkpoints = new JsonArray();
         var srcCps = session["checkpoints"] as JsonArray ?? new JsonArray();
+        // Phase D : ne garder que les checkpoints du MEILLEUR run [runStart..runEnd] → le
+        // segment est monotone (non_decreasing passe), et son dernier checkpoint = game_end.
+        var inRun = new List<int>();
         for (var i = 0; i < srcCps.Count; i++)
         {
+            long f = (long?)srcCps[i]!["frame"] ?? 0;
+            if (f >= runStart && f <= runEnd) inRun.Add(i);
+        }
+        for (var k = 0; k < inRun.Count; k++)
+        {
+            var i = inRun[k];
             long f = (long?)srcCps[i]!["frame"] ?? 0;
             long ms = (long?)srcCps[i]!["monotonic_ms"] ?? 0;
             long score = 0;
             foreach (var (tf, tt) in trajectory) { if (tf <= f) score = tt; else break; }
-            var last = i == srcCps.Count - 1;
+            var last = k == inRun.Count - 1;
             var node = new JsonObject { ["monotonic_ms"] = ms, ["frame"] = f, ["metric"] = (last ? finalTotal : score).ToString() };
             if (last) node["event"] = "game_end";
             checkpoints.Add(node);
