@@ -32,25 +32,23 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private readonly NelfePlayDeviceStore _devices;
     private readonly ClaimOverlayService? _claimOverlay;
     private readonly NelfePlayScoringSessionService? _scoringSession;
+    private readonly IEmulationStationNotificationService? _esNotify;
     private readonly ILogger<NelfePlayScoringReporter>? _logger;
 
     private IDisposable? _subscription;
     private readonly object _sync = new();
 
     private string? _enrolledKeyId;
-    private string? _listenerSha256, _coreSha256, _memSha256, _contentSha256, _wrapperVersion;
+    private string? _listenerSha256, _coreSha256, _memSha256, _contentSha256, _contentMd5, _wrapperVersion;
     private JsonElement? _ticket;
     private long _lastFrame;
     private long? _finalTotal;
     private bool _inDemo;   // attract mode : le jeu se joue seul → on ignore le score
+    // Phase D (segmentation en RUNS, 100% APIExpose) : la trajectoire des scores suffit —
+    // on la découpe aux CHUTES de score (un score qui retombe = partie relancée) et on ne
+    // soumet QUE le meilleur run (segment monotone). Un super score n'est plus perdu si on
+    // rejoue, et le wrapper n'est PAS touché ni sollicité par event (0 surcoût en jeu).
     private readonly List<(long frame, long total)> _trajectory = new();
-    // Phase D (segmentation en RUNS, 100% APIExpose) : frames où le jeu QUITTE l'état
-    // de jeu (mort/game over/titre/continue…). Au unload, on découpe la trajectoire à ces
-    // bornes et on ne soumet QUE le meilleur run (segment monotone) → un super score n'est
-    // plus perdu si on rejoue, et un continue n'inflate plus un 1cc. Le wrapper n'est PAS
-    // touché : ces états viennent du flux d'actions .MEM qu'APIExpose reçoit déjà.
-    private readonly List<long> _runBoundaries = new();
-    private bool _wasPlaying;
 
     public static bool Enabled { get; set; } = true;
 
@@ -60,6 +58,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         NelfePlayDeviceStore devices,
         ClaimOverlayService? claimOverlay = null,
         NelfePlayScoringSessionService? scoringSession = null,
+        IEmulationStationNotificationService? esNotify = null,
         ILogger<NelfePlayScoringReporter>? logger = null)
     {
         _eventBus = eventBus;
@@ -67,6 +66,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         _devices = devices;
         _claimOverlay = claimOverlay;
         _scoringSession = scoringSession;
+        _esNotify = esNotify;
         _logger = logger;
     }
 
@@ -285,10 +285,6 @@ public sealed class NelfePlayScoringReporter : BackgroundService
                 case "retroarch.state":
                     CaptureState(ToJson(envelope.Payload));
                     break;
-                case "retroarch.memory.changed":
-                case "ingame.memory.changed":
-                    CaptureLifecycleSignal(ToJson(envelope.Payload));
-                    break;
                 case "score.live.changed":
                     CaptureTotal(ToJson(envelope.Payload));
                     break;
@@ -307,14 +303,12 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     {
         lock (_sync)
         {
-            _listenerSha256 = _coreSha256 = _memSha256 = _contentSha256 = _wrapperVersion = null;
+            _listenerSha256 = _coreSha256 = _memSha256 = _contentSha256 = _contentMd5 = _wrapperVersion = null;
             _ticket = null;
             _lastFrame = 0;
             _finalTotal = null;
             _inDemo = false;
             _trajectory.Clear();
-            _runBoundaries.Clear();
-            _wasPlaying = false;
         }
     }
 
@@ -326,6 +320,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             _coreSha256 = GetString(root, "CoreSha256");
             _memSha256 = GetString(root, "MemSha256");
             _contentSha256 = GetString(root, "ContentSha256");
+            _contentMd5 = GetString(root, "ContentMd5");
             _wrapperVersion = GetString(root, "WrapperVersion");
         }
     }
@@ -348,61 +343,33 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         {
             if (action.Contains("DEMO")) _inDemo = true;
             else if (action.Contains("PLAYING") || action.Contains("GAME_PLAY")) _inDemo = false;
-            ObserveLifecycle(action);
         }
     }
 
-    // Signaux lifecycle du .MEM (retroarch.memory.changed, Channel=STATE) : source fiable
-    // et complète des états (GAME_PLAYING / TITLE_SCREEN / GAME_OVER / CONTINUE_SCREEN…),
-    // la même que IngameGameplayStateService. Sert à borner les runs.
-    private void CaptureLifecycleSignal(JsonElement root)
+    // Phase D : découpe la trajectoire aux CHUTES de score (le score qui retombe = un
+    // nouveau run) et renvoie le sous-segment MONOTONE du MEILLEUR run (pic le plus haut).
+    // Robuste : ne dépend PAS des frames (le score seul suffit). Un seul run croissant →
+    // toute la trajectoire. C'est ce qui fait qu'un super score n'est jamais perdu.
+    private static List<(long frame, long total)> SelectBestRun(List<(long frame, long total)> traj)
     {
-        if (!root.TryGetProperty("signal", out var signal) && !root.TryGetProperty("Signal", out signal)) return;
-        var channel = (GetString(signal, "Channel") ?? "").ToUpperInvariant();
-        if (channel != "STATE" && channel != "ACTION") return;
-        var name = (GetString(signal, "Name") ?? "").ToUpperInvariant();
-        if (name.Length == 0) return;
-        lock (_sync) { ObserveLifecycle(name); }
-    }
-
-    // Détecte la transition JEU → HORS-JEU (= fin de run) et note la frame comme borne.
-    // La pause ne coupe PAS un run (état inchangé). À appeler sous _sync.
-    private void ObserveLifecycle(string action)
-    {
-        var playing = ResolvePlaying(action);
-        if (playing is null) return;   // pause / état inconnu : on ne change rien
-        if (_wasPlaying && !playing.Value) _runBoundaries.Add(_lastFrame);
-        _wasPlaying = playing.Value;
-    }
-
-    private static bool? ResolvePlaying(string action) => action.Trim().ToUpperInvariant() switch
-    {
-        "GAME_PLAYING" or "RUNNING" or "PLAYING" or "IN_GAME" or "GAME_PLAY" => true,
-        "TITLE_SCREEN" or "SELECT_SCREEN" or "DEMO_MODE" or "ATTRACT_MODE" or "MENU" or "MAIN_MENU"
-            or "CONTINUE_SCREEN" or "GAME_OVER" or "CREDITS_SCREEN" or "CORPORATE_SCREEN" or "INTRO_SCREEN" => false,
-        _ => null,   // PAUSE_*, actions de jeu diverses : n'affectent pas l'état de run
-    };
-
-    // Phase D : découpe la trajectoire aux bornes de run et renvoie l'intervalle de frames
-    // du MEILLEUR run (pic le plus haut). Sans borne → un seul run = toute la trajectoire.
-    private static (long start, long end) SelectBestRun(List<(long frame, long total)> traj, List<long> boundaries)
-    {
-        if (traj.Count == 0) return (long.MinValue, long.MaxValue);
-        long first = traj[0].frame, lastF = traj[^1].frame;
-        var edges = new List<long> { first - 1 };
-        foreach (var b in boundaries) if (b > first && b < lastF) edges.Add(b);
-        edges.Add(lastF);
-        edges.Sort();
-        long bestPeak = long.MinValue, bestStart = first, bestEnd = lastF;
-        for (var i = 0; i + 1 < edges.Count; i++)
+        if (traj.Count == 0) return traj;
+        List<(long frame, long total)>? best = null;
+        long bestPeak = long.MinValue;
+        var cur = new List<(long frame, long total)>();
+        long prev = long.MinValue;
+        foreach (var pt in traj)
         {
-            long lo = edges[i], hi = edges[i + 1];   // segment = frames (lo, hi]
-            long peak = long.MinValue, segStart = long.MaxValue, segEnd = long.MinValue;
-            foreach (var (f, t) in traj)
-                if (f > lo && f <= hi) { if (t > peak) peak = t; if (f < segStart) segStart = f; if (f > segEnd) segEnd = f; }
-            if (segEnd >= segStart && peak > bestPeak) { bestPeak = peak; bestStart = segStart; bestEnd = segEnd; }
+            if (pt.total < prev)   // chute → fin du run précédent (segment monotone)
+            {
+                long peak = cur.Count > 0 ? cur[^1].total : long.MinValue;
+                if (peak > bestPeak) { bestPeak = peak; best = new List<(long frame, long total)>(cur); }
+                cur.Clear();
+            }
+            cur.Add(pt);
+            prev = pt.total;
         }
-        return (bestStart, bestEnd);
+        if (cur.Count > 0 && (best is null || cur[^1].total > bestPeak)) best = cur;
+        return best ?? traj;
     }
 
     private void CaptureTotal(JsonElement root)
@@ -439,24 +406,23 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             return;
         }
 
-        string? listenerSha, coreSha, memSha, contentSha, wrapperVersion;
+        string? listenerSha, coreSha, memSha, contentSha, contentMd5, wrapperVersion;
         long? finalTotal;
         List<(long frame, long total)> trajectory;
-        List<long> boundaries;
         lock (_sync)
         {
             listenerSha = _listenerSha256; coreSha = _coreSha256; memSha = _memSha256;
-            contentSha = _contentSha256; wrapperVersion = _wrapperVersion; finalTotal = _finalTotal;
+            contentSha = _contentSha256; contentMd5 = _contentMd5; wrapperVersion = _wrapperVersion; finalTotal = _finalTotal;
             trajectory = new List<(long, long)>(_trajectory);
-            boundaries = new List<long>(_runBoundaries);
         }
 
-        // Phase D : le score soumis = le MEILLEUR run (segment monotone entre deux bornes).
-        // Calculé tôt + tracé, pour valider la segmentation même hors chemin certifié.
-        var (runStart, runEnd) = SelectBestRun(trajectory, boundaries);
-        long runPeak = 0;
-        foreach (var (f, t) in trajectory) if (f >= runStart && f <= runEnd && t > runPeak) runPeak = t;
-        Trace($"segmentation : {boundaries.Count} borne(s), meilleur run [{runStart}..{runEnd}] pic={runPeak} (traj {trajectory.Count} pts, total global {finalTotal})");
+        // Phase D : le score soumis = le MEILLEUR run. On segmente la trajectoire aux CHUTES
+        // de score (un score qui retombe = le joueur a relancé une partie) et on garde le
+        // segment monotone au pic le plus haut. Un super score n'est donc jamais perdu par un
+        // mauvais run qui suit. Calculé tôt + tracé pour valider même hors chemin certifié.
+        var bestRun = SelectBestRun(trajectory);
+        long runPeak = bestRun.Count > 0 ? bestRun[^1].total : (finalTotal ?? 0);
+        Trace($"segmentation : meilleur run {bestRun.Count}/{trajectory.Count} pts, pic={runPeak} (total global {finalTotal})");
 
         // Rien à certifier sans score ni attestation : on s'arrête AVANT de consommer
         // quoi que ce soit (démo, navigation, jeu non joué).
@@ -501,8 +467,8 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         {
             passport = BuildPassport(
                 systemId, romGroup, sessionJson, ticket.Value, profile.Value,
-                deviceId!, deviceKey, listenerSha, coreSha, memSha, contentSha, wrapperVersion,
-                runPeak, trajectory, runStart, runEnd);
+                deviceId!, deviceKey, listenerSha, coreSha, memSha, contentSha, contentMd5, wrapperVersion,
+                runPeak, bestRun);
             var body = passport.DeepClone()!.AsObject();
             body.Remove("signature");
             passport["signature"] = deviceKey.SignB64Url(Jcs.CanonicalBytes(body));
@@ -519,8 +485,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private JsonObject BuildPassport(
         string systemId, string romGroup, string sessionJson, JsonElement ticket, JsonElement profile,
         string deviceId, CngDeviceKey deviceKey, string listenerSha, string? coreSha, string? memSha,
-        string? contentSha, string? wrapperVersion, long finalTotal, List<(long frame, long total)> trajectory,
-        long runStart, long runEnd)
+        string? contentSha, string? contentMd5, string? wrapperVersion, long finalTotal, List<(long frame, long total)> trajectory)
     {
         var session = JsonNode.Parse(sessionJson)!.AsObject();
         long frameCount = (long?)session["frame_count"] ?? 0;
@@ -549,36 +514,29 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         string resultSource = metricProfile.ValueKind == JsonValueKind.Object && metricProfile.TryGetProperty("result_source", out var rs)
             ? (rs.GetString() ?? "final") : "final";
 
-        // Checkpoints : squelette temporel du listener (frame + monotonic_ms) + le score
-        // AGRÉGÉ à cette frame (dernier total ≤ frame) porté dans `metric` (string). Le
-        // dernier checkpoint porte l'événement `game_end` (exigé par le vérifieur), et son
-        // metric doit égaler metric.value (result_source=final).
+        // Checkpoints = la progression du MEILLEUR run (`trajectory` est déjà réduite au
+        // segment gagnant, monotone). Le score porte dans `metric` (string) ; le dernier
+        // checkpoint porte `game_end` (exigé par le vérifieur) et son metric == metric.value
+        // (result_source=final). monotonic_ms interpolé sur la durée de session : l'ordre et
+        // les valeurs de score sont fiables, les frames du listener ne le sont pas ici.
+        // Bornée (SPEC : ≤128 checkpoints) par sous-échantillonnage régulier.
         var checkpoints = new JsonArray();
-        var srcCps = session["checkpoints"] as JsonArray ?? new JsonArray();
-        // Phase D : ne garder que les checkpoints du MEILLEUR run [runStart..runEnd] → le
-        // segment est monotone (non_decreasing passe), et son dernier checkpoint = game_end.
-        var inRun = new List<int>();
-        for (var i = 0; i < srcCps.Count; i++)
+        long endMs = monotonicMs > 0 ? monotonicMs : frameCount;
+        int n = trajectory.Count;
+        int step = n > 96 ? (n / 96) + 1 : 1;
+        for (var i = 0; i < n; i += step)
         {
-            long f = (long?)srcCps[i]!["frame"] ?? 0;
-            if (f >= runStart && f <= runEnd) inRun.Add(i);
-        }
-        for (var k = 0; k < inRun.Count; k++)
-        {
-            var i = inRun[k];
-            long f = (long?)srcCps[i]!["frame"] ?? 0;
-            long ms = (long?)srcCps[i]!["monotonic_ms"] ?? 0;
-            long score = 0;
-            foreach (var (tf, tt) in trajectory) { if (tf <= f) score = tt; else break; }
-            var last = k == inRun.Count - 1;
-            var node = new JsonObject { ["monotonic_ms"] = ms, ["frame"] = f, ["metric"] = (last ? finalTotal : score).ToString() };
+            var (f, t) = trajectory[i];
+            var last = i + step >= n;
+            long ms = n > 1 ? (long)((double)i / (n - 1) * endMs) : endMs;
+            var node = new JsonObject { ["monotonic_ms"] = ms, ["frame"] = f, ["metric"] = (last ? finalTotal : t).ToString() };
             if (last) node["event"] = "game_end";
             checkpoints.Add(node);
         }
         // Filet : le vérifieur exige au moins un checkpoint game_end.
         if (checkpoints.Count == 0)
         {
-            checkpoints.Add(new JsonObject { ["monotonic_ms"] = monotonicMs, ["frame"] = frameCount, ["metric"] = finalTotal.ToString(), ["event"] = "game_end" });
+            checkpoints.Add(new JsonObject { ["monotonic_ms"] = endMs, ["frame"] = frameCount, ["metric"] = finalTotal.ToString(), ["event"] = "game_end" });
         }
         var checkpointsDigest = Crypto.Sha256Hex(Jcs.CanonicalBytes(checkpoints));
 
@@ -593,6 +551,12 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         var modulesDigest = Crypto.Sha256Hex(Jcs.CanonicalBytes(modules));
 
         JsonObject Triple(string? h) => new() { ["start_sha256"] = h, ["loaded_sha256"] = h, ["end_sha256"] = h };
+        JsonObject ContentArtifact(string? sha, string? md5)
+        {
+            var o = Triple(sha);
+            if (md5 is not null) o["md5"] = md5;   // Voie A : md5 No-Intro de la ROM, émis par le wrapper homologué
+            return o;
+        }
 
         // MONDE de la partie : la session le porte.
         //  - STATION : joueur checké-in en salle par le hub → provenance salle (nom/ville).
@@ -637,7 +601,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             ["software"] = new JsonObject { ["modules"] = modules, ["modules_digest"] = modulesDigest },
             ["artifacts"] = new JsonObject
             {
-                ["core"] = Triple(coreSha), ["content"] = Triple(contentSha), ["mem"] = Triple(memSha),
+                ["core"] = Triple(coreSha), ["content"] = ContentArtifact(contentSha, contentMd5), ["mem"] = Triple(memSha),
                 ["core_options_digest"] = Crypto.Sha256Hex("core-options@default"),
                 ["bios"] = new JsonObject { ["mode"] = "none" },
             },
@@ -705,12 +669,82 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             _logger?.LogInformation("Scoring : verdict serveur {Status} - {Body}", (int)response.StatusCode, body);
             PersistCertified(passport, body);
             MaybeShowClaimOverlay(passport, body);
+            await NotifyVerdictAsync(passport, body, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Scoring : soumission impossible.");
         }
     }
+
+    /// <summary>
+    /// Notif ES (popup léger, comme le scrap) : le joueur voit le verdict + la RAISON en
+    /// revenant sur EmulationStation. Publié attribué / en attente / refusé sont notifiés ;
+    /// le publié ANONYME est laissé à l'overlay « Réclame ton record ! » (pas de doublon).
+    /// </summary>
+    private async Task NotifyVerdictAsync(JsonObject passport, string responseBody, CancellationToken cancellationToken)
+    {
+        if (_esNotify is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var obj = JsonNode.Parse(responseBody) as JsonObject;
+            var status = (string?)(obj?["status"]) ?? "";
+            var reason = (string?)(obj?["reason"]) ?? "";
+            var hasClaim = !string.IsNullOrWhiteSpace((string?)(obj?["claim_code"]));
+            if (status == "published" && hasClaim)
+            {
+                return;   // l'overlay claim s'en charge
+            }
+
+            var scoreText = (string?)((passport["metric"] as JsonObject)?["value"]) ?? "0";
+            _ = long.TryParse(scoreText, out var score);
+            var rank = (int?)(obj?["rank"]);
+
+            var message = status switch
+            {
+                "published" => $"🏆 Score certifié : {score:N0} publié" + (rank is int r ? $" (#{r})" : ""),
+                "held" => $"⏳ Score {score:N0} en attente de vérification",
+                "refused" => $"❌ Score {score:N0} refusé — {ReasonToText(reason)}",
+                _ => $"⚠️ Score non transmis — {ReasonToText(reason)}",
+            };
+            await _esNotify.NotifyAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "Scoring : notification ES du verdict impossible.");
+        }
+    }
+
+    // Codes d'échec du vérifieur → texte joueur (FR). Voir CoreVerifier / regles-de-score.
+    private static string ReasonToText(string reason) => reason switch
+    {
+        "" => "accepté",
+        "runtime.fast_forward_detected" => "avance rapide détectée",
+        "runtime.rewind_detected" => "rembobinage détecté",
+        "runtime.runahead_detected" => "run-ahead détecté",
+        "runtime.save_state_detected" => "sauvegarde d'état détectée",
+        "runtime.cheat_detected" => "triche (cheat) détectée",
+        "runtime.continue_forbidden" => "continue interdit pour ce record",
+        "runtime.module_unauthorized" => "logiciel non homologué",
+        "profile.core_mismatch" => "émulateur non reconnu",
+        "profile.content_mismatch" => "ROM non reconnue",
+        "profile.mem_mismatch" => "définition mémoire non reconnue",
+        "profile.listener_unauthorized" => "wrapper non homologué",
+        "profile.not_open" => "classement fermé",
+        "profile.mismatch" => "jeu ou règlement non concordant",
+        "session.no_game_end" => "partie non terminée",
+        "session.ticket_expired" => "session expirée",
+        "session.ticket_invalid" or "session.ticket_missing" => "session invalide",
+        "timing.incoherent" => "horodatage incohérent",
+        "format.out_of_bounds" => "score hors limites",
+        _ when reason.StartsWith("progression.", StringComparison.Ordinal) => "progression incohérente",
+        _ when reason.StartsWith("format.", StringComparison.Ordinal) => "format invalide",
+        _ => reason,
+    };
 
     /// <summary>
     /// Score anonyme PUBLIÉ → le verdict porte un <c>claim_code</c> : on affiche la
