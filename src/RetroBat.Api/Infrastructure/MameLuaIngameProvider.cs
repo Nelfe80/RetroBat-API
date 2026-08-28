@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
+using RetroBat.Api.Scoring;
 using RetroBat.Domain.Events;
 using RetroBat.Domain.Interfaces;
 using RetroBat.Domain.Paths;
@@ -152,6 +153,8 @@ public sealed class MameLuaIngameProvider : IProvider
         var previousValues = new Dictionary<int, long>();
         var fired = new Dictionary<int, int>();
         var composedLast = new Dictionary<string, long>();
+        var scoringStart = DateTime.UtcNow;   // repère pour monotonic_ms de la session certifiée
+        long sensitiveFastForward = 0;        // avance rapide remontée par le plugin Lua (SENSITIVE)
 
         try
         {
@@ -211,6 +214,9 @@ public sealed class MameLuaIngameProvider : IProvider
                     await writer.WriteLineAsync($"READY|{definition.Targets.Count}");
                     await PublishSessionStartedAsync(definition, gameName);
                     UpdateSession(endpoint, definition, connected: true, lastRawLine: line, fired: fired);
+                    scoringStart = DateTime.UtcNow;
+                    sensitiveFastForward = 0;
+                    await PublishScoringAttestationAsync(definition);
 
                     _logger.LogInformation(
                         "MAME Lua ingame session started: rom={Rom} resolved={ResolvedRom} watches={WatchCount} definition={DefinitionFile}",
@@ -256,6 +262,15 @@ public sealed class MameLuaIngameProvider : IProvider
                     // detectes cette session (ex. fast_forward via l'etat throttle, que genesis
                     // ne detecte pas). Capture + trace ; alimentera le passeport certifie MAME
                     // (attestation + session) quand ce chemin sera cable.
+                    foreach (var kv in parts.Skip(1))
+                    {
+                        var eq = kv.Split('=');
+                        if (eq.Length == 2 && eq[0].Trim().Equals("fast_forward", StringComparison.OrdinalIgnoreCase)
+                            && long.TryParse(eq[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ff))
+                        {
+                            sensitiveFastForward = ff;
+                        }
+                    }
                     var flags = string.Join(", ", parts.Skip(1).Select(p => p.Trim()).Where(p => p.Length > 0));
                     _logger.LogInformation("MAME Lua anti-triche (rom={Rom}) : {Flags}", definition?.Rom ?? "?", flags);
                 }
@@ -278,6 +293,7 @@ public sealed class MameLuaIngameProvider : IProvider
             if (definition != null)
             {
                 UpdateSession(endpoint, definition, connected: false, lastRawLine: string.Empty, fired: fired);
+                await PublishScoringSessionAsync(definition, scoringStart, sensitiveFastForward);
                 await PublishSessionStoppedAsync(definition);
             }
         }
@@ -1043,6 +1059,150 @@ public sealed class MameLuaIngameProvider : IProvider
         normalized = normalized.ToLowerInvariant();
         normalized = Regex.Replace(normalized, @"[^a-z0-9]+", "-");
         return normalized.Trim('-');
+    }
+
+    // ── Scoring certifié MAME (parité wrapper RetroArch) ────────────────────────
+    // Le reporter est AGNOSTIQUE : il assemble le passeport à partir des events
+    // scoring.listener.attestation + scoring.listener.session (comme pour le wrapper,
+    // qui les émet par pipe). Identité = Voie A étendue à MAME (content = md5 gamelist
+    // MAME, core = mame64.exe, listener = plugin Lua, mem = .MEM). RESTE : un profil
+    // engine=mame_standalone + l'homologation du SHA du plugin + la VALIDATION en jeu.
+    private const string MameLuaListenerVersion = "mame-lua-0.2.0";
+
+    private async Task PublishScoringAttestationAsync(MameLuaDefinition definition)
+    {
+        try
+        {
+            var (listenerSha, coreSha, memSha, contentMd5) = ResolveMameIdentity(definition);
+            if (listenerSha is null)
+            {
+                return;   // pas de listener mesurable -> pas d'attestation (le reporter n'insiste pas)
+            }
+            await _eventBus.PublishAsync(new EventEnvelope
+            {
+                Type = "scoring.listener.attestation",
+                Payload = new
+                {
+                    Source = "mame.lua.ingame",
+                    definition.SystemId,
+                    definition.Rom,
+                    ListenerSha256 = listenerSha,
+                    CoreSha256 = coreSha,
+                    MemSha256 = memSha,
+                    ContentSha256 = (string?)null,
+                    ContentMd5 = contentMd5,
+                    WrapperVersion = MameLuaListenerVersion,
+                    SessionNonce = Guid.NewGuid().ToString("N"),
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "MAME Lua : attestation de scoring non publiée.");
+        }
+    }
+
+    private async Task PublishScoringSessionAsync(MameLuaDefinition definition, DateTime start, long fastForward)
+    {
+        try
+        {
+            var monotonicMs = (long)Math.Max(0, (DateTime.UtcNow - start).TotalMilliseconds);
+            await _eventBus.PublishAsync(new EventEnvelope
+            {
+                Type = "scoring.listener.session",
+                Payload = new
+                {
+                    frame_count = 0,
+                    monotonic_ms = monotonicMs,
+                    resets = 0,
+                    save_state_loads = 0,
+                    cheats = 0,
+                    rewind = 0,
+                    runahead = 0,
+                    fast_forward = fastForward,
+                    netplay = 0,
+                    continues = 0,
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "MAME Lua : session de scoring non publiée.");
+        }
+    }
+
+    // Voie A étendue à MAME. Chemins dérivés du .MEM (resources/ram/<sys>/<rom>.MEM) ;
+    // repli gracieux si un fichier manque (le champ reste null, le profil le gère).
+    private (string? listener, string? core, string? mem, string? contentMd5) ResolveMameIdentity(MameLuaDefinition definition)
+    {
+        static string? Sha(string? path) =>
+            (!string.IsNullOrEmpty(path) && File.Exists(path)) ? Crypto.Sha256Hex(File.ReadAllBytes(path)) : null;
+
+        var memSha = Sha(definition.DefinitionFile);
+        string? listenerSha = null, coreSha = null, contentMd5 = null;
+        try
+        {
+            var ramRoot = Path.GetDirectoryName(Path.GetDirectoryName(definition.DefinitionFile));   // .../resources/ram
+            if (ramRoot != null)
+            {
+                listenerSha = Sha(Path.Combine(ramRoot, "tools", "mame_apiexpose_ingame", "init.lua"));
+                var resourcesRoot = Path.GetDirectoryName(ramRoot);                                   // .../resources
+                if (resourcesRoot != null)
+                {
+                    contentMd5 = LookupMameGamelistMd5(Path.Combine(resourcesRoot, "gamelist", "systems", "mame_lt.json"), definition.Rom);
+                    var pluginRoot = Path.GetDirectoryName(resourcesRoot);                            // .../APIExpose
+                    var retrobatRoot = pluginRoot != null ? Path.GetDirectoryName(Path.GetDirectoryName(pluginRoot)) : null;   // <RetroBat>
+                    if (retrobatRoot != null)
+                    {
+                        foreach (var c in new[] { "mame64.exe", "mame.exe" })
+                        {
+                            var p = Path.Combine(retrobatRoot, "emulators", "mame", c);
+                            if (File.Exists(p)) { coreSha = Sha(p); break; }
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "MAME Lua : résolution d'identité partielle.");
+        }
+        return (listenerSha, coreSha, memSha, contentMd5);
+    }
+
+    // Gamelist MAME = JSONL (une entrée JSON par ligne). Renvoie le md5 (Voie A) du set == rom.
+    private string? LookupMameGamelistMd5(string gamelistPath, string rom)
+    {
+        if (!File.Exists(gamelistPath)) return null;
+        try
+        {
+            foreach (var line in File.ReadLines(gamelistPath))
+            {
+                if (string.IsNullOrWhiteSpace(line) || line.IndexOf(rom, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                var id = root.TryGetProperty("id", out var idv) ? idv.GetString() : null;
+                var set = root.TryGetProperty("set", out var sv) ? sv.GetString() : null;
+                if (!string.Equals(id, rom, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(set, rom, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                if (root.TryGetProperty("hsh", out var hsh) && hsh.ValueKind == JsonValueKind.Array && hsh.GetArrayLength() > 0
+                    && hsh[0].TryGetProperty("md5", out var md5v))
+                {
+                    return md5v.GetString()?.ToLowerInvariant();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "MAME Lua : lecture gamelist MAME impossible.");
+        }
+        return null;
     }
 
     private async Task PublishSessionStartedAsync(MameLuaDefinition definition, string gameName)
