@@ -39,7 +39,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private readonly object _sync = new();
 
     private string? _enrolledKeyId;
-    private string? _listenerSha256, _coreSha256, _memSha256, _contentSha256, _contentMd5, _wrapperVersion;
+    private string? _listenerSha256, _coreSha256, _memSha256, _contentSha256, _contentMd5, _contentSha1, _wrapperVersion;
     private JsonElement? _ticket;
     private long _lastFrame;
     private long? _finalTotal;
@@ -303,7 +303,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     {
         lock (_sync)
         {
-            _listenerSha256 = _coreSha256 = _memSha256 = _contentSha256 = _contentMd5 = _wrapperVersion = null;
+            _listenerSha256 = _coreSha256 = _memSha256 = _contentSha256 = _contentMd5 = _contentSha1 = _wrapperVersion = null;
             _ticket = null;
             _lastFrame = 0;
             _finalTotal = null;
@@ -321,6 +321,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             _memSha256 = GetString(root, "MemSha256");
             _contentSha256 = GetString(root, "ContentSha256");
             _contentMd5 = GetString(root, "ContentMd5");
+            _contentSha1 = GetString(root, "ContentSha1");
             _wrapperVersion = GetString(root, "WrapperVersion");
         }
     }
@@ -406,13 +407,13 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             return;
         }
 
-        string? listenerSha, coreSha, memSha, contentSha, contentMd5, wrapperVersion;
+        string? listenerSha, coreSha, memSha, contentSha, contentMd5, contentSha1, wrapperVersion;
         long? finalTotal;
         List<(long frame, long total)> trajectory;
         lock (_sync)
         {
             listenerSha = _listenerSha256; coreSha = _coreSha256; memSha = _memSha256;
-            contentSha = _contentSha256; contentMd5 = _contentMd5; wrapperVersion = _wrapperVersion; finalTotal = _finalTotal;
+            contentSha = _contentSha256; contentMd5 = _contentMd5; contentSha1 = _contentSha1; wrapperVersion = _wrapperVersion; finalTotal = _finalTotal;
             trajectory = new List<(long, long)>(_trajectory);
         }
 
@@ -467,7 +468,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         {
             passport = BuildPassport(
                 systemId, romGroup, sessionJson, ticket.Value, profile.Value,
-                deviceId!, deviceKey, listenerSha, coreSha, memSha, contentSha, contentMd5, wrapperVersion,
+                deviceId!, deviceKey, listenerSha, coreSha, memSha, contentSha, contentMd5, contentSha1, wrapperVersion,
                 runPeak, bestRun);
             var body = passport.DeepClone()!.AsObject();
             body.Remove("signature");
@@ -485,7 +486,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private JsonObject BuildPassport(
         string systemId, string romGroup, string sessionJson, JsonElement ticket, JsonElement profile,
         string deviceId, CngDeviceKey deviceKey, string listenerSha, string? coreSha, string? memSha,
-        string? contentSha, string? contentMd5, string? wrapperVersion, long finalTotal, List<(long frame, long total)> trajectory)
+        string? contentSha, string? contentMd5, string? contentSha1, string? wrapperVersion, long finalTotal, List<(long frame, long total)> trajectory)
     {
         var session = JsonNode.Parse(sessionJson)!.AsObject();
         long frameCount = (long?)session["frame_count"] ?? 0;
@@ -551,10 +552,11 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         var modulesDigest = Crypto.Sha256Hex(Jcs.CanonicalBytes(modules));
 
         JsonObject Triple(string? h) => new() { ["start_sha256"] = h, ["loaded_sha256"] = h, ["end_sha256"] = h };
-        JsonObject ContentArtifact(string? sha, string? md5)
+        JsonObject ContentArtifact(string? sha, string? md5, string? sha1)
         {
             var o = Triple(sha);
-            if (md5 is not null) o["md5"] = md5;   // Voie A : md5 No-Intro de la ROM, émis par le wrapper homologué
+            if (md5 is not null) o["md5"] = md5;     // Voie A : md5 No-Intro de la ROM (consoles)
+            if (sha1 is not null) o["sha1"] = sha1;  // MAME : sha1 du set (gamelist), MAME vérifiant le romset
             return o;
         }
 
@@ -601,7 +603,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             ["software"] = new JsonObject { ["modules"] = modules, ["modules_digest"] = modulesDigest },
             ["artifacts"] = new JsonObject
             {
-                ["core"] = Triple(coreSha), ["content"] = ContentArtifact(contentSha, contentMd5), ["mem"] = Triple(memSha),
+                ["core"] = Triple(coreSha), ["content"] = ContentArtifact(contentSha, contentMd5, contentSha1), ["mem"] = Triple(memSha),
                 ["core_options_digest"] = Crypto.Sha256Hex("core-options@default"),
                 ["bios"] = new JsonObject { ["mode"] = "none" },
             },

@@ -1073,7 +1073,7 @@ public sealed class MameLuaIngameProvider : IProvider
     {
         try
         {
-            var (listenerSha, coreSha, memSha, contentMd5) = ResolveMameIdentity(definition);
+            var (listenerSha, coreSha, memSha, contentSha1) = ResolveMameIdentity(definition);
             if (listenerSha is null)
             {
                 return;   // pas de listener mesurable -> pas d'attestation (le reporter n'insiste pas)
@@ -1090,7 +1090,8 @@ public sealed class MameLuaIngameProvider : IProvider
                     CoreSha256 = coreSha,
                     MemSha256 = memSha,
                     ContentSha256 = (string?)null,
-                    ContentMd5 = contentMd5,
+                    ContentMd5 = (string?)null,
+                    ContentSha1 = contentSha1,   // MAME : sha1 du set (gamelist) ; intégrité = DAT MAME
                     WrapperVersion = MameLuaListenerVersion,
                     SessionNonce = Guid.NewGuid().ToString("N"),
                 }
@@ -1107,21 +1108,28 @@ public sealed class MameLuaIngameProvider : IProvider
         try
         {
             var monotonicMs = (long)Math.Max(0, (DateTime.UtcNow - start).TotalMilliseconds);
+            var session = new
+            {
+                frame_count = 0,
+                monotonic_ms = monotonicMs,
+                resets = 0,
+                save_state_loads = 0,
+                cheats = 0,
+                rewind = 0,
+                runahead = 0,
+                fast_forward = fastForward,
+                netplay = 0,
+                continues = 0,
+            };
+            // Format attendu par le reporter (comme le wrapper) : { SystemId, Rom, Session=<JSON string> }.
             await _eventBus.PublishAsync(new EventEnvelope
             {
                 Type = "scoring.listener.session",
                 Payload = new
                 {
-                    frame_count = 0,
-                    monotonic_ms = monotonicMs,
-                    resets = 0,
-                    save_state_loads = 0,
-                    cheats = 0,
-                    rewind = 0,
-                    runahead = 0,
-                    fast_forward = fastForward,
-                    netplay = 0,
-                    continues = 0,
+                    definition.SystemId,
+                    definition.Rom,
+                    Session = JsonSerializer.Serialize(session),
                 }
             });
         }
@@ -1133,13 +1141,13 @@ public sealed class MameLuaIngameProvider : IProvider
 
     // Voie A étendue à MAME. Chemins dérivés du .MEM (resources/ram/<sys>/<rom>.MEM) ;
     // repli gracieux si un fichier manque (le champ reste null, le profil le gère).
-    private (string? listener, string? core, string? mem, string? contentMd5) ResolveMameIdentity(MameLuaDefinition definition)
+    private (string? listener, string? core, string? mem, string? contentSha1) ResolveMameIdentity(MameLuaDefinition definition)
     {
         static string? Sha(string? path) =>
             (!string.IsNullOrEmpty(path) && File.Exists(path)) ? Crypto.Sha256Hex(File.ReadAllBytes(path)) : null;
 
         var memSha = Sha(definition.DefinitionFile);
-        string? listenerSha = null, coreSha = null, contentMd5 = null;
+        string? listenerSha = null, coreSha = null, contentSha1 = null;
         try
         {
             var ramRoot = Path.GetDirectoryName(Path.GetDirectoryName(definition.DefinitionFile));   // .../resources/ram
@@ -1149,7 +1157,9 @@ public sealed class MameLuaIngameProvider : IProvider
                 var resourcesRoot = Path.GetDirectoryName(ramRoot);                                   // .../resources
                 if (resourcesRoot != null)
                 {
-                    contentMd5 = LookupMameGamelistMd5(Path.Combine(resourcesRoot, "gamelist", "systems", "mame_lt.json"), definition.Rom);
+                    // Lookup par RawRom = le NOM DE SET MAME (ex. "19xx"), pas le nom .MEM
+                    // (ex. "19xx-the-war-against-destiny") : la gamelist est indexée par set.
+                    contentSha1 = LookupMameGamelistSha1(Path.Combine(resourcesRoot, "gamelist", "systems", "mame_lt.json"), definition.RawRom);
                     var pluginRoot = Path.GetDirectoryName(resourcesRoot);                            // .../APIExpose
                     var retrobatRoot = pluginRoot != null ? Path.GetDirectoryName(Path.GetDirectoryName(pluginRoot)) : null;   // <RetroBat>
                     if (retrobatRoot != null)
@@ -1167,11 +1177,12 @@ public sealed class MameLuaIngameProvider : IProvider
         {
             _logger.LogDebug(ex, "MAME Lua : résolution d'identité partielle.");
         }
-        return (listenerSha, coreSha, memSha, contentMd5);
+        return (listenerSha, coreSha, memSha, contentSha1);
     }
 
-    // Gamelist MAME = JSONL (une entrée JSON par ligne). Renvoie le md5 (Voie A) du set == rom.
-    private string? LookupMameGamelistMd5(string gamelistPath, string rom)
+    // Gamelist MAME = JSONL. Renvoie le sha1 du set == rom (= ROM programme principal, vérifié
+    // présent dans les vrais romsets). L'intégrité du romset est garantie par MAME (DAT).
+    private string? LookupMameGamelistSha1(string gamelistPath, string rom)
     {
         if (!File.Exists(gamelistPath)) return null;
         try
@@ -1192,9 +1203,9 @@ public sealed class MameLuaIngameProvider : IProvider
                     continue;
                 }
                 if (root.TryGetProperty("hsh", out var hsh) && hsh.ValueKind == JsonValueKind.Array && hsh.GetArrayLength() > 0
-                    && hsh[0].TryGetProperty("md5", out var md5v))
+                    && hsh[0].TryGetProperty("sha1", out var sha1v))
                 {
-                    return md5v.GetString()?.ToLowerInvariant();
+                    return sha1v.GetString()?.ToLowerInvariant();
                 }
             }
         }
