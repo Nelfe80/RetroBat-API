@@ -155,6 +155,7 @@ public sealed class MameLuaIngameProvider : IProvider
         var composedLast = new Dictionary<string, long>();
         var scoringStart = DateTime.UtcNow;   // repère pour monotonic_ms de la session certifiée
         long sensitiveFastForward = 0;        // avance rapide remontée par le plugin Lua (SENSITIVE)
+        string sensitiveCoreOptions = "";     // Phase E : réglages (DIP) capturés par le plugin Lua (SETTINGS)
 
         try
         {
@@ -256,6 +257,14 @@ public sealed class MameLuaIngameProvider : IProvider
                     await EvaluateTargetAsync(definition, targetId, oldValue, value, initialized: true);
                     await EvaluateCompositesAsync(definition, targetId, previousValues, composedLast, fired);
                 }
+                else if (command.Equals("SETTINGS", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Phase E : le plugin Lua remonte les reglages (DIP/vies/difficulte) sous forme
+                    // de chaine canonique triee "name=value;name=value". Digest cote APIExpose ;
+                    // le verifieur ne controle QUE si le profil epingle allowed_core_options_digest.
+                    sensitiveCoreOptions = parts.Length > 1 ? string.Join("|", parts.Skip(1)).Trim() : "";
+                    _logger.LogInformation("MAME Lua reglages (rom={Rom}) : {Options}", definition?.Rom ?? "?", sensitiveCoreOptions);
+                }
                 else if (command.Equals("SENSITIVE", StringComparison.OrdinalIgnoreCase))
                 {
                     // Anti-triche MAME (parite wrapper) : le plugin Lua remonte les vecteurs
@@ -293,7 +302,7 @@ public sealed class MameLuaIngameProvider : IProvider
             if (definition != null)
             {
                 UpdateSession(endpoint, definition, connected: false, lastRawLine: string.Empty, fired: fired);
-                await PublishScoringSessionAsync(definition, scoringStart, sensitiveFastForward);
+                await PublishScoringSessionAsync(definition, scoringStart, sensitiveFastForward, sensitiveCoreOptions);
                 await PublishSessionStoppedAsync(definition);
             }
         }
@@ -1103,7 +1112,7 @@ public sealed class MameLuaIngameProvider : IProvider
         }
     }
 
-    private async Task PublishScoringSessionAsync(MameLuaDefinition definition, DateTime start, long fastForward)
+    private async Task PublishScoringSessionAsync(MameLuaDefinition definition, DateTime start, long fastForward, string coreOptions)
     {
         try
         {
@@ -1120,6 +1129,7 @@ public sealed class MameLuaIngameProvider : IProvider
                 fast_forward = fastForward,
                 netplay = 0,
                 continues = 0,
+                core_options = coreOptions,   // Phase E : chaîne canonique des réglages (vide si non captés)
             };
             // Format attendu par le reporter (comme le wrapper) : { SystemId, Rom, Session=<JSON string> }.
             await _eventBus.PublishAsync(new EventEnvelope

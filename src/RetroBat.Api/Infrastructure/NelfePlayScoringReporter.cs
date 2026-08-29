@@ -503,6 +503,16 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         long fastForward = (long?)session["fast_forward"] ?? 0;
         long netplay = (long?)session["netplay"] ?? 0;
         long continues = (long?)session["continues"] ?? 0;
+        // Phase E : réglages (DIP/vies/difficulté) capturés par le listener sous forme de chaîne
+        // canonique triée. Absent (backend pas encore câblé) → placeholder stable. Le vérifieur ne
+        // contrôle le digest QUE si le profil épingle allowed_core_options_digest (opt-in additif).
+        string? coreOptionsRaw = (string?)session["core_options"];
+        string? coreOptions = FilterGameplayCoreOptions(coreOptionsRaw);
+        string coreOptionsDigest = !string.IsNullOrEmpty(coreOptions)
+            ? Crypto.Sha256Hex(coreOptions)
+            : Crypto.Sha256Hex("core-options@default");
+        if (!string.IsNullOrEmpty(coreOptions))
+            _logger?.LogInformation("Scoring Phase E : réglages gameplay = [{Options}] → core_options_digest={Digest} (à épingler ; brut = [{Raw}])", coreOptions, coreOptionsDigest, coreOptionsRaw);
 
         string ruleset = profile.GetProperty("ruleset").GetString() ?? "";
         long profileVersion = profile.GetProperty("profile_version").GetInt64();
@@ -604,7 +614,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             ["artifacts"] = new JsonObject
             {
                 ["core"] = Triple(coreSha), ["content"] = ContentArtifact(contentSha, contentMd5, contentSha1), ["mem"] = Triple(memSha),
-                ["core_options_digest"] = Crypto.Sha256Hex("core-options@default"),
+                ["core_options_digest"] = coreOptionsDigest,
                 ["bios"] = new JsonObject { ["mode"] = "none" },
             },
             ["process"] = new JsonObject
@@ -721,6 +731,49 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         }
     }
 
+    // Phase E : chaque core libretro a SES propres options (clés préfixées par le nom du core).
+    // Pour un core connu, on ne digère que l'allowlist des réglages qui AFFECTENT LE JEU ; le
+    // cosmétique (audio, filtres vidéo, ratio, volumes…) est ignoré. Une clé d'un backend non
+    // listé (DIP MAME « Difficulty »/« 1-1 »…) passe INCHANGÉE → les digests déjà épinglés (19xx)
+    // ne bougent pas. Ajouter un core = une entrée ici (partagée par tous ses jeux).
+    private static readonly Dictionary<string, HashSet<string>> CoreOptionsAllowlist = new()
+    {
+        ["genesis_plus_gx_"] = new(StringComparer.Ordinal)
+        {
+            "genesis_plus_gx_region_detect",   // PAL/NTSC → vitesse & difficulté
+            "genesis_plus_gx_vdp_mode",        // timing vidéo → vitesse
+            "genesis_plus_gx_system_hw",       // matériel émulé
+            "genesis_plus_gx_overclock",       // vitesse CPU → ralentissements
+            "genesis_plus_gx_no_sprite_limit", // rendu → peut changer le jeu
+            "genesis_plus_gx_lock_on",         // cartouche lock-on (S&K…)
+        },
+    };
+
+    // Réduit la chaîne canonique « clé=valeur;… » aux seuls réglages gameplay (voir ci-dessus).
+    private static string? FilterGameplayCoreOptions(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return raw;
+        var kept = new List<string>();
+        foreach (var pair in raw.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            int eq = pair.IndexOf('=');
+            string key = eq >= 0 ? pair.Substring(0, eq) : pair;
+            HashSet<string>? allow = null;
+            foreach (var kv in CoreOptionsAllowlist)
+                if (key.StartsWith(kv.Key, StringComparison.Ordinal)) { allow = kv.Value; break; }
+            if (allow is not null)
+            {
+                if (allow.Contains(key)) kept.Add(pair);   // gameplay → gardé ; sinon cosmétique → écarté
+            }
+            else
+            {
+                kept.Add(pair);   // backend non filtré (DIP MAME…) → inchangé
+            }
+        }
+        kept.Sort(StringComparer.Ordinal);
+        return string.Join(";", kept);
+    }
+
     // Codes d'échec du vérifieur → texte joueur (FR). Voir CoreVerifier / regles-de-score.
     private static string ReasonToText(string reason) => reason switch
     {
@@ -735,6 +788,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         "profile.core_mismatch" => "émulateur non reconnu",
         "profile.content_mismatch" => "ROM non reconnue",
         "profile.mem_mismatch" => "définition mémoire non reconnue",
+        "profile.core_options_mismatch" => "réglages non conformes (usine requis)",
         "profile.listener_unauthorized" => "wrapper non homologué",
         "profile.not_open" => "classement fermé",
         "profile.mismatch" => "jeu ou règlement non concordant",
