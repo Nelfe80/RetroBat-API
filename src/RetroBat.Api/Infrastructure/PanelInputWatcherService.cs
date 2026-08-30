@@ -182,12 +182,6 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         });
     }
 
-    /// <summary>
-    /// The slot this identity reaches on THIS cabinet. The per-player map wins when it
-    /// exists - a two-panel cabinet can be wired differently on each side - and the
-    /// shared map answers otherwise. Null when the identity reaches no slot: a face
-    /// button of a pad that is not part of the panel is not a panel event.
-    /// </summary>
     /// <summary>The system input an identity stands for, or null when it is a panel
     /// button.</summary>
     private static string? SystemInput(string identity) => identity.ToLowerInvariant() switch
@@ -199,32 +193,29 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         _ => null
     };
 
+    /// <summary>
+    /// The slot this identity reaches on THIS cabinet. The per-player cartography wins
+    /// when it exists - a two-panel cabinet can be wired differently on each side - and
+    /// the shared map answers otherwise. Null when the identity reaches no slot: a face
+    /// button of a pad that is not part of the panel is not a panel event.
+    /// </summary>
     private int? ResolveSlot(int player, string identity)
     {
-        // THE GLOBAL MAP FIRST - deliberately the opposite order to the remap and cfg
-        // exports, and it is not a mistake.
+        // THE PER-PLAYER CARTOGRAPHY FIRST: it is what the LedManager wizard measured on
+        // THIS panel, through the same reader this service uses, and what the remaps and
+        // the MAME cfg are written against - so the marquee lights the very button the
+        // game will fire.
         //
-        // A cabinet is cartographed TWICE, because two chains name the same physical
-        // button differently:
-        //
-        //   CabinetButtons          what SDL + gamecontrollerdb call it - the chain
-        //                           THIS reader uses
-        //   CabinetButtonsByPlayer  what RetroArch calls it - the chain the remaps and
-        //                           the MAME cfg are written against
-        //
-        // Measured button by button on a real cabinet, the two disagree on six of eight
-        // places: the top-left button answers to "x" for the reader and to "y" for the
-        // launcher, and the shoulders and triggers swap the same way. Resolving a press
-        // through the launcher's map lit the neighbouring button - while the games
-        // themselves stayed correctly mapped, since their remaps read the other map.
-        //
-        // So each chain resolves against the map that was measured THROUGH IT. The
-        // per-player maps remain the fallback: a cabinet cartographed only by the
-        // LedManager wizard has nothing else, and answering nothing would leave every
-        // button silent with the panel drawn and correct.
-        var map = ReadLegacyCabinetButtons();
-        if (map.Count == 0) map = CabinetCartographyStore.Read(player);
+        // The global CabinetButtons is a legacy FALLBACK only. The two maps once diverged
+        // - the reader used SDL's GameController layer while RetroArch used
+        // gamecontrollerdb, so they named x/y and the shoulders/triggers differently, and
+        // this resolved through the global on purpose. The reader now parses
+        // gamecontrollerdb itself and matches RetroArch, so the per-player map is the
+        // single truth; preferring the stale global lit the neighbouring button after a
+        // recabling (x/y, L1/L2 and R1/R2 swapped) even though the games stayed correct.
+        var map = CabinetCartographyStore.Read(player);
         if (map.Count == 0 && player != 1) map = CabinetCartographyStore.Read(1);
+        if (map.Count == 0) map = ReadLegacyCabinetButtons();
 
         foreach (var (slot, wired) in map)
         {
@@ -237,9 +228,9 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         return null;
     }
 
-    /// <summary>The cabinet-wide map: the one measured through SDL, which is the chain
-    /// this reader listens on. See <see cref="ResolveSlot"/> for why it wins here and
-    /// loses in the remap export.</summary>
+    /// <summary>The cabinet-wide legacy map, kept only as a fallback for a cabinet with
+    /// no per-player cartography yet. The per-player map the wizard measured wins - see
+    /// <see cref="ResolveSlot"/>.</summary>
     private static IReadOnlyDictionary<string, string> ReadLegacyCabinetButtons()
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
