@@ -43,6 +43,30 @@ public sealed class ReplayPlaybackController : ControllerBase
         return Ok(new { ok = true });
     }
 
+    public sealed record ControlRequest(
+        [property: JsonPropertyName("action")] string Action,
+        [property: JsonPropertyName("seconds")] double? Seconds);
+
+    /// <summary>Commande logique de lecture (aucune commande RetroArch libre).</summary>
+    [HttpPost("control")]
+    public async Task<IActionResult> Control([FromBody] ControlRequest? req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req?.Action))
+            return BadRequest(new { ok = false, error = new { code = "REPLAY_MANIFEST_INVALID" } });
+
+        switch (req.Action.ToLowerInvariant())
+        {
+            case "pause_toggle": await _playback.PauseToggleAsync(ct); break;
+            case "seek_relative": await _playback.SeekRelativeAsync(req.Seconds ?? 0, ct); break;
+            case "next_checkpoint": await _playback.NextCheckpointAsync(ct); break;
+            case "restart_run": await _playback.RestartRunAsync(ct); break;
+            case "stop": await _playback.StopAsync(ct); break;
+            default: return BadRequest(new { ok = false, error = new { code = "REPLAY_COMMAND_UNSUPPORTED" } });
+        }
+        var s = _playback.GetState();
+        return Ok(new { accepted = true, state = s.State, frame = s.Frame });
+    }
+
     [HttpGet("state")]
     public IActionResult State()
     {

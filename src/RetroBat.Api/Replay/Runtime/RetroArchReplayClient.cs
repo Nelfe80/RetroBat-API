@@ -35,6 +35,9 @@ public sealed class RetroArchReplayClient
     public Task RecordAsync(CancellationToken ct) => FireAsync("RECORD_REPLAY", ct);
     public Task HaltAsync(CancellationToken ct) => FireAsync("HALT_REPLAY", ct);
     public Task PlayAsync(CancellationToken ct) => FireAsync("PLAY_REPLAY", ct);
+    public Task PauseToggleAsync(CancellationToken ct) => FireAsync("PAUSE_TOGGLE", ct);
+    public Task NextCheckpointAsync(CancellationToken ct) => FireAsync("NEXT_REPLAY_CHECKPOINT", ct);
+    public Task PrevCheckpointAsync(CancellationToken ct) => FireAsync("PREV_REPLAY_CHECKPOINT", ct);
 
     /// <summary>SEEK_REPLAY &lt;frame&gt; -> "OK &lt;checkpoint&gt;" ou "NO".</summary>
     public Task<string?> SeekAsync(long frame, CancellationToken ct) => QueryAsync($"SEEK_REPLAY {frame}", ct);

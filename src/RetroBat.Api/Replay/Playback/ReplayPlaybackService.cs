@@ -26,6 +26,7 @@ public sealed class ReplayPlaybackService
     private string? _replayId;
     private long _frame;
     private long? _runStart, _runEnd, _replayEnd;
+    private double _nominalFps = 60;
     private bool _paused;
     private ReplayErrorCode _error = ReplayErrorCode.None;
     private Process? _process;
@@ -78,7 +79,7 @@ public sealed class ReplayPlaybackService
 
         // ── vérification runtime (R2 MVP : présence ; empreintes strictes quand le manifeste les portera) ──
         lock (_gate) { _state = ReplayPlaybackState.Verifying; _replayEnd = manifest.Frames.ReplayEnd;
-            _runStart = manifest.Frames.RunStart; _runEnd = manifest.Frames.RunEnd; }
+            _runStart = manifest.Frames.RunStart; _runEnd = manifest.Frames.RunEnd; _nominalFps = manifest.Frames.NominalFps; }
         if (hint is null) return Fail(ReplayErrorCode.RuntimeIncompatible);
         var coreDll = ResolveRealCore(hint.Core) ?? hint.CoreDll;
         if (!File.Exists(coreDll)) return Fail(ReplayErrorCode.CoreNotFound);
@@ -88,6 +89,27 @@ public sealed class ReplayPlaybackService
         var status = await _ra.GetStatusAsync(ct).ConfigureAwait(false);
         if (status is { ContentLoaded: true }) return Fail(ReplayErrorCode.GameAlreadyRunning);
 
+        // ── ReplayLaunchProfile : neutralise les hotkeys gamepad de RetroArch le temps de la
+        //    lecture (sinon SELECT = input_enable_hotkey, et SELECT+bouton ouvre le menu RA au
+        //    lieu d'aller à notre routeur). config_save_on_exit=false => AUCUNE persistance :
+        //    la config normale de l'utilisateur reste intacte. Appliqué via --appendconfig. ──
+        var sessionCfg = Path.Combine(_store.TempRoot, "replay-session.cfg");
+        try
+        {
+            File.WriteAllText(sessionCfg, string.Join('\n', new[]
+            {
+                "config_save_on_exit = \"false\"",
+                "input_menu_toggle_btn = \"nul\"",
+                "input_exit_emulator_btn = \"nul\"",
+                "input_menu_toggle_gamepad_combo = \"0\"",
+                "input_quit_gamepad_combo = \"0\"",
+                // NB : la vitesse de lecture est NORMALE à l'écran (confirmé visuellement) ; le
+                // compteur active_replay.frame avance ~2x mais c'est une sémantique interne, pas la
+                // cadence réelle. Aucun override de cadence n'est donc nécessaire.
+            }) + "\n");
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "Replay : écriture du profil de session échouée (hotkeys non neutralisées)"); }
+
         // ── lancement ──
         lock (_gate) _state = ReplayPlaybackState.Launching;
         var exe = Path.Combine(RetroBatPaths.RetroBatRoot, "emulators", "retroarch", "retroarch.exe");
@@ -96,6 +118,7 @@ public sealed class ReplayPlaybackService
         psi.ArgumentList.Add(hint.RomPath);
         psi.ArgumentList.Add("-P"); psi.ArgumentList.Add(objectPath);
         psi.ArgumentList.Add("--config"); psi.ArgumentList.Add(RetroBatPaths.RetroArchConfigPath);
+        psi.ArgumentList.Add("--appendconfig"); psi.ArgumentList.Add(sessionCfg);
         psi.ArgumentList.Add("--eof-exit");
 
         Process proc;
@@ -140,6 +163,43 @@ public sealed class ReplayPlaybackService
         await Publish("replay.finished", new { reason = "user" }).ConfigureAwait(false);
     }
 
+    // ── commandes de contrôle (appelées par le routeur panel R3 ou l'API) ──
+    public async Task PauseToggleAsync(CancellationToken ct)
+    {
+        if (!IsBusy) return;
+        await _ra.PauseToggleAsync(ct).ConfigureAwait(false); // _paused sera relu par le monitor
+    }
+
+    public async Task SeekRelativeAsync(double seconds, CancellationToken ct)
+    {
+        if (!IsBusy) return;
+        long cur, hi; long? loRun; double fps;
+        lock (_gate) { cur = _frame; hi = _replayEnd ?? 0; loRun = _runStart; fps = _nominalFps <= 0 ? 60 : _nominalFps; }
+        var target = cur + (long)Math.Round(seconds * fps);
+        var lo = loRun ?? 0;
+        if (target < lo) target = lo;
+        if (hi > 0 && target > hi) target = hi;
+        var resp = await _ra.SeekAsync(target, ct).ConfigureAwait(false);
+        if (resp is not null && resp.StartsWith("OK", StringComparison.OrdinalIgnoreCase))
+            lock (_gate) _frame = target; // approx ; le monitor recalera sur active_replay
+        else
+            _logger.LogDebug("Replay : SEEK {Target} refusé ({Resp})", target, resp);
+    }
+
+    public async Task NextCheckpointAsync(CancellationToken ct)
+    {
+        if (!IsBusy) return;
+        await _ra.NextCheckpointAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task RestartRunAsync(CancellationToken ct)
+    {
+        if (!IsBusy) return;
+        long target; lock (_gate) target = _runStart ?? 0;
+        await _ra.SeekAsync(target, ct).ConfigureAwait(false);
+        lock (_gate) _frame = target;
+    }
+
     private void StartMonitor()
     {
         _monitorCts?.Cancel();
@@ -154,16 +214,20 @@ public sealed class ReplayPlaybackService
         while (!ct.IsCancellationRequested)
         {
             Process? proc; lock (_gate) proc = _process;
+            // Fin PRIMAIRE = process fermé (--eof-exit à la vraie fin). L'inactivité n'est qu'un secours.
             if (proc is null || proc.HasExited) { Finish("process terminé"); return; }
 
             var active = await _ra.GetActiveReplayAsync(ct).ConfigureAwait(false);
             var status = await _ra.GetStatusAsync(ct).ConfigureAwait(false);
+            var paused = status is { State: "PAUSED" };
             lock (_gate)
             {
-                if (active is { Active: true }) { _frame = active.Frame; idle = 0; } else idle++;
-                _paused = status is { State: "PAUSED" };
+                if (active is { Active: true }) { _frame = active.Frame; idle = 0; }
+                else if (!paused) idle++;   // inactif EN PAUSE = normal, on ne compte pas (évite la fausse fin)
+                _paused = paused;
             }
-            if (idle >= 4) { Finish("fin du replay (active_replay inactif)"); return; }
+            // Secours : inactif hors pause pendant ~4 s (8×500 ms) = replay réellement terminé/bloqué.
+            if (idle >= 8) { Finish("fin du replay (active_replay inactif)"); return; }
             try { await Task.Delay(500, ct).ConfigureAwait(false); } catch (OperationCanceledException) { return; }
         }
     }
