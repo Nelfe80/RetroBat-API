@@ -1,0 +1,325 @@
+using System.Text;
+using RetroBat.Api.Replay.Models;
+using RetroBat.Api.Replay.Runtime;
+using RetroBat.Api.Replay.Storage;
+using RetroBat.Domain.Events;
+using RetroBat.Domain.Interfaces;
+using RetroBat.Domain.Paths;
+
+namespace RetroBat.Api.Replay.Recording;
+
+/// <summary>État persisté d'un enregistrement en cours (pour le recovery après crash).</summary>
+public sealed record ActiveRecordingState(
+    string Schema, string ReplayId, string SessionId, string System, string Game,
+    string? Crc32, DateTime StartedAt, string RetroarchVersion);
+
+/// <summary>
+/// Recorder Replay (R1). Découplé du scoring : il POLL GET_STATUS de RetroArch (UDP 55355)
+/// pour détecter le démarrage/arrêt d'une partie, envoie RECORD_REPLAY au début et
+/// HALT_REPLAY + finalisation à la fin (stabilisation fichier -> SHA-256 -> ObjectStore ->
+/// manifeste immuable -> index -> event replay.finalized). Une partie MAME standalone
+/// (pas de RetroArch) ne répond pas en UDP -> aucun enregistrement (normal, hors périmètre R1).
+/// </summary>
+public sealed class ReplayRecorderService : BackgroundService
+{
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(1500);
+    private const double NominalFps = 60.0; // R1 : approx (genesis ~59.92) ; affiné en R2 via av_info
+
+    private readonly RetroArchReplayClient _ra;
+    private readonly ReplayStore _store;
+    private readonly IEventBus _bus;
+    private readonly RetroBat.Api.Replay.Playback.ReplayPlaybackService _playback;
+    private readonly ILogger<ReplayRecorderService> _logger;
+
+    private sealed class Recording
+    {
+        public required string ReplayId;
+        public required string SessionId;
+        public required string System;
+        public required string Game;
+        public string? Crc32;
+        public DateTime StartedAtUtc;
+        public long LastFrame;
+        public required string RetroArchVersion;
+    }
+
+    private Recording? _current;
+
+    public ReplayRecorderService(RetroArchReplayClient ra, ReplayStore store, IEventBus bus,
+        RetroBat.Api.Replay.Playback.ReplayPlaybackService playback, ILogger<ReplayRecorderService> logger)
+    {
+        _ra = ra; _store = store; _bus = bus; _playback = playback; _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await TryRecoverAsync(stoppingToken).ConfigureAwait(false);
+        _logger.LogInformation("Replay recorder démarré (poll RetroArch {Ms} ms).", PollInterval.TotalMilliseconds);
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try { await TickAsync(stoppingToken).ConfigureAwait(false); }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex) { _logger.LogDebug(ex, "Replay recorder : tick en erreur"); }
+            try { await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false); }
+            catch (OperationCanceledException) { break; }
+        }
+
+        // Arrêt propre : finaliser une session en cours si possible.
+        if (_current is not null)
+            try { await FinalizeAsync(_current, recovered: false, CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Replay : finalisation à l'arrêt échouée"); }
+    }
+
+    private async Task TickAsync(CancellationToken ct)
+    {
+        var status = await _ra.GetStatusAsync(ct).ConfigureAwait(false);
+        var active = await _ra.GetActiveReplayAsync(ct).ConfigureAwait(false);
+
+        if (_current is null)
+        {
+            // Démarrage : un jeu RetroArch est chargé, aucun replay actif, et on n'est pas en lecture.
+            if (status is { ContentLoaded: true } && active is { Active: false } && !_playback.IsBusy)
+                await StartAsync(status, ct).ConfigureAwait(false);
+            return;
+        }
+
+        // En cours d'enregistrement : suivre la dernière frame connue.
+        if (active is { Recording: true }) _current.LastFrame = active.Frame;
+
+        // Fin : RetroArch fermé, jeu changé, ou l'enregistrement s'est arrêté.
+        var ended = status is null
+            || !status.ContentLoaded
+            || !string.Equals(status.Game, _current.Game, StringComparison.Ordinal)
+            || active is not { Recording: true };
+
+        if (ended)
+            await FinalizeAsync(_current, recovered: false, ct).ConfigureAwait(false);
+    }
+
+    private async Task StartAsync(RaStatus status, CancellationToken ct)
+    {
+        var version = await _ra.GetVersionAsync(ct).ConfigureAwait(false) ?? "unknown";
+        await _ra.RecordAsync(ct).ConfigureAwait(false);
+
+        // Confirmer que l'enregistrement a bien démarré (active_replay flags=8).
+        await Task.Delay(300, ct).ConfigureAwait(false);
+        var check = await _ra.GetActiveReplayAsync(ct).ConfigureAwait(false);
+        if (check is not { Recording: true })
+        {
+            _logger.LogDebug("Replay : RECORD_REPLAY non confirmé (active={Active}), on réessaiera au prochain tick.", check);
+            return;
+        }
+
+        var rec = new Recording
+        {
+            ReplayId = Ulid.NewReplayId(),
+            SessionId = Ulid.NewSessionId(),
+            System = status.System,
+            Game = status.Game,
+            Crc32 = status.Crc32,
+            StartedAtUtc = DateTime.UtcNow,
+            LastFrame = check.Frame,
+            RetroArchVersion = version.Trim(),
+        };
+        _current = rec;
+
+        _store.WriteJsonAtomic(_store.ActiveRecordingPath, new ActiveRecordingState(
+            "nelfe.replay.active-recording.v1", rec.ReplayId, rec.SessionId, rec.System, rec.Game,
+            rec.Crc32, rec.StartedAtUtc, rec.RetroArchVersion));
+
+        _logger.LogInformation("Replay : enregistrement démarré {ReplayId} ({System}/{Game}).",
+            rec.ReplayId, rec.System, rec.Game);
+        await PublishAsync("replay.recording.started", rec, ct).ConfigureAwait(false);
+    }
+
+    private async Task FinalizeAsync(Recording rec, bool recovered, CancellationToken ct)
+    {
+        _current = null; // on sort de l'état "en cours" immédiatement (idempotence)
+        try
+        {
+            await _ra.HaltAsync(ct).ConfigureAwait(false);
+
+            var file = FindReplayFile(rec.StartedAtUtc);
+            if (file is null)
+            {
+                _logger.LogWarning("Replay : aucun fichier .replay trouvé pour {ReplayId} — abandon.", rec.ReplayId);
+                _store.DeleteQuiet(_store.ActiveRecordingPath);
+                return;
+            }
+
+            if (!await StabilizeAsync(file, ct).ConfigureAwait(false))
+            {
+                _logger.LogWarning("Replay : fichier {File} non stabilisé — conservé pour diagnostic.", file);
+                _store.DeleteQuiet(_store.ActiveRecordingPath);
+                return;
+            }
+
+            var obj = await _store.ImportObjectAsync(file, ct).ConfigureAwait(false);
+            var manifest = BuildManifest(rec, obj);
+            _store.SaveManifest(manifest);
+            _store.SaveMeta(ReplayLocalMetadata.Fresh(rec.ReplayId, BuildLaunchHint(file)));
+            _store.RebuildIndex();
+            _store.DeleteQuiet(_store.ActiveRecordingPath);
+
+            _logger.LogInformation("Replay finalisé {ReplayId} : sha256={Sha} taille={Size} frames={Frames}{Rec}.",
+                rec.ReplayId, obj.Sha256, obj.Size, rec.LastFrame, recovered ? " (recovery)" : "");
+            await PublishAsync("replay.finalized", new { rec.ReplayId, rec.SessionId, obj.Sha256, obj.Size }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Replay : finalisation de {ReplayId} en échec", rec.ReplayId);
+        }
+    }
+
+    private ReplayManifest BuildManifest(Recording rec, ReplayObjectRef obj)
+    {
+        var game = new ReplayGame(
+            GameId: $"{Slug(rec.System)}/{Slug(rec.Game)}",
+            SystemId: rec.System,
+            RomGroup: null,
+            Ruleset: null,
+            Crc32: rec.Crc32);
+
+        var runtime = new ReplayRuntime(
+            RuntimeId: $"nelfe-{Slug(rec.System)}-r1",
+            RetroarchVersion: rec.RetroArchVersion,
+            RomSha256: null,          // R1 : empreintes runtime complétées en R2 (compat playback)
+            CoreSha256: null,
+            BiosSha256: null,
+            CoreOptionsDigest: null,
+            ReplayFormat: "bsv");
+
+        var frames = new ReplayFrames(
+            Start: 0,
+            RunStart: null,           // corrélation scoring = étape ultérieure (run.finalized)
+            RunEnd: null,
+            ReplayEnd: rec.LastFrame,
+            NominalFps: NominalFps);
+
+        return new ReplayManifest(
+            Schema: ReplayManifest.SchemaId,
+            ReplayId: rec.ReplayId,
+            SessionId: rec.SessionId,
+            Game: game,
+            CreatedAt: DateTime.UtcNow,
+            Origin: "home",
+            Runtime: runtime,
+            Object: obj,
+            Frames: frames,
+            ScoreLink: null,
+            Recovery: new ReplayRecovery(false));
+    }
+
+    /// <summary>Le fichier .replay le plus récent écrit depuis le début de l'enregistrement.</summary>
+    private static string? FindReplayFile(DateTime startedAtUtc)
+    {
+        var margin = startedAtUtc.AddSeconds(-2);
+        string? best = null; DateTime bestTime = DateTime.MinValue;
+        if (!Directory.Exists(RetroBatPaths.SavesRoot)) return null;
+        foreach (var f in Directory.EnumerateFiles(RetroBatPaths.SavesRoot, "*.replay*", SearchOption.AllDirectories))
+        {
+            var t = File.GetLastWriteTimeUtc(f);
+            if (t >= margin && t > bestTime) { best = f; bestTime = t; }
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// Dérive les indices de lancement (core dll + ROM) depuis le chemin du .replay
+    /// (saves/&lt;sys&gt;/libretro.&lt;core&gt;/&lt;jeu&gt;.replayN). Locaux -> stockés en meta, jamais au manifeste.
+    /// </summary>
+    private static ReplayLaunchHint? BuildLaunchHint(string replayFilePath)
+    {
+        try
+        {
+            var rel = Path.GetRelativePath(RetroBatPaths.SavesRoot, replayFilePath);
+            var parts = rel.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (parts.Length < 3) return null;
+            var systemFolder = parts[0];
+            var coreDir = parts[1]; // "libretro.genesis_plus_gx"
+            var core = coreDir.StartsWith("libretro.", StringComparison.OrdinalIgnoreCase)
+                ? coreDir["libretro.".Length..] : coreDir;
+            var name = parts[^1];
+            var idx = name.LastIndexOf(".replay", StringComparison.OrdinalIgnoreCase);
+            var gameBase = idx > 0 ? name[..idx] : name;
+
+            var coreDll = Path.Combine(RetroBatPaths.RetroBatRoot, "emulators", "retroarch", "cores", core + "_libretro.dll");
+            var romDir = Path.Combine(RetroBatPaths.RomsRoot, systemFolder);
+            var romPath = "";
+            if (Directory.Exists(romDir))
+            {
+                foreach (var f in Directory.EnumerateFiles(romDir, gameBase + ".*"))
+                {
+                    var ext = Path.GetExtension(f).ToLowerInvariant();
+                    if (ext is ".txt" or ".xml" or ".dat" or ".jpg" or ".png") continue;
+                    romPath = f; break;
+                }
+            }
+            return new ReplayLaunchHint(systemFolder, core, coreDll, romPath);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Attend que RetroArch ait fini d'écrire (taille+mtime stables 3 relevés, timeout 10 s).</summary>
+    private static async Task<bool> StabilizeAsync(string file, CancellationToken ct)
+    {
+        long lastLen = -1; DateTime lastWrite = DateTime.MinValue; int stable = 0;
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            var fi = new FileInfo(file);
+            if (fi.Exists && fi.Length > 0)
+            {
+                if (fi.Length == lastLen && fi.LastWriteTimeUtc == lastWrite) { if (++stable >= 3) return true; }
+                else { stable = 0; lastLen = fi.Length; lastWrite = fi.LastWriteTimeUtc; }
+            }
+            await Task.Delay(250, ct).ConfigureAwait(false);
+        }
+        return false;
+    }
+
+    /// <summary>Recovery au démarrage : un active-recording.json résiduel = session interrompue.</summary>
+    private async Task TryRecoverAsync(CancellationToken ct)
+    {
+        var state = _store.ReadJson<ActiveRecordingState>(_store.ActiveRecordingPath);
+        if (state is null) return;
+        _logger.LogInformation("Replay : session interrompue détectée ({ReplayId}), tentative de recovery.", state.ReplayId);
+        var file = FindReplayFile(state.StartedAt);
+        if (file is null || !await StabilizeAsync(file, ct).ConfigureAwait(false))
+        {
+            _logger.LogWarning("Replay : recovery impossible pour {ReplayId} (fichier absent/instable).", state.ReplayId);
+            _store.DeleteQuiet(_store.ActiveRecordingPath);
+            return;
+        }
+        var obj = await _store.ImportObjectAsync(file, ct).ConfigureAwait(false);
+        var rec = new Recording
+        {
+            ReplayId = state.ReplayId, SessionId = state.SessionId, System = state.System, Game = state.Game,
+            Crc32 = state.Crc32, StartedAtUtc = state.StartedAt, RetroArchVersion = state.RetroarchVersion, LastFrame = 0,
+        };
+        var manifest = BuildManifest(rec, obj) with { Recovery = new ReplayRecovery(true) };
+        _store.SaveManifest(manifest);
+        _store.SaveMeta(ReplayLocalMetadata.Fresh(rec.ReplayId, BuildLaunchHint(file)));
+        _store.RebuildIndex();
+        _store.DeleteQuiet(_store.ActiveRecordingPath);
+        _logger.LogInformation("Replay recovery OK {ReplayId} (sha256={Sha}).", rec.ReplayId, obj.Sha256);
+    }
+
+    private async Task PublishAsync(string type, object payload, CancellationToken ct)
+    {
+        try { await _bus.PublishAsync(new EventEnvelope { Type = type, Payload = payload }).ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogDebug(ex, "Replay : publication event {Type} échouée", type); }
+        _ = ct;
+    }
+
+    private static string Slug(string s)
+    {
+        var sb = new StringBuilder(s.Length);
+        foreach (var ch in s.Trim().ToLowerInvariant())
+            sb.Append(char.IsLetterOrDigit(ch) ? ch : '-');
+        var slug = sb.ToString();
+        while (slug.Contains("--")) slug = slug.Replace("--", "-");
+        return slug.Trim('-');
+    }
+}
