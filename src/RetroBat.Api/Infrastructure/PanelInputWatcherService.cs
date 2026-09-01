@@ -91,8 +91,12 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
                 // joysticks actually changed, and says what it found.
                 if (++_ticks % RescanEveryTicks == 0) RescanIfChanged();
 
+                // Boutons cabinet (canal historique) + directions (canal additif dpad/stick).
+                // Les deux passent par le même diff pressed/released ; les directions sont
+                // taguées System=DPAD par SystemInput et n'ont pas de slot (comme START/SELECT).
                 var now = _reader!.Snapshot()
                     .Select(p => (Device: p.DeviceIndex, p.Identity))
+                    .Concat(_reader!.SnapshotDirections().Select(p => (Device: p.DeviceIndex, p.Identity)))
                     .ToHashSet();
 
                 foreach (var down in now.Where(x => !held.Contains(x)))
@@ -190,6 +194,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         "select" => "SELECT",
         "l3" => "L3",
         "r3" => "R3",
+        "up" or "down" or "left" or "right" => "DPAD",
         _ => null
     };
 

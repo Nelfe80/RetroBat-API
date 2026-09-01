@@ -82,6 +82,17 @@ public sealed class ReplayPlaybackController : ControllerBase
             replay_end_frame = s.ReplayEndFrame,
             paused = s.Paused,
             error = s.Error,
+            nominal_fps = s.NominalFps,
+            card = s.Card is null ? null : new
+            {
+                game = s.Card.Game,
+                system = s.Card.System,
+                date = s.Card.DateText,
+                player = s.Card.Player,
+                score = s.Card.Score,
+                rank = s.Card.Rank,
+                certified = s.Card.Certified,
+            },
         });
     }
 

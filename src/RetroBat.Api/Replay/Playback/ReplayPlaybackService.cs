@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using RetroBat.Api.Replay.Models;
 using RetroBat.Api.Replay.Runtime;
 using RetroBat.Api.Replay.Storage;
@@ -29,6 +30,7 @@ public sealed class ReplayPlaybackService
     private double _nominalFps = 60;
     private bool _paused;
     private ReplayErrorCode _error = ReplayErrorCode.None;
+    private ReplayCard? _card;
     private Process? _process;
     private CancellationTokenSource? _monitorCts;
 
@@ -48,7 +50,14 @@ public sealed class ReplayPlaybackService
 
     public sealed record PlayResult(bool Accepted, string State, ReplayErrorCode Error);
     public sealed record StateSnapshot(string Mode, string State, string? ReplayId, long Frame,
-        long? RunStartFrame, long? RunEndFrame, long? ReplayEndFrame, bool Paused, string? Error);
+        long? RunStartFrame, long? RunEndFrame, long? ReplayEndFrame, bool Paused, string? Error,
+        double NominalFps, ReplayCard? Card);
+
+    /// <summary>Fiche « performance NelfePlay » de l'overlay (record sportif/esport). En R1
+    /// seuls Game/System/Date sont réels ; Player/Score/Rank/Certified sont des emplacements
+    /// (à brancher au record + au lien scoring, lot ultérieur).</summary>
+    public sealed record ReplayCard(string Game, string System, string DateText, string Player,
+        long? Score, int? Rank, bool Certified);
 
     public StateSnapshot GetState()
     {
@@ -57,7 +66,8 @@ public sealed class ReplayPlaybackService
             var mode = _state is ReplayPlaybackState.Idle ? "none" : "replay";
             return new StateSnapshot(mode, _state.ToString().ToLowerInvariant(), _replayId, _frame,
                 _runStart, _runEnd, _replayEnd, _paused,
-                _error == ReplayErrorCode.None ? null : _error.ToString());
+                _error == ReplayErrorCode.None ? null : _error.ToString(),
+                _nominalFps <= 0 ? 60 : _nominalFps, _card);
         }
     }
 
@@ -67,12 +77,13 @@ public sealed class ReplayPlaybackService
         {
             if (IsBusy) return new PlayResult(false, _state.ToString().ToLowerInvariant(), ReplayErrorCode.ReplayAlreadyRunning);
             _state = ReplayPlaybackState.Resolving; _replayId = replayId; _error = ReplayErrorCode.None;
-            _frame = 0; _paused = false;
+            _frame = 0; _paused = false; _card = null;
         }
 
         var manifest = _store.GetManifest(replayId);
         if (manifest is null) return Fail(ReplayErrorCode.ReplayNotFound);
         var meta = _store.GetMeta(replayId);
+        lock (_gate) _card = BuildCard(manifest, meta);
         var hint = meta?.Launch;
         var objectPath = _store.ObjectPath(manifest.Object.Sha256);
         if (!File.Exists(objectPath)) return Fail(ReplayErrorCode.ReplayObjectUnavailable);
@@ -159,7 +170,7 @@ public sealed class ReplayPlaybackService
         _monitorCts?.Cancel();
         await _ra.HaltAsync(ct).ConfigureAwait(false);
         try { if (proc is { HasExited: false }) proc.Kill(entireProcessTree: true); } catch { }
-        lock (_gate) { _process = null; _replayId = null; _state = ReplayPlaybackState.Idle; _frame = 0; }
+        lock (_gate) { _process = null; _replayId = null; _state = ReplayPlaybackState.Idle; _frame = 0; _card = null; }
         await Publish("replay.finished", new { reason = "user" }).ConfigureAwait(false);
     }
 
@@ -243,7 +254,7 @@ public sealed class ReplayPlaybackService
         try { if (proc is { HasExited: false }) proc.Kill(entireProcessTree: true); } catch { }
         _logger.LogInformation("Replay : lecture terminée ({Reason}).", reason);
         _ = Publish("replay.finished", new { reason });
-        lock (_gate) { if (_state is ReplayPlaybackState.Finished) { _state = ReplayPlaybackState.Idle; _replayId = null; _frame = 0; } }
+        lock (_gate) { if (_state is ReplayPlaybackState.Finished) { _state = ReplayPlaybackState.Idle; _replayId = null; _frame = 0; _card = null; } }
     }
 
     private PlayResult Fail(ReplayErrorCode code)
@@ -264,5 +275,42 @@ public sealed class ReplayPlaybackService
     {
         try { await _bus.PublishAsync(new EventEnvelope { Type = type, Payload = payload }).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogDebug(ex, "Replay : publication event {Type} échouée", type); }
+    }
+
+    // ── fiche performance (overlay) ──
+    private static readonly CultureInfo Fr = new("fr-FR");
+    private static readonly HashSet<string> RegionTokens = new(StringComparer.OrdinalIgnoreCase)
+    { "usa", "europe", "japan", "world", "eu", "us", "jp", "en", "fr", "de", "es", "it",
+      "rev", "proto", "beta", "demo", "sample", "unl", "pd" };
+
+    private static ReplayCard BuildCard(ReplayManifest m, ReplayLocalMetadata? meta)
+    {
+        var game = PrettifyGame(m.Game);
+        var system = PrettifyWords(m.Game.SystemId);
+        var date = m.CreatedAt.ToLocalTime().ToString("dd MMM yyyy", Fr);
+        // Non capturés en R1 : le joueur (à saisir au record / compte NelfePlay) et le rang
+        // (classement). Le score existe dans ScoreLink mais reste null tant que la corrélation
+        // scoring n'est pas branchée. Certifié = replay publié (état de publication).
+        const string player = "JOUEUR";
+        var score = m.ScoreLink?.ScoreValueSnapshot;
+        int? rank = null;
+        var certified = string.Equals(meta?.PublicationState, "published", StringComparison.OrdinalIgnoreCase);
+        return new ReplayCard(game, system, date, player, score, rank, certified);
+    }
+
+    private static string PrettifyGame(ReplayGame g)
+    {
+        if (!string.IsNullOrWhiteSpace(g.RomGroup)) return PrettifyWords(g.RomGroup!);
+        var seg = g.GameId.Contains('/') ? g.GameId[(g.GameId.LastIndexOf('/') + 1)..] : g.GameId;
+        var words = seg.Split('-', StringSplitOptions.RemoveEmptyEntries)
+            .TakeWhile(w => !RegionTokens.Contains(w));
+        return PrettifyWords(string.Join(' ', words));
+    }
+
+    private static string PrettifyWords(string raw)
+    {
+        var s = raw.Replace('-', ' ').Replace('_', ' ').Trim();
+        if (s.Length == 0) return raw;
+        return Fr.TextInfo.ToTitleCase(s.ToLowerInvariant());
     }
 }

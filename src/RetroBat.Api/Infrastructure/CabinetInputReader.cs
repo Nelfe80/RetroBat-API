@@ -83,6 +83,9 @@ public sealed class CabinetInputReader : IDisposable
     private static extern short SDL_JoystickGetAxis(IntPtr joystick, int axis);
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern byte SDL_JoystickGetHat(IntPtr joystick, int hat);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern SdlGuid SDL_JoystickGetGUID(IntPtr joystick);
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
@@ -106,6 +109,12 @@ public sealed class CabinetInputReader : IDisposable
         public Dictionary<int, string> ButtonToIdentity { get; } = new();
         public List<(int Axis, int Sign, string Identity)> AxisToIdentity { get; } = new();
         public bool HasMapping => ButtonToIdentity.Count > 0 || AxisToIdentity.Count > 0;
+
+        // Canal DIRECTIONS additif (dpad/hat/stick gauche), séparé de la résolution des
+        // boutons cabinet ci-dessus. Sert uniquement au transport Replay.
+        public List<(int Hat, int Mask, string Direction)> HatDirections { get; } = new();
+        public List<(int Button, string Direction)> ButtonDirections { get; } = new();
+        public List<(int Axis, int Sign, string Direction)> AxisDirections { get; } = new();
     }
 
     /// <summary>SDL controller-name → RetroPad identity (fixed sdl2 face swap).</summary>
@@ -116,6 +125,13 @@ public sealed class CabinetInputReader : IDisposable
         ["lefttrigger"] = "l2", ["righttrigger"] = "r2",
         ["back"] = "select", ["start"] = "start",
         ["leftstick"] = "l3", ["rightstick"] = "r3",
+    };
+
+    /// <summary>Dpad names → direction de transport Replay (additif, hors CabinetButtons).
+    /// Le stick gauche (leftx/lefty) est traité à part car un seul axe porte deux directions.</summary>
+    private static readonly IReadOnlyDictionary<string, string> DpadDir = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["dpup"] = "up", ["dpdown"] = "down", ["dpleft"] = "left", ["dpright"] = "right",
     };
 
     /// <summary>Analog triggers/axes count as pressed past ~50% of the +32767 range.</summary>
@@ -287,6 +303,119 @@ public sealed class CabinetInputReader : IDisposable
         return result;
     }
 
+    /// <summary>Everything held on the DIRECTION channel right now (identity in
+    /// up/down/left/right), read from the dpad hat, the dpad-as-button/axis mapping, or the
+    /// left stick. Kept SEPARATE from <see cref="Snapshot"/> so cabinet button resolution
+    /// (and the wiring wizard's WaitForPress) is untouched.</summary>
+    public List<Press> SnapshotDirections()
+    {
+        SDL_JoystickUpdate();
+        var result = new List<Press>();
+        for (var d = 0; d < _devices.Count; d++)
+        {
+            var device = _devices[d];
+
+            foreach (var (hat, mask, direction) in device.HatDirections)
+            {
+                if ((SDL_JoystickGetHat(device.Handle, hat) & mask) != 0)
+                {
+                    result.Add(new Press(direction, d, -1));
+                }
+            }
+
+            foreach (var (button, direction) in device.ButtonDirections)
+            {
+                if (SDL_JoystickGetButton(device.Handle, button) != 0)
+                {
+                    result.Add(new Press(direction, d, button));
+                }
+            }
+
+            foreach (var (axis, sign, direction) in device.AxisDirections)
+            {
+                var value = SDL_JoystickGetAxis(device.Handle, axis);
+                var pressed = sign < 0 ? value < -AxisThreshold : value > AxisThreshold;
+                if (pressed)
+                {
+                    result.Add(new Press(direction, d, -1));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>Records a dpad/stick token onto the direction channel. Understands the
+    /// three gamecontrollerdb encodings (hat hX.Y, button bN, axis [±]aN) plus the left
+    /// stick (leftx/lefty), where one axis carries two opposite directions.</summary>
+    private static void TryAddDirection(Device device, string name, string rawValue)
+    {
+        // Left stick: a single axis maps to two directions (negative vs positive).
+        if (name.Equals("leftx", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("lefty", StringComparison.OrdinalIgnoreCase))
+        {
+            var (axis, inverted) = ParseStickAxis(rawValue);
+            if (axis < 0) return;
+            var negSign = inverted ? +1 : -1; // '~' flips which end is which
+            var posSign = -negSign;
+            if (name.Equals("leftx", StringComparison.OrdinalIgnoreCase))
+            {
+                device.AxisDirections.Add((axis, negSign, "left"));
+                device.AxisDirections.Add((axis, posSign, "right"));
+            }
+            else
+            {
+                device.AxisDirections.Add((axis, negSign, "up"));
+                device.AxisDirections.Add((axis, posSign, "down"));
+            }
+
+            return;
+        }
+
+        if (!DpadDir.TryGetValue(name, out var dir)) return;
+
+        var value = rawValue.TrimEnd('~');
+        var sign = 0;
+        if (value.Length > 0 && (value[0] == '+' || value[0] == '-'))
+        {
+            sign = value[0] == '-' ? -1 : 1;
+            value = value[1..];
+        }
+
+        if (value.Length < 2) return;
+        var kind = value[0];
+        var body = value[1..];
+
+        if (kind == 'h')
+        {
+            var dot = body.IndexOf('.');
+            if (dot <= 0) return;
+            if (int.TryParse(body[..dot], out var hat) && int.TryParse(body[(dot + 1)..], out var mask))
+            {
+                device.HatDirections.Add((hat, mask, dir));
+            }
+        }
+        else if (kind == 'b')
+        {
+            if (int.TryParse(body, out var button)) device.ButtonDirections.Add((button, dir));
+        }
+        else if (kind == 'a')
+        {
+            if (int.TryParse(body, out var axis)) device.AxisDirections.Add((axis, sign == 0 ? 1 : sign, dir));
+        }
+    }
+
+    /// <summary>Parses a leftx/lefty axis token ("a0", "a0~", "+a0"): axis index and whether
+    /// the '~' inversion flag is set. Returns axis -1 when it is not an axis token.</summary>
+    private static (int Axis, bool Inverted) ParseStickAxis(string raw)
+    {
+        var inverted = raw.EndsWith("~", StringComparison.Ordinal);
+        var value = raw.TrimEnd('~');
+        if (value.Length > 0 && (value[0] == '+' || value[0] == '-')) value = value[1..];
+        if (value.Length >= 2 && value[0] == 'a' && int.TryParse(value[1..], out var axis)) return (axis, inverted);
+        return (-1, false);
+    }
+
     // ---- gamecontrollerdb ---------------------------------------------------
 
     /// <summary>Parses the DB into split token lines (GUID first, then name, then
@@ -345,6 +474,9 @@ public sealed class CabinetInputReader : IDisposable
             var name = token[..colon];
             if (!FaceSwap.TryGetValue(name, out var identity))
             {
+                // Additif : dpad / stick gauche → directions de transport Replay. Ne touche
+                // PAS la résolution des boutons cabinet (ButtonToIdentity/AxisToIdentity).
+                TryAddDirection(device, name, token[(colon + 1)..]);
                 continue; // dpad / guide / misc - not a cabinet identity
             }
 

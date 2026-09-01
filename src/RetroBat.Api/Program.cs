@@ -369,6 +369,7 @@ builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.ReplayStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayPlaybackService>();
 builder.Services.AddHostedService<RetroBat.Api.Replay.Recording.ReplayRecorderService>();
 builder.Services.AddHostedService<RetroBat.Api.Replay.Input.ReplayInputRouterService>();
+builder.Services.AddHostedService<RetroBat.Api.Replay.Overlay.ReplayOverlayService>();
 
 if (!testModeRequested)
 {
