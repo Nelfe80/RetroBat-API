@@ -107,6 +107,38 @@ public sealed class NelfePlayController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Sonde « bridge » (CDC §10) : le site nelfeplay.com l'appelle sur 127.0.0.1:12345 pour savoir
+    /// si le runtime local est present, s'il est appaire (identite = joueur/auteur des reactions) et
+    /// ce qu'il sait faire (play/replay). Un fetch qui reussit = runtime present ; un echec = absent
+    /// (le funnel envoie alors vers /setup). Aucun chemin/IP local n'est expose.
+    /// </summary>
+    [HttpGet("bridge")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult GetBridge()
+    {
+        var v = typeof(NelfePlayController).Assembly.GetName().Version;
+        var status = _agent.Status;
+        return Ok(new
+        {
+            available = true,
+            version = v is null ? "0" : $"{v.Major}.{v.Minor}.{v.Build}",
+            protocol = 1,
+            paired = _device.IsPaired,
+            pseudo = status.Pseudo,          // identite (joueur / auteur des reactions) ; null si non appaire
+            playerCode = status.PlayerCode,
+            capabilities = new
+            {
+                play = false,                // POST /nelfeplay/play pas encore cable
+                replay = true,               // lecture d'un replay OK (runtime local)
+                live = false,
+                nelfenet = false,
+                object_store = true,         // ReplayStore local
+                share = false,
+            },
+        });
+    }
+
     /// <summary>Force un releve immediat des jeux a installer.</summary>
     [HttpPost("sync")]
     [ProducesResponseType(StatusCodes.Status200OK)]

@@ -241,6 +241,9 @@ public sealed class ReplayPlaybackService
                 frame = _frame; end = _replayEnd ?? 0;
             }
 
+            // Réarme le figeage si on a rembobiné bien avant la fin (→ re-fige si on rejoue jusqu'au bout).
+            if (endPauseSent && end > 0 && frame < end - EndPauseMargin - 90) endPauseSent = false;
+
             // AUTO-PAUSE UNE SEULE FOIS un peu avant la fin (latch) → fige, permet de revenir en arrière (◀).
             if (!endPauseSent && end > 0 && frame >= end - EndPauseMargin && !paused)
             {
