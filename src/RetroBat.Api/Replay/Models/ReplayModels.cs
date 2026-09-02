@@ -74,6 +74,15 @@ public sealed record ReplayLocalMetadata(
 /// <summary>Entrée d'index (vue dérivée, reconstructible depuis les manifests).</summary>
 public sealed record ReplayIndexEntry(string ReplayId, string GameId, DateTime CreatedAt, string ObjectSha256);
 
+/// <summary>
+/// Réaction émise pendant une lecture (audience) — R4. Famille = hype/wow/respect/laugh/
+/// tension/ouch/love/rage/celebrate ; niveau 1-3 (intensité = maintien, ou nb de boutons pour
+/// l'accord « celebrate »). Frame = position dans le replay ; Ts = horloge murale (ms). Lang =
+/// langue de l'auteur (affichage). Stockées en JSONL pour être rejouées (affichage = R4.2/R5).
+/// </summary>
+public sealed record ReplayReaction(
+    string ReplayId, string Reaction, int Level, long Frame, long TsMs, string Lang, bool Chord);
+
 public enum ReplayRecordingState { Idle, Starting, Recording, Stopping, Finalizing, Ready, Error }
 
 public enum ReplayPlaybackState { Idle, Resolving, Verifying, Preparing, Launching, Playing, Paused, Stopping, Finished, Error }

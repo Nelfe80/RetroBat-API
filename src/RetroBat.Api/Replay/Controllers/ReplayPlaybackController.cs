@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using RetroBat.Api.Replay.Models;
 using RetroBat.Api.Replay.Playback;
+using RetroBat.Api.Replay.Storage;
 
 namespace RetroBat.Api.Replay.Controllers;
 
@@ -13,8 +14,13 @@ namespace RetroBat.Api.Replay.Controllers;
 public sealed class ReplayPlaybackController : ControllerBase
 {
     private readonly ReplayPlaybackService _playback;
+    private readonly ReplayStore _store;
 
-    public ReplayPlaybackController(ReplayPlaybackService playback) => _playback = playback;
+    public ReplayPlaybackController(ReplayPlaybackService playback, ReplayStore store)
+    {
+        _playback = playback;
+        _store = store;
+    }
 
     // Clé canonique CDC / front : replay_id.
     public sealed record PlayRequest([property: JsonPropertyName("replay_id")] string ReplayId);
@@ -94,6 +100,19 @@ public sealed class ReplayPlaybackController : ControllerBase
                 certified = s.Card.Certified,
             },
         });
+    }
+
+    /// <summary>Réactions horodatées d'un replay (JSONL rejouable). Sert l'affichage (étape suivante).</summary>
+    [HttpGet("reactions")]
+    public IActionResult Reactions([FromQuery(Name = "replay_id")] string? replayId)
+    {
+        if (string.IsNullOrWhiteSpace(replayId))
+            return BadRequest(new { ok = false, error = new { code = "REPLAY_MANIFEST_INVALID" } });
+        var items = _store.ReadReactions(replayId).Select(r => new
+        {
+            reaction = r.Reaction, level = r.Level, frame = r.Frame, ts_ms = r.TsMs, lang = r.Lang, chord = r.Chord,
+        });
+        return Ok(new { replay_id = replayId, items });
     }
 
     // ReplayErrorCode (PascalCase) -> code API stable UPPER_SNAKE_CASE.

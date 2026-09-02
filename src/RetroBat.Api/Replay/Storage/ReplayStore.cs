@@ -23,8 +23,16 @@ public sealed class ReplayStore
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    // Compact (une ligne) pour le journal JSONL des réactions.
+    private static readonly JsonSerializerOptions JsonLine = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
     private readonly ILogger<ReplayStore> _logger;
-    private readonly string _root, _manifests, _meta, _objects, _index, _temp;
+    private readonly string _root, _manifests, _meta, _objects, _index, _temp, _reactions;
+    private readonly object _reactLock = new();
 
     public string ActiveRecordingPath { get; }
     public string TempRoot => _temp;
@@ -38,8 +46,9 @@ public sealed class ReplayStore
         _objects = Path.Combine(_root, "objects", "sha256");
         _index = Path.Combine(_root, "index");
         _temp = Path.Combine(_root, "temp");
+        _reactions = Path.Combine(_root, "reactions");
         ActiveRecordingPath = Path.Combine(_root, "active-recording.json");
-        foreach (var d in new[] { _manifests, _meta, _objects, _index, _temp })
+        foreach (var d in new[] { _manifests, _meta, _objects, _index, _temp, _reactions })
             Directory.CreateDirectory(d);
     }
 
@@ -135,5 +144,32 @@ public sealed class ReplayStore
     {
         var doc = ReadJson<ReplayIndexDoc>(IndexPath);
         return doc?.Entries ?? (IReadOnlyList<ReplayIndexEntry>)Array.Empty<ReplayIndexEntry>();
+    }
+
+    // ── réactions (journal JSONL append-only par replay, rejouable) ─────────
+    public string ReactionsPath(string replayId) => Path.Combine(_reactions, replayId + ".jsonl");
+
+    public void AppendReaction(ReplayReaction r)
+    {
+        var line = JsonSerializer.Serialize(r, JsonLine);
+        lock (_reactLock) File.AppendAllText(ReactionsPath(r.ReplayId), line + "\n");
+    }
+
+    public IReadOnlyList<ReplayReaction> ReadReactions(string replayId)
+    {
+        var path = ReactionsPath(replayId);
+        var list = new List<ReplayReaction>();
+        if (!File.Exists(path)) return list;
+        try
+        {
+            foreach (var l in File.ReadAllLines(path))
+            {
+                if (string.IsNullOrWhiteSpace(l)) continue;
+                var r = JsonSerializer.Deserialize<ReplayReaction>(l, JsonLine);
+                if (r is not null) list.Add(r);
+            }
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "Replay : réactions illisibles {Path}", path); }
+        return list;
     }
 }
