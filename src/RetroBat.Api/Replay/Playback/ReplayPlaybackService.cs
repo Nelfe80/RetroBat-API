@@ -20,6 +20,7 @@ public sealed class ReplayPlaybackService
     private readonly RetroArchReplayClient _ra;
     private readonly ReplayStore _store;
     private readonly IEventBus _bus;
+    private readonly RetroBat.Api.Infrastructure.NelfePlayAgentService _agent;   // pseudo appairé = joueur de la carte
     private readonly ILogger<ReplayPlaybackService> _logger;
 
     private readonly object _gate = new();
@@ -35,9 +36,9 @@ public sealed class ReplayPlaybackService
     private CancellationTokenSource? _monitorCts;
 
     public ReplayPlaybackService(RetroArchReplayClient ra, ReplayStore store, IEventBus bus,
-        ILogger<ReplayPlaybackService> logger)
+        RetroBat.Api.Infrastructure.NelfePlayAgentService agent, ILogger<ReplayPlaybackService> logger)
     {
-        _ra = ra; _store = store; _bus = bus; _logger = logger;
+        _ra = ra; _store = store; _bus = bus; _agent = agent; _logger = logger;
     }
 
     /// <summary>Vrai pendant qu'une lecture est en cours (le recorder s'abstient d'enregistrer).</summary>
@@ -83,7 +84,7 @@ public sealed class ReplayPlaybackService
         var manifest = _store.GetManifest(replayId);
         if (manifest is null) return Fail(ReplayErrorCode.ReplayNotFound);
         var meta = _store.GetMeta(replayId);
-        lock (_gate) _card = BuildCard(manifest, meta);
+        lock (_gate) _card = BuildCard(manifest, meta, _agent.Status.Pseudo);
         var hint = meta?.Launch;
         var objectPath = _store.ObjectPath(manifest.Object.Sha256);
         if (!File.Exists(objectPath)) return Fail(ReplayErrorCode.ReplayObjectUnavailable);
@@ -305,15 +306,16 @@ public sealed class ReplayPlaybackService
     { "usa", "europe", "japan", "world", "eu", "us", "jp", "en", "fr", "de", "es", "it",
       "rev", "proto", "beta", "demo", "sample", "unl", "pd" };
 
-    private static ReplayCard BuildCard(ReplayManifest m, ReplayLocalMetadata? meta)
+    private static ReplayCard BuildCard(ReplayManifest m, ReplayLocalMetadata? meta, string? pseudo)
     {
         var game = PrettifyGame(m.Game);
         var system = PrettifyWords(m.Game.SystemId);
         var date = m.CreatedAt.ToLocalTime().ToString("dd MMM yyyy", Fr);
-        // Non capturés en R1 : le joueur (à saisir au record / compte NelfePlay) et le rang
-        // (classement). Le score existe dans ScoreLink mais reste null tant que la corrélation
-        // scoring n'est pas branchée. Certifié = replay publié (état de publication).
-        const string player = "JOUEUR";
+        // Joueur = pseudo de la borne appairée (l'auteur du record sur CETTE machine) ;
+        // « JOUEUR » seulement si non appairé. Le rang reste à brancher sur le scoring ;
+        // le score existe dans ScoreLink mais reste null tant que la corrélation n'y écrit
+        // pas. Certifié = replay publié (état de publication).
+        var player = string.IsNullOrWhiteSpace(pseudo) ? "JOUEUR" : pseudo!;
         var score = m.ScoreLink?.ScoreValueSnapshot;
         int? rank = null;
         var certified = string.Equals(meta?.PublicationState, "published", StringComparison.OrdinalIgnoreCase);

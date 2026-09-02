@@ -42,6 +42,7 @@ public sealed class ReplayReactionService : IHostedService
     private readonly IEventBus _bus;
     private readonly ReplayPlaybackService _playback;
     private readonly ReplayStore _store;
+    private readonly RetroBat.Api.Infrastructure.NelfePlayAgentService _agent;   // pseudo appairé = auteur du react
     private readonly ILogger<ReplayReactionService> _logger;
 
     private readonly object _gate = new();
@@ -57,9 +58,9 @@ public sealed class ReplayReactionService : IHostedService
     private IDisposable? _sub;
 
     public ReplayReactionService(IEventBus bus, ReplayPlaybackService playback, ReplayStore store,
-        ILogger<ReplayReactionService> logger)
+        RetroBat.Api.Infrastructure.NelfePlayAgentService agent, ILogger<ReplayReactionService> logger)
     {
-        _bus = bus; _playback = playback; _store = store; _logger = logger;
+        _bus = bus; _playback = playback; _store = store; _agent = agent; _logger = logger;
     }
 
     public Task StartAsync(CancellationToken ct) { _sub = _bus.Subscribe<EventEnvelope>(OnEvent); return Task.CompletedTask; }
@@ -202,8 +203,10 @@ public sealed class ReplayReactionService : IHostedService
             _cooldownUntil = DateTime.UtcNow.AddMilliseconds(CooldownMs);
         }
 
+        var pseudo = _agent.Status.Pseudo;
         var r = new ReplayReaction(st.ReplayId ?? "", family, level, st.Frame,
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Lang(), chord);
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Lang(), chord,
+            string.IsNullOrWhiteSpace(pseudo) ? null : pseudo);
         try { _store.AppendReaction(r); }
         catch (Exception ex) { _logger.LogDebug(ex, "Replay : append réaction échoué"); }
         _ = Publish(r);
