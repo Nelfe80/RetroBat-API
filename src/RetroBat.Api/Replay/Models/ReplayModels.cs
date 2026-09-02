@@ -63,7 +63,12 @@ public sealed record ReplayLocalMetadata(
     string PublicationState,
     DateTime LastAccessAt,
     bool CreatedByThisDevice,
-    ReplayLaunchHint? Launch)
+    ReplayLaunchHint? Launch,
+    // Identité du record pour la carte du player, estampillée au scellement par le
+    // reporter (#2) quand le score est publié. Null tant que non renseigné.
+    string? Player = null,
+    long? ScoreValue = null,
+    int? Rank = null)
 {
     public const string SchemaId = "nelfe.replay.local-meta.v1";
 

@@ -315,9 +315,13 @@ public sealed class ReplayPlaybackService
         // « JOUEUR » seulement si non appairé. Le rang reste à brancher sur le scoring ;
         // le score existe dans ScoreLink mais reste null tant que la corrélation n'y écrit
         // pas. Certifié = replay publié (état de publication).
-        var player = string.IsNullOrWhiteSpace(pseudo) ? "JOUEUR" : pseudo!;
-        var score = m.ScoreLink?.ScoreValueSnapshot;
-        int? rank = null;
+        // Player/score/rang viennent en priorité de la méta estampillée au scellement
+        // (le vrai record) ; sinon on retombe sur le pseudo appairé (player) et le
+        // snapshot du manifeste (score). Le rang n'existe que via la méta.
+        var player = !string.IsNullOrWhiteSpace(meta?.Player) ? meta!.Player!
+            : (string.IsNullOrWhiteSpace(pseudo) ? "JOUEUR" : pseudo!);
+        var score = meta?.ScoreValue ?? m.ScoreLink?.ScoreValueSnapshot;
+        int? rank = meta?.Rank;
         var certified = string.Equals(meta?.PublicationState, "published", StringComparison.OrdinalIgnoreCase);
         return new ReplayCard(game, system, date, player, score, rank, certified);
     }

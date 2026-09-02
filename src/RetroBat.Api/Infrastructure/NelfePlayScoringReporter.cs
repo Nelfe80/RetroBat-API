@@ -56,8 +56,9 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     // (replay.finalized). On rapproche les deux — quel que soit l'ordre d'arrivée —
     // et on POST /api/v1/agent/scores/replay-link. Purement additif et best-effort :
     // un échec n'affecte ni le scoring ni l'enregistrement.
+    private readonly RetroBat.Api.Replay.Storage.ReplayStore? _replayStore;   // pour estampiller score/rang sur la méta du replay
     private string? _activeReplayId;
-    private readonly Dictionary<string, (string sessionId, string visibility, DateTime at)> _pendingScoreLink = new();
+    private readonly Dictionary<string, (string sessionId, string visibility, long? score, int? rank, DateTime at)> _pendingScoreLink = new();
     private readonly Dictionary<string, (string sha256, DateTime at)> _finalizedReplay = new();
     private static readonly TimeSpan ReplayLinkTtl = TimeSpan.FromMinutes(20);
 
@@ -70,8 +71,10 @@ public sealed class NelfePlayScoringReporter : BackgroundService
         ClaimOverlayService? claimOverlay = null,
         NelfePlayScoringSessionService? scoringSession = null,
         IEmulationStationNotificationService? esNotify = null,
+        RetroBat.Api.Replay.Storage.ReplayStore? replayStore = null,
         ILogger<NelfePlayScoringReporter>? logger = null)
     {
+        _replayStore = replayStore;
         _eventBus = eventBus;
         _httpFactory = httpFactory;
         _devices = devices;
@@ -1025,10 +1028,21 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     {
         try
         {
-            var status = (string?)((JsonNode.Parse(responseBody) as JsonObject)?["status"]) ?? "";
+            var verdict = JsonNode.Parse(responseBody) as JsonObject;
+            var status = (string?)(verdict?["status"]) ?? "";
             if (status != "published") return;
             var sessionId = (string?)passport["session_id"];
             if (string.IsNullOrEmpty(sessionId)) return;
+
+            // Score (metric.value peut être nombre ou chaîne) + rang (verdict serveur),
+            // pour la carte du player affichée à la lecture.
+            long? score = null;
+            if ((passport["metric"] as JsonObject)?["value"] is JsonValue mv)
+            {
+                if (mv.TryGetValue<long>(out var ml)) score = ml;
+                else if (mv.TryGetValue<string>(out var ms) && long.TryParse(ms, out var mp)) score = mp;
+            }
+            int? rank = (verdict?["rank"] is JsonValue rv && rv.TryGetValue<int>(out var rk)) ? rk : (int?)null;
 
             string? replayId;
             lock (_sync)
@@ -1036,7 +1050,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
                 replayId = _activeReplayId;
                 if (string.IsNullOrEmpty(replayId)) return;
                 PruneReplayLinks();
-                _pendingScoreLink[replayId!] = (sessionId!, "public", DateTime.UtcNow);
+                _pendingScoreLink[replayId!] = (sessionId!, "public", score, rank, DateTime.UtcNow);
             }
             TryRegisterReplayLink(replayId!);
         }
@@ -1051,15 +1065,31 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     private void TryRegisterReplayLink(string replayId)
     {
         string sessionId, visibility, sha;
+        long? score; int? rank;
         lock (_sync)
         {
             if (!_pendingScoreLink.TryGetValue(replayId, out var p)) return;
             if (!_finalizedReplay.TryGetValue(replayId, out var f)) return;
-            sessionId = p.sessionId; visibility = p.visibility; sha = f.sha256;
+            sessionId = p.sessionId; visibility = p.visibility; score = p.score; rank = p.rank; sha = f.sha256;
             _pendingScoreLink.Remove(replayId);
             _finalizedReplay.Remove(replayId);
         }
+        StampReplayCard(replayId, score, rank);
         _ = RegisterReplayLinkAsync(sessionId, replayId, sha, visibility, CancellationToken.None);
+    }
+
+    // Estampille la carte du replay (score + rang) sur la méta locale, pour l'overlay
+    // de lecture. Best-effort : n'affecte ni le scoring ni l'enregistrement.
+    private void StampReplayCard(string replayId, long? score, int? rank)
+    {
+        try
+        {
+            var meta = _replayStore?.GetMeta(replayId);
+            if (meta is null) return;
+            _replayStore!.SaveMeta(meta with { ScoreValue = score, Rank = rank });
+            Trace($"REPLAY-CARD estampillée {replayId} score={score} rank={rank}");
+        }
+        catch (Exception ex) { _logger?.LogDebug(ex, "Replay-link : estampillage carte impossible."); }
     }
 
     // Appelé sous _sync : oublie les rapprochements jamais complétés (partie sans score
