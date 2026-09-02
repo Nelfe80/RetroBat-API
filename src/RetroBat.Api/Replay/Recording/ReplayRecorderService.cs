@@ -130,7 +130,11 @@ public sealed class ReplayRecorderService : BackgroundService
 
         _logger.LogInformation("Replay : enregistrement démarré {ReplayId} ({System}/{Game}).",
             rec.ReplayId, rec.System, rec.Game);
-        await PublishAsync("replay.recording.started", rec, ct).ConfigureAwait(false);
+        // Objet anonyme (propriétés) et non `rec` (champs) : le payload doit rester
+        // sérialisable pour les abonnés qui le lisent en JSON (ex. le reporter, qui
+        // retient l'id du replay actif pour le lien replay↔score).
+        await PublishAsync("replay.recording.started",
+            new { rec.ReplayId, rec.SessionId, rec.System, rec.Game }, ct).ConfigureAwait(false);
     }
 
     private async Task FinalizeAsync(Recording rec, bool recovered, CancellationToken ct)

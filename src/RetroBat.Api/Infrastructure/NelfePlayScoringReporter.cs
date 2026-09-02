@@ -50,6 +50,17 @@ public sealed class NelfePlayScoringReporter : BackgroundService
     // rejoue, et le wrapper n'est PAS touché ni sollicité par event (0 surcoût en jeu).
     private readonly List<(long frame, long total)> _trajectory = new();
 
+    // ── Lien replay ↔ score (funnel « ▷ REPLAY » de /rankings) ───────────────
+    // Le reporter connaît le session_id (il le génère) et le verdict ; le recorder
+    // publie l'id du replay actif (replay.recording.started) puis son sha au finalize
+    // (replay.finalized). On rapproche les deux — quel que soit l'ordre d'arrivée —
+    // et on POST /api/v1/agent/scores/replay-link. Purement additif et best-effort :
+    // un échec n'affecte ni le scoring ni l'enregistrement.
+    private string? _activeReplayId;
+    private readonly Dictionary<string, (string sessionId, string visibility, DateTime at)> _pendingScoreLink = new();
+    private readonly Dictionary<string, (string sha256, DateTime at)> _finalizedReplay = new();
+    private static readonly TimeSpan ReplayLinkTtl = TimeSpan.FromMinutes(20);
+
     public static bool Enabled { get; set; } = true;
 
     public NelfePlayScoringReporter(
@@ -290,6 +301,12 @@ public sealed class NelfePlayScoringReporter : BackgroundService
                     break;
                 case "scoring.listener.session":
                     _ = OnSessionAsync(ToJson(envelope.Payload), CancellationToken.None);
+                    break;
+                case "replay.recording.started":
+                    CaptureActiveReplay(ToJson(envelope.Payload));
+                    break;
+                case "replay.finalized":
+                    OnReplayFinalized(ToJson(envelope.Payload));
                     break;
             }
         }
@@ -682,6 +699,7 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             PersistCertified(passport, body);
             MaybeShowClaimOverlay(passport, body);
             await NotifyVerdictAsync(passport, body, cancellationToken).ConfigureAwait(false);
+            CaptureReplayLinkOnPublished(passport, body);
         }
         catch (Exception ex)
         {
@@ -977,6 +995,111 @@ public sealed class NelfePlayScoringReporter : BackgroundService
                 $"{DateTime.Now:HH:mm:ss.fff} {msg}\n");
         }
         catch { }
+    }
+
+    // ── Lien replay ↔ score ──────────────────────────────────────────────────
+
+    // Le recorder annonce le replay en cours : on retient son id (gardé même après
+    // finalize, le temps qu'un score de fin de partie arrive).
+    private void CaptureActiveReplay(JsonElement payload)
+    {
+        var id = GetString(payload, "ReplayId");
+        if (string.IsNullOrEmpty(id)) return;
+        lock (_sync) { _activeReplayId = id; }
+    }
+
+    // Replay finalisé (objet scellé) : on retient son sha puis on tente le
+    // rapprochement (un score « published » a pu arriver avant OU après).
+    private void OnReplayFinalized(JsonElement payload)
+    {
+        var id = GetString(payload, "ReplayId");
+        var sha = GetString(payload, "Sha256");
+        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(sha)) return;
+        lock (_sync) { PruneReplayLinks(); _finalizedReplay[id!] = (sha!, DateTime.UtcNow); }
+        TryRegisterReplayLink(id!);
+    }
+
+    // Score PUBLIÉ : le record est public → son replay le devient aussi (il s'affiche
+    // sur le classement). On rattache le score au replay ACTIF (celui de cette partie).
+    private void CaptureReplayLinkOnPublished(JsonObject passport, string responseBody)
+    {
+        try
+        {
+            var status = (string?)((JsonNode.Parse(responseBody) as JsonObject)?["status"]) ?? "";
+            if (status != "published") return;
+            var sessionId = (string?)passport["session_id"];
+            if (string.IsNullOrEmpty(sessionId)) return;
+
+            string? replayId;
+            lock (_sync)
+            {
+                replayId = _activeReplayId;
+                if (string.IsNullOrEmpty(replayId)) return;
+                PruneReplayLinks();
+                _pendingScoreLink[replayId!] = (sessionId!, "public", DateTime.UtcNow);
+            }
+            TryRegisterReplayLink(replayId!);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "Replay-link : capture du score publié impossible.");
+        }
+    }
+
+    // Rapprochement : quand le score publié ET le replay finalisé sont là pour le même
+    // id, on enregistre UNE fois puis on purge les deux entrées.
+    private void TryRegisterReplayLink(string replayId)
+    {
+        string sessionId, visibility, sha;
+        lock (_sync)
+        {
+            if (!_pendingScoreLink.TryGetValue(replayId, out var p)) return;
+            if (!_finalizedReplay.TryGetValue(replayId, out var f)) return;
+            sessionId = p.sessionId; visibility = p.visibility; sha = f.sha256;
+            _pendingScoreLink.Remove(replayId);
+            _finalizedReplay.Remove(replayId);
+        }
+        _ = RegisterReplayLinkAsync(sessionId, replayId, sha, visibility, CancellationToken.None);
+    }
+
+    // Appelé sous _sync : oublie les rapprochements jamais complétés (partie sans score
+    // publié, ou replay jamais finalisé).
+    private void PruneReplayLinks()
+    {
+        var now = DateTime.UtcNow;
+        var stale = new List<string>();
+        foreach (var e in _pendingScoreLink) if (now - e.Value.at > ReplayLinkTtl) stale.Add(e.Key);
+        foreach (var k in stale) _pendingScoreLink.Remove(k);
+        stale.Clear();
+        foreach (var e in _finalizedReplay) if (now - e.Value.at > ReplayLinkTtl) stale.Add(e.Key);
+        foreach (var k in stale) _finalizedReplay.Remove(k);
+    }
+
+    private async Task RegisterReplayLinkAsync(
+        string sessionId, string replayId, string sha256, string visibility, CancellationToken cancellationToken)
+    {
+        var credential = ResolveCredential();
+        if (string.IsNullOrEmpty(credential)) return;
+        try
+        {
+            using var client = CreateClient(credential);
+            var body = new JsonObject
+            {
+                ["session_id"] = sessionId,
+                ["replay_id"] = replayId,
+                ["object_sha256"] = sha256,
+                ["visibility"] = visibility,
+            };
+            using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+            using var response = await client.PostAsync("/api/v1/agent/scores/replay-link", content, cancellationToken).ConfigureAwait(false);
+            var respBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            Trace($"REPLAY-LINK HTTP {(int)response.StatusCode} - {respBody}");
+            _logger?.LogInformation("Replay-link : {Status} - {Body}", (int)response.StatusCode, respBody);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "Replay-link : enregistrement impossible (best-effort).");
+        }
     }
 
     private static JsonElement ToJson(object? payload)
