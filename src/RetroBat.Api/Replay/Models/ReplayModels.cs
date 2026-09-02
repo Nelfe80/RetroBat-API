@@ -81,7 +81,8 @@ public sealed record ReplayIndexEntry(string ReplayId, string GameId, DateTime C
 /// langue de l'auteur (affichage). Stockées en JSONL pour être rejouées (affichage = R4.2/R5).
 /// </summary>
 public sealed record ReplayReaction(
-    string ReplayId, string Reaction, int Level, long Frame, long TsMs, string Lang, bool Chord);
+    string ReplayId, string Reaction, int Level, long Frame, long TsMs, string Lang, bool Chord,
+    string? Author = null); // Author = nom de l'auteur (non capté pour l'instant ; comptes/NelfeNet)
 
 public enum ReplayRecordingState { Idle, Starting, Recording, Stopping, Finalizing, Ready, Error }
 

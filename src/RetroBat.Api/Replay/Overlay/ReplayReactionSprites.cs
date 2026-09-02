@@ -22,6 +22,7 @@ public sealed class ReplayReactionSprites : IDisposable
     private readonly Bitmap?[,] _cells = new Bitmap?[9, Cols];
     private readonly ImageAttributes _ia = new();   // réutilisé (pas d'alloc par sprite/frame)
     private readonly ColorMatrix _cm = new();
+    private readonly object _drawLock = new();       // la planche est partagée entre 2 threads UI (barre + HUD)
     public bool Ok { get; }
 
     public ReplayReactionSprites(ILogger logger)
@@ -64,10 +65,14 @@ public sealed class ReplayReactionSprites : IDisposable
         var aspect = bmp.Width / (float)bmp.Height;
         float h = size, w = size * aspect;
         var dest = new Rectangle((int)(cx - w / 2f), (int)(cy - h / 2f), (int)w, (int)h);
-        if (alpha >= 0.99f) { g.DrawImage(bmp, dest, 0, 0, bmp.Width, bmp.Height, GraphicsUnit.Pixel); return; }
-        _cm.Matrix33 = Math.Clamp(alpha, 0f, 1f);
-        _ia.SetColorMatrix(_cm); // ImageAttributes réutilisé
-        g.DrawImage(bmp, dest, 0, 0, bmp.Width, bmp.Height, GraphicsUnit.Pixel, _ia);
+        // Sérialisé : la planche (bitmaps + ImageAttributes) est partagée entre les 2 threads UI.
+        lock (_drawLock)
+        {
+            if (alpha >= 0.99f) { g.DrawImage(bmp, dest, 0, 0, bmp.Width, bmp.Height, GraphicsUnit.Pixel); return; }
+            _cm.Matrix33 = Math.Clamp(alpha, 0f, 1f);
+            _ia.SetColorMatrix(_cm);
+            g.DrawImage(bmp, dest, 0, 0, bmp.Width, bmp.Height, GraphicsUnit.Pixel, _ia);
+        }
     }
 
     // Détourage par SATURATION + LUMINOSITÉ (le fond est sombre ET désaturé ; les icônes sont

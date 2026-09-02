@@ -6,6 +6,7 @@ using System.Windows.Forms;
 using RetroBat.Api.Replay.Input;
 using RetroBat.Api.Replay.Models;
 using RetroBat.Api.Replay.Playback;
+using RetroBat.Api.Replay.Storage;
 using RetroBat.Domain.Events;
 using RetroBat.Domain.Interfaces;
 
@@ -26,6 +27,7 @@ public sealed class ReplayReactionHudService : BackgroundService
     private readonly IEventBus _bus;
     private readonly ReplayReactionService _reactions;
     private readonly ReplayPlaybackService _playback;
+    private readonly ReplayStore _store;
     private readonly ILogger<ReplayReactionHudService> _logger;
 
     private readonly object _sync = new();
@@ -33,19 +35,18 @@ public sealed class ReplayReactionHudService : BackgroundService
     private ApplicationContext? _appContext;
     private Control? _dispatcher;
     private HudForm? _form;
-    private ReplayReactionSprites? _sprites;
+    private ReplayReactionSprites? _sprites; // créé sur le thread UI du HUD (pas de partage cross-thread GDI+)
     private IDisposable? _sub;
 
     public ReplayReactionHudService(IEventBus bus, ReplayReactionService reactions,
-        ReplayPlaybackService playback, ILogger<ReplayReactionHudService> logger)
+        ReplayPlaybackService playback, ReplayStore store, ILogger<ReplayReactionHudService> logger)
     {
-        _bus = bus; _reactions = reactions; _playback = playback; _logger = logger;
+        _bus = bus; _reactions = reactions; _playback = playback; _store = store; _logger = logger;
     }
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!OperatingSystem.IsWindows()) return Task.CompletedTask;
-        _sprites = new ReplayReactionSprites(_logger);
         EnsureUiThreadStarted(stoppingToken);
         _sub = _bus.Subscribe<EventEnvelope>(OnBusEvent);
         _logger.LogInformation("Replay HUD réactions : service initialisé.");
@@ -84,10 +85,12 @@ public sealed class ReplayReactionHudService : BackgroundService
             Application.SetHighDpiMode(HighDpiMode.SystemAware);
             var context = new ApplicationContext();
             var dispatcher = new Control(); dispatcher.CreateControl();
-            var form = new HudForm(() => _reactions.GetCharge(), _sprites,
-                () => string.Equals(_playback.GetState().Mode, "replay", StringComparison.Ordinal),
-                () => _reactions.GetAvailability());
-            lock (_sync) { _appContext = context; _dispatcher = dispatcher; _form = form; }
+            var sprites = new ReplayReactionSprites(_logger); // sur CE thread UI
+            var form = new HudForm(() => _reactions.GetCharge(), sprites,
+                () => _playback.GetState(),
+                () => _reactions.GetAvailability(),
+                id => _store.ReadReactions(id));
+            lock (_sync) { _appContext = context; _dispatcher = dispatcher; _form = form; _sprites = sprites; }
             ready.Set();
             Application.Run(context);
             lock (_sync) { _form?.Dispose(); _form = null; _dispatcher?.Dispose(); _dispatcher = null; _appContext = null; _sprites?.Dispose(); _sprites = null; }
@@ -118,11 +121,23 @@ public sealed class ReplayReactionHudService : BackgroundService
         private const int LabelLifeMs = 1250; // durée du mot central
         private const int MaxParticles = 320;
 
+        private const int BarSidePadding = 30; // == SidePadding de la barre (mapping timeline identique)
+        private const long MinBubbleMs = 1500; // debounce : durée mini avant de changer de bulle
+        private const long BubbleLifeMs = 2600; // durée d'affichage d'une bulle
+
         private readonly Func<ReplayReactionService.ChargeSnapshot> _charge;
         private readonly ReplayReactionSprites? _sprites;
-        private readonly Func<bool> _isPlaying;
+        private readonly Func<ReplayPlaybackService.StateSnapshot> _state;
         private readonly Func<ReplayReactionService.Availability> _avail;
+        private readonly Func<string, IReadOnlyList<ReplayReaction>> _loadReactions;
         private readonly System.Windows.Forms.Timer _timer;
+
+        // bulle « réaction des autres » au passage du curseur (debounce, une seule à la fois)
+        private string? _bubbleReplayId;
+        private IReadOnlyList<ReactionMarker> _bMarkers = Array.Empty<ReactionMarker>();
+        private ReactionMarker? _activeBubble;
+        private long _bubbleShownMs;
+        private long _bubbleFrame, _bubbleEnd;
         private readonly List<Particle> _parts = new();
         private readonly List<Label> _labels = new();
         private readonly Random _rng = new();
@@ -136,12 +151,14 @@ public sealed class ReplayReactionHudService : BackgroundService
         private sealed class Label { public string Word = ""; public Color Color; public int Level; public long Born; }
 
         public HudForm(Func<ReplayReactionService.ChargeSnapshot> charge, ReplayReactionSprites? sprites,
-            Func<bool> isPlaying, Func<ReplayReactionService.Availability> avail)
+            Func<ReplayPlaybackService.StateSnapshot> state, Func<ReplayReactionService.Availability> avail,
+            Func<string, IReadOnlyList<ReplayReaction>> loadReactions)
         {
             _charge = charge;
             _sprites = sprites;
-            _isPlaying = isPlaying;
+            _state = state;
             _avail = avail;
+            _loadReactions = loadReactions;
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
@@ -205,7 +222,10 @@ public sealed class ReplayReactionHudService : BackgroundService
                 _parts.RemoveAll(p => now - p.Born > PartLifeMs);
                 _labels.RemoveAll(l => now - l.Born > LabelLifeMs);
 
-                var playing = SafePlaying();
+                var st = SafeState();
+                var playing = string.Equals(st.Mode, "replay", StringComparison.Ordinal);
+                PumpBubble(st, playing);
+
                 var active = playing || charge.Active || _parts.Count > 0 || _labels.Count > 0;
                 if (!active) { if (Visible) Hide(); return; }
 
@@ -227,7 +247,86 @@ public sealed class ReplayReactionHudService : BackgroundService
             try { return _charge(); } catch { return new ReplayReactionService.ChargeSnapshot(false, "", 0, 0, false, 0); }
         }
 
-        private bool SafePlaying() { try { return _isPlaying(); } catch { return false; } }
+        private ReplayPlaybackService.StateSnapshot SafeState()
+        {
+            try { return _state(); } catch { return new ReplayPlaybackService.StateSnapshot("none", "idle", null, 0, null, null, null, false, null, 60, null); }
+        }
+
+        // Bulle « réaction des autres » : au passage du curseur sur un cluster majoritaire, une seule
+        // bulle (nom + icône + mot), avec debounce (durée mini avant de changer, priorité au dernier).
+        private void PumpBubble(ReplayPlaybackService.StateSnapshot st, bool playing)
+        {
+            if (!string.Equals(st.ReplayId, _bubbleReplayId, StringComparison.Ordinal))
+            {
+                _bubbleReplayId = st.ReplayId;
+                _bMarkers = Array.Empty<ReactionMarker>();
+                _activeBubble = null;
+            }
+            var end = st.ReplayEndFrame ?? 0;
+            if (_bMarkers.Count == 0 && st.ReplayId is not null && end > 0)
+            {
+                try { _bMarkers = ReplayReactionText.Clusterize(_loadReactions(st.ReplayId), end, 24); }
+                catch { _bMarkers = Array.Empty<ReactionMarker>(); }
+            }
+            if (!playing || end <= 0 || _bMarkers.Count == 0) { _activeBubble = null; return; }
+
+            var now = NowMs();
+            var frame = st.Frame;
+            var window = Math.Max(1, end / 48);
+            ReactionMarker? near = null; var bestD = long.MaxValue;
+            foreach (var m in _bMarkers) { var d = Math.Abs(m.Frame - frame); if (d < window && d < bestD) { bestD = d; near = m; } }
+
+            if (near is ReactionMarker nm &&
+                (_activeBubble is not ReactionMarker ab || (ab.Frame != nm.Frame && now - _bubbleShownMs > MinBubbleMs)))
+            {
+                _activeBubble = nm; _bubbleShownMs = now;
+            }
+            if (_activeBubble is not null && now - _bubbleShownMs > BubbleLifeMs) _activeBubble = null;
+
+            _bubbleFrame = frame; _bubbleEnd = end;
+        }
+
+        private void DrawBubble(Graphics g, long now)
+        {
+            if (_activeBubble is not ReactionMarker m || _sprites is not { Ok: true } || _bubbleEnd <= 0) return;
+            var t = (now - _bubbleShownMs) / (float)BubbleLifeMs;
+            if (t is < 0 or >= 1) return;
+            var alpha = t < 0.85f ? 1f : 1f - (t - 0.85f) / 0.15f;
+            var a = (int)(255 * Math.Clamp(alpha, 0f, 1f));
+
+            var (_, word) = ReplayReactionText.Resolve(m.Family, m.Level);
+            var color = ReplayReactionText.ColorOf(m.Family);
+            using var nameF = new Font("Segoe UI", 15f, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var wordF = new Font("Segoe UI Semibold", 14f, FontStyle.Regular, GraphicsUnit.Pixel);
+
+            const int icon = 34, padX = 14, padY = 9, gap = 12;
+            var nameW = g.MeasureString(m.Name, nameF).Width;
+            var wordW = g.MeasureString(word, wordF).Width;
+            var textW = Math.Max(nameW, wordW);
+            var bw = padX + icon + gap + (int)textW + padX;
+            const int bh = 52;
+
+            var pad = BarSidePadding;
+            var cx = pad + (_region.Width - 2 * pad) * (float)Math.Clamp(_bubbleFrame / (double)_bubbleEnd, 0, 1);
+            var bx = Math.Clamp(cx - bw / 2f, 8f, _region.Width - bw - 8f);
+            var by = _region.Height - BarHeight - bh - 12f;
+
+            using (var bg = new SolidBrush(Color.FromArgb((int)(a * 0.92f), 12, 20, 34)))
+                FillRounded(g, bg, bx, by, bw, bh, 12);
+            using (var accent = new SolidBrush(Color.FromArgb(a, color)))
+                FillRounded(g, accent, bx, by, 5, bh, 2); // liseré couleur de famille
+            // petite pointe vers le curseur
+            var tipX = Math.Clamp(cx, bx + 16, bx + bw - 16);
+            using (var tail = new SolidBrush(Color.FromArgb((int)(a * 0.92f), 12, 20, 34)))
+                g.FillPolygon(tail, new[] { new PointF(tipX - 9, by + bh - 1), new PointF(tipX + 9, by + bh - 1), new PointF(tipX, by + bh + 10) });
+
+            _sprites.Draw(g, m.Family, DesignBase + Math.Clamp(m.Level - 1, 0, 2), bx + padX + icon / 2f, by + bh / 2f, icon, alpha);
+            var tx = bx + padX + icon + gap;
+            using (var nb = new SolidBrush(Color.FromArgb(a, color)))
+                g.DrawString(m.Name, nameF, nb, tx, by + padY);
+            using (var wb = new SolidBrush(Color.FromArgb(a, 220, 230, 245)))
+                g.DrawString(word, wordF, wb, tx, by + padY + 22);
+        }
 
         private bool EnsureRegion()
         {
@@ -281,6 +380,7 @@ public sealed class ReplayReactionHudService : BackgroundService
             foreach (var l in _labels) DrawLabel(g, l, now);
             // Jauge de charge seulement s'il reste du budget (sinon la maintenir ne mène à rien).
             if (charge.Active && av.Budget > 0) DrawGauge(g, charge);
+            if (playing) DrawBubble(g, now);
         }
 
         private ReplayReactionService.Availability SafeAvail()

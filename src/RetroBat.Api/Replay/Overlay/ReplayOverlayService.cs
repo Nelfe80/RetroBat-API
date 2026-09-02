@@ -4,7 +4,9 @@ using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using RetroBat.Api.Replay.Models;
 using RetroBat.Api.Replay.Playback;
+using RetroBat.Api.Replay.Storage;
 
 namespace RetroBat.Api.Replay.Overlay;
 
@@ -19,16 +21,20 @@ namespace RetroBat.Api.Replay.Overlay;
 public sealed class ReplayOverlayService : BackgroundService
 {
     private readonly ReplayPlaybackService _playback;
+    private readonly ReplayStore _store;
     private readonly ILogger<ReplayOverlayService> _logger;
 
     private readonly object _sync = new();
     private Thread? _uiThread;
     private ApplicationContext? _appContext;
     private ReplayOverlayForm? _form;
+    private ReplayReactionSprites? _sprites; // créé sur le thread UI de la barre
 
-    public ReplayOverlayService(ReplayPlaybackService playback, ILogger<ReplayOverlayService> logger)
+    public ReplayOverlayService(ReplayPlaybackService playback, ReplayStore store,
+        ILogger<ReplayOverlayService> logger)
     {
         _playback = playback;
+        _store = store;
         _logger = logger;
     }
 
@@ -61,9 +67,10 @@ public sealed class ReplayOverlayService : BackgroundService
             Application.SetCompatibleTextRenderingDefault(false);
 
             var context = new ApplicationContext();
-            var form = new ReplayOverlayForm(() => _playback.GetState(), _logger);
+            var sprites = new ReplayReactionSprites(_logger); // sur CE thread UI
+            var form = new ReplayOverlayForm(() => _playback.GetState(), id => _store.ReadReactions(id), sprites, _logger);
 
-            lock (_sync) { _appContext = context; _form = form; }
+            lock (_sync) { _appContext = context; _form = form; _sprites = sprites; }
 
             ready.Set();
             Application.Run(context);
@@ -73,6 +80,8 @@ public sealed class ReplayOverlayService : BackgroundService
                 _form?.Dispose();
                 _form = null;
                 _appContext = null;
+                _sprites?.Dispose();
+                _sprites = null;
             }
         })
         {
@@ -121,6 +130,8 @@ public sealed class ReplayOverlayService : BackgroundService
         private static readonly Color GoldColor = ColorTranslator.FromHtml("#F5B940");    // badge « vérifié/certifié »
 
         private readonly Func<ReplayPlaybackService.StateSnapshot> _snapshotProvider;
+        private readonly Func<string, IReadOnlyList<ReplayReaction>> _loadReactions;
+        private readonly ReplayReactionSprites _sprites;
         private readonly ILogger _logger;
         private readonly System.Windows.Forms.Timer _timer;
         private readonly OverlaySurface _surface;
@@ -131,9 +142,18 @@ public sealed class ReplayOverlayService : BackgroundService
         private int _ticks;
         private bool _shownLogged;
 
-        public ReplayOverlayForm(Func<ReplayPlaybackService.StateSnapshot> snapshotProvider, ILogger logger)
+        // courbe + marqueurs de réactions le long du replay
+        private string? _curveReplayId;
+        private IReadOnlyList<ReplayReaction> _curveReactions = Array.Empty<ReplayReaction>();
+        private float[]? _curve;
+        private IReadOnlyList<ReactionMarker> _markers = Array.Empty<ReactionMarker>();
+
+        public ReplayOverlayForm(Func<ReplayPlaybackService.StateSnapshot> snapshotProvider,
+            Func<string, IReadOnlyList<ReplayReaction>> loadReactions, ReplayReactionSprites sprites, ILogger logger)
         {
             _snapshotProvider = snapshotProvider;
+            _loadReactions = loadReactions;
+            _sprites = sprites;
             _logger = logger;
 
             FormBorderStyle = FormBorderStyle.None;
@@ -144,7 +164,7 @@ public sealed class ReplayOverlayService : BackgroundService
             Opacity = 0d;
             Size = new Size(800, BarHeight); // recalculé à l'affichage
 
-            _surface = new OverlaySurface(() => _snapshot) { Dock = DockStyle.Fill };
+            _surface = new OverlaySurface(() => _snapshot, () => _curve, () => _markers, _sprites) { Dock = DockStyle.Fill };
             Controls.Add(_surface);
 
             _timer = new System.Windows.Forms.Timer { Interval = 150 };
@@ -152,6 +172,38 @@ public sealed class ReplayOverlayService : BackgroundService
             // Démarre TOUT DE SUITE : la fenêtre naît cachée et s'auto-affiche via le poll.
             // (Ne PAS attacher au 'Shown' : il ne se déclenche jamais tant qu'on ne montre rien.)
             _timer.Start();
+        }
+
+        // Recharge les réactions au changement de replay ; calcule les bacs d'intensité dès que la durée est connue.
+        private void UpdateCurve()
+        {
+            if (!string.Equals(_snapshot.ReplayId, _curveReplayId, StringComparison.Ordinal))
+            {
+                _curveReplayId = _snapshot.ReplayId;
+                try { _curveReactions = _snapshot.ReplayId is null ? Array.Empty<ReplayReaction>() : _loadReactions(_snapshot.ReplayId); }
+                catch { _curveReactions = Array.Empty<ReplayReaction>(); }
+                _curve = null;
+            }
+            if (_curve is null && _snapshot.ReplayEndFrame is long end && end > 0)
+            {
+                _curve = BuildCurve(_curveReactions, end);
+                _markers = ReplayReactionText.Clusterize(_curveReactions, end, 24);
+            }
+        }
+
+        private static float[] BuildCurve(IReadOnlyList<ReplayReaction> reactions, long end)
+        {
+            const int bins = 160;
+            var acc = new float[bins];
+            foreach (var r in reactions)
+            {
+                var b = (int)Math.Clamp(r.Frame / (double)end * bins, 0, bins - 1);
+                acc[b] += Math.Clamp(r.Level, 1, 3);
+            }
+            var max = acc.Length == 0 ? 0f : acc.Max();
+            if (max <= 0f) return acc; // tout à zéro
+            for (var i = 0; i < bins; i++) acc[i] = acc[i] / max; // normalisé 0-1
+            return acc;
         }
 
         private void OnTick()
@@ -162,6 +214,8 @@ public sealed class ReplayOverlayService : BackgroundService
             // Vérité terrain : prouve que le timer tourne et ce que voit le form.
             if (_ticks < 3) _logger.LogInformation("Replay overlay : tick {N}, mode={Mode}, visible={Vis}", _ticks, _snapshot.Mode, Visible);
             _ticks++;
+
+            UpdateCurve();
 
             var active = string.Equals(_snapshot.Mode, "replay", StringComparison.Ordinal);
             if (active)
@@ -270,10 +324,17 @@ public sealed class ReplayOverlayService : BackgroundService
         private sealed class OverlaySurface : Panel
         {
             private readonly Func<ReplayPlaybackService.StateSnapshot> _get;
+            private readonly Func<float[]?> _curve;
+            private readonly Func<IReadOnlyList<ReactionMarker>> _markers;
+            private readonly ReplayReactionSprites _sprites;
 
-            public OverlaySurface(Func<ReplayPlaybackService.StateSnapshot> get)
+            public OverlaySurface(Func<ReplayPlaybackService.StateSnapshot> get, Func<float[]?> curve,
+                Func<IReadOnlyList<ReactionMarker>> markers, ReplayReactionSprites sprites)
             {
                 _get = get;
+                _curve = curve;
+                _markers = markers;
+                _sprites = sprites;
                 DoubleBuffered = true;
                 SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
                     | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
@@ -312,6 +373,9 @@ public sealed class ReplayOverlayService : BackgroundService
                 double Norm(long f) => Math.Clamp(f / (double)end, 0d, 1d);
                 int X(long f) => left + (int)Math.Round(w * Norm(f));
 
+                // courbe de réactions (aire au-dessus de la piste)
+                DrawReactionCurve(g, left, w, y);
+
                 // segment de RUN (la partie « officielle » du replay)
                 if (s.RunStartFrame is long rs && s.RunEndFrame is long re && re > rs)
                 {
@@ -333,12 +397,41 @@ public sealed class ReplayOverlayService : BackgroundService
                     }
                 }
 
+                // marqueurs de réactions majoritaires (petites icônes sur la timeline)
+                if (_sprites.Ok)
+                {
+                    var mmid = y + TrackHeight / 2;
+                    foreach (var m in _markers())
+                        _sprites.Draw(g, m.Family, Math.Clamp(m.Level - 1, 0, 2), X(m.Frame), mmid, 20f, 1f);
+                }
+
                 // curseur de lecture
                 var cx = X(s.Frame);
                 using (var cur = new Pen(CursorColor, 2.5f))
                     g.DrawLine(cur, cx, y - 5, cx, y + TrackHeight + 5);
                 using (var knob = new SolidBrush(CursorColor))
                     g.FillEllipse(knob, cx - 4, y + (TrackHeight / 2) - 4, 8, 8);
+            }
+
+            // Aire d'intensité des réactions, au-dessus de la piste (les données sont normalisées 0-1).
+            private void DrawReactionCurve(Graphics g, int left, int w, int trackTop)
+            {
+                var curve = _curve();
+                if (curve is null || curve.Length < 2) return;
+                const float H = 13f;
+                var baseY = trackTop - 2f;
+                var pts = new PointF[curve.Length + 2];
+                pts[0] = new PointF(left, baseY);
+                for (var i = 0; i < curve.Length; i++)
+                {
+                    var x = left + w * (i + 0.5f) / curve.Length;
+                    pts[i + 1] = new PointF(x, baseY - curve[i] * H);
+                }
+                pts[^1] = new PointF(left + w, baseY);
+                using var fill = new SolidBrush(Color.FromArgb(140, 255, 150, 70)); // aire chaude
+                g.FillPolygon(fill, pts);
+                using var line = new Pen(Color.FromArgb(220, 255, 176, 90), 1.5f);
+                g.DrawLines(line, pts[1..^1]);
             }
 
             private enum Dir { Up, Down, LeftRight }

@@ -1,6 +1,10 @@
 using System.Drawing;
+using RetroBat.Api.Replay.Models;
 
 namespace RetroBat.Api.Replay.Overlay;
+
+/// <summary>Marqueur « majoritaire » d'un cluster de réactions sur la timeline (scrubber).</summary>
+public readonly record struct ReactionMarker(long Frame, string Family, int Level, string Name);
 
 /// <summary>
 /// Table d'AFFICHAGE des réactions (emoji + mot + couleur de famille). Le moteur n'émet que
@@ -51,4 +55,34 @@ public static class ReplayReactionText
 
     public static Color ColorOf(string family) =>
         FamilyColor.TryGetValue(family, out var c) ? c : ColorTranslator.FromHtml("#5EA0FF");
+
+    /// <summary>
+    /// Regroupe les réactions en marqueurs « majoritaires » le long du replay (≤ maxMarkers) : par
+    /// bac, la FAMILLE la plus fréquente, représentée par son DERNIER react (ts max) → on privilégie
+    /// les derniers reacts de la majorité. Le NOM de l'auteur n'est pas encore capté (placeholder).
+    /// </summary>
+    public static IReadOnlyList<ReactionMarker> Clusterize(IReadOnlyList<ReplayReaction> reactions, long end, int maxMarkers)
+    {
+        var markers = new List<ReactionMarker>();
+        if (reactions.Count == 0 || end <= 0 || maxMarkers <= 0) return markers;
+
+        var bins = new Dictionary<int, List<ReplayReaction>>();
+        foreach (var r in reactions)
+        {
+            var b = (int)Math.Clamp(r.Frame / (double)end * maxMarkers, 0, maxMarkers - 1);
+            (bins.TryGetValue(b, out var list) ? list : bins[b] = new List<ReplayReaction>()).Add(r);
+        }
+
+        foreach (var (_, list) in bins)
+        {
+            // famille majoritaire du bac
+            var family = list.GroupBy(r => r.Reaction).OrderByDescending(g => g.Count()).ThenByDescending(g => g.Max(r => r.TsMs)).First().Key;
+            // dernier react de cette famille (ts max) = le représentant
+            var rep = list.Where(r => r.Reaction == family).OrderByDescending(r => r.TsMs).First();
+            markers.Add(new ReactionMarker(rep.Frame, family, rep.Level, rep.Author ?? "Joueur"));
+        }
+
+        markers.Sort((a, b) => a.Frame.CompareTo(b.Frame));
+        return markers;
+    }
 }
