@@ -279,11 +279,12 @@ public sealed class ReplayReactionHudService : BackgroundService
             if (near is ReactionMarker nm &&
                 (_activeBubble is not ReactionMarker ab || (ab.Frame != nm.Frame && now - _bubbleShownMs > MinBubbleMs)))
             {
-                _activeBubble = nm; _bubbleShownMs = now;
+                // FIXE la bulle sur la frame du marqueur (elle ne bouge plus une fois affichée = lisible).
+                _activeBubble = nm; _bubbleShownMs = now; _bubbleFrame = nm.Frame;
             }
             if (_activeBubble is not null && now - _bubbleShownMs > BubbleLifeMs) _activeBubble = null;
 
-            _bubbleFrame = frame; _bubbleEnd = end;
+            _bubbleEnd = end;
         }
 
         private void DrawBubble(Graphics g, long now)

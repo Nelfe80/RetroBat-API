@@ -148,6 +148,11 @@ public sealed class ReplayOverlayService : BackgroundService
         private float[]? _curve;
         private IReadOnlyList<ReactionMarker> _markers = Array.Empty<ReactionMarker>();
 
+        // curseur INTERPOLÉ (la frame réelle n'arrive que ~toutes les 500 ms) : on prédit à vitesse estimée.
+        private long _baseFrame, _baseTime;
+        private double _rate;         // frames par ms
+        private long _displayFrame;   // position lissée du curseur
+
         public ReplayOverlayForm(Func<ReplayPlaybackService.StateSnapshot> snapshotProvider,
             Func<string, IReadOnlyList<ReplayReaction>> loadReactions, ReplayReactionSprites sprites, ILogger logger)
         {
@@ -164,10 +169,10 @@ public sealed class ReplayOverlayService : BackgroundService
             Opacity = 0d;
             Size = new Size(800, BarHeight); // recalculé à l'affichage
 
-            _surface = new OverlaySurface(() => _snapshot, () => _curve, () => _markers, _sprites) { Dock = DockStyle.Fill };
+            _surface = new OverlaySurface(() => _snapshot, () => _curve, () => _markers, () => _displayFrame, _sprites) { Dock = DockStyle.Fill };
             Controls.Add(_surface);
 
-            _timer = new System.Windows.Forms.Timer { Interval = 150 };
+            _timer = new System.Windows.Forms.Timer { Interval = 40 }; // 25 fps : curseur fluide (interpolé)
             _timer.Tick += (_, _) => OnTick();
             // Démarre TOUT DE SUITE : la fenêtre naît cachée et s'auto-affiche via le poll.
             // (Ne PAS attacher au 'Shown' : il ne se déclenche jamais tant qu'on ne montre rien.)
@@ -189,6 +194,34 @@ public sealed class ReplayOverlayService : BackgroundService
                 _curve = BuildCurve(_curveReactions, end);
                 _markers = ReplayReactionText.Clusterize(_curveReactions, end, 24);
             }
+        }
+
+        // Interpolation du curseur : estime la vitesse depuis les frames réelles et prédit entre deux.
+        private void UpdateDisplayFrame()
+        {
+            var now = Environment.TickCount64;
+            var f = _snapshot.Frame;
+            var end = _snapshot.ReplayEndFrame ?? 0;
+            var playing = string.Equals(_snapshot.Mode, "replay", StringComparison.Ordinal) && !_snapshot.Paused;
+
+            if (!playing) { _rate = 0; _baseFrame = f; _baseTime = now; _displayFrame = f; return; }
+
+            if (f != _baseFrame)
+            {
+                var dt = now - _baseTime;
+                var delta = f - _baseFrame;
+                if (delta > 0 && delta < 400 && dt > 0) // avance normale : (ré)estime la vitesse
+                {
+                    var nr = delta / (double)dt;
+                    _rate = _rate <= 0 ? nr : _rate * 0.5 + nr * 0.5;
+                }
+                else _rate = 0; // seek (arrière ou saut) : NE PLUS prédire → évite le va-et-vient du curseur
+                _baseFrame = f; _baseTime = now;
+            }
+
+            const long capMs = 700; // ne pas prédire au-delà de ~un intervalle de mesure
+            var pred = _baseFrame + _rate * Math.Min(now - _baseTime, capMs);
+            _displayFrame = (long)Math.Clamp(pred, 0, end <= 0 ? pred : end);
         }
 
         private static float[] BuildCurve(IReadOnlyList<ReplayReaction> reactions, long end)
@@ -216,6 +249,7 @@ public sealed class ReplayOverlayService : BackgroundService
             _ticks++;
 
             UpdateCurve();
+            UpdateDisplayFrame();
 
             var active = string.Equals(_snapshot.Mode, "replay", StringComparison.Ordinal);
             if (active)
@@ -326,14 +360,16 @@ public sealed class ReplayOverlayService : BackgroundService
             private readonly Func<ReplayPlaybackService.StateSnapshot> _get;
             private readonly Func<float[]?> _curve;
             private readonly Func<IReadOnlyList<ReactionMarker>> _markers;
+            private readonly Func<long> _displayFrame;
             private readonly ReplayReactionSprites _sprites;
 
             public OverlaySurface(Func<ReplayPlaybackService.StateSnapshot> get, Func<float[]?> curve,
-                Func<IReadOnlyList<ReactionMarker>> markers, ReplayReactionSprites sprites)
+                Func<IReadOnlyList<ReactionMarker>> markers, Func<long> displayFrame, ReplayReactionSprites sprites)
             {
                 _get = get;
                 _curve = curve;
                 _markers = markers;
+                _displayFrame = displayFrame;
                 _sprites = sprites;
                 DoubleBuffered = true;
                 SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
@@ -405,8 +441,8 @@ public sealed class ReplayOverlayService : BackgroundService
                         _sprites.Draw(g, m.Family, Math.Clamp(m.Level - 1, 0, 2), X(m.Frame), mmid, 20f, 1f);
                 }
 
-                // curseur de lecture
-                var cx = X(s.Frame);
+                // curseur de lecture (position INTERPOLÉE pour un mouvement fluide)
+                var cx = X(Math.Clamp(_displayFrame(), 0, end));
                 using (var cur = new Pen(CursorColor, 2.5f))
                     g.DrawLine(cur, cx, y - 5, cx, y + TrackHeight + 5);
                 using (var knob = new SolidBrush(CursorColor))

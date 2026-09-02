@@ -219,26 +219,45 @@ public sealed class ReplayPlaybackService
         _ = Task.Run(() => MonitorLoopAsync(ct), ct);
     }
 
+    private const long EndPauseMargin = 130; // on fige un peu AVANT la vraie fin (jamais l'EOF → pas de fermeture/boucle)
+
     private async Task MonitorLoopAsync(CancellationToken ct)
     {
-        var idle = 0;
+        var idle = 0; var endHold = 0; long lastHoldFrame = -1; var endPauseSent = false;
         while (!ct.IsCancellationRequested)
         {
             Process? proc; lock (_gate) proc = _process;
-            // Fin PRIMAIRE = process fermé (--eof-exit à la vraie fin). L'inactivité n'est qu'un secours.
+            // Fin PRIMAIRE = process fermé (l'utilisateur a quitté, ou joué au-delà du point de pause → --eof-exit).
             if (proc is null || proc.HasExited) { Finish("process terminé"); return; }
 
             var active = await _ra.GetActiveReplayAsync(ct).ConfigureAwait(false);
             var status = await _ra.GetStatusAsync(ct).ConfigureAwait(false);
             var paused = status is { State: "PAUSED" };
+            long frame, end;
             lock (_gate)
             {
-                if (active is { Active: true }) { _frame = active.Frame; idle = 0; }
-                else if (!paused) idle++;   // inactif EN PAUSE = normal, on ne compte pas (évite la fausse fin)
+                if (active is { Active: true }) _frame = active.Frame;
                 _paused = paused;
+                frame = _frame; end = _replayEnd ?? 0;
             }
-            // Secours : inactif hors pause pendant ~4 s (8×500 ms) = replay réellement terminé/bloqué.
-            if (idle >= 8) { Finish("fin du replay (active_replay inactif)"); return; }
+
+            // AUTO-PAUSE UNE SEULE FOIS un peu avant la fin (latch) → fige, permet de revenir en arrière (◀).
+            if (!endPauseSent && end > 0 && frame >= end - EndPauseMargin && !paused)
+            {
+                await _ra.PauseToggleAsync(ct).ConfigureAwait(false);
+                endPauseSent = true; paused = true;
+                lock (_gate) _paused = true;
+            }
+
+            // Secours : inactif hors pause (et pas au point de fin) = terminé/bloqué anormalement.
+            if (active is not { Active: true } && !paused && !endPauseSent) { if (++idle >= 8) { Finish("fin (inactif)"); return; } }
+            else idle = 0;
+
+            // Sécurité : figé à la fin, frame inchangée trop longtemps (~100 s) → fermeture auto.
+            if (endPauseSent && paused && frame == lastHoldFrame) { if (++endHold >= 200) { Finish("fin (auto)"); return; } }
+            else endHold = 0;
+            lastHoldFrame = frame;
+
             try { await Task.Delay(500, ct).ConfigureAwait(false); } catch (OperationCanceledException) { return; }
         }
     }
