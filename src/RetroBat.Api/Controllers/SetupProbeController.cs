@@ -53,11 +53,13 @@ public sealed class SetupProbeController : ControllerBase
         var es = await EmulationStationReachableAsync(ct).ConfigureAwait(false);
         var paired = _device.IsPaired;
         var pseudo = paired ? _agent.Status.Pseudo : null;
+        var deviceId = paired ? _device.DeviceId : null;   // identifie CETTE machine sur /account
 
         var q = "?rb=" + (es ? "1" : "0")
               + "&api=1"                                  // c'est nous : si on répond, APIExpose tourne
               + "&paired=" + (paired ? "1" : "0");
         if (!string.IsNullOrWhiteSpace(pseudo)) { q += "&pseudo=" + Uri.EscapeDataString(pseudo); }
+        if (!string.IsNullOrWhiteSpace(deviceId)) { q += "&device_id=" + Uri.EscapeDataString(deviceId); }
 
         return Redirect(ret + q);
     }
