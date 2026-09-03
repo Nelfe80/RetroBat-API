@@ -29,7 +29,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     private long _ticks;
     private bool _pollFailed;
     private bool _firstPressLogged;
-    private string _lastSignature = "";
+    private string _lastDeviceKey = "";
     private const int RescanEveryTicks = 200; // ~5 s at 25 ms
     // SDL est lié au thread : le hotplug (add/remove) n'est vu QUE sur le thread qui a fait
     // SDL_Init, et seulement si on y pompe les événements. On possède donc SDL sur UN thread
@@ -72,7 +72,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
             var mapped = _reader.OpenControllers();
             _logger?.LogInformation("Panel input watcher started: {Message}, {Mapped} mapped device(s) [{Names}]",
                 message, mapped, string.Join(", ", _reader.DeviceNames));
-            _lastSignature = CabinetInputReader.AttachedSignature();
+            _lastDeviceKey = mapped + "|" + string.Join(",", _reader.DeviceNames);
 
             // (device, identity) of everything currently down: the diff between two polls is
             // what becomes a press and a release
@@ -136,16 +136,16 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         var reader = _reader;
         if (reader is null) return;
 
-        // La signature (compte + instance-ids) reflète le hotplug maintenant que Pump()
-        // tourne sur CE thread (celui de SDL_Init). Un (dé)branchement la change même à
-        // compte net égal → on rouvre les joysticks. Léger, aucun churn en marche normale.
-        var signature = CabinetInputReader.AttachedSignature();
-        if (signature == _lastSignature) return;
-        _lastSignature = signature;
-
-        var mapped = reader.OpenControllers();
-        _logger?.LogInformation("Panel input devices changed (sig {Sig}): {Mapped} mapped [{Names}]",
-            signature, mapped, string.Join(", ", reader.DeviceNames));
+        // SDL_NumJoysticks ne reflète PAS le hotplug (même pompé sur le thread SDL) : seule
+        // une ré-init du sous-système joystick (quit+init) ré-énumère vraiment les devices.
+        // On le fait donc toutes les ~5 s sur CE thread dédié FIXE (énumération cohérente —
+        // contrairement à Task.Run+await qui migrait le thread). On ne loggue que sur changement.
+        var mapped = reader.ForceReenumerate();
+        var key = mapped + "|" + string.Join(",", reader.DeviceNames);
+        if (key == _lastDeviceKey) return;
+        _lastDeviceKey = key;
+        _logger?.LogInformation("Panel input re-scan: {Mapped} mapped [{Names}]",
+            mapped, string.Join(", ", reader.DeviceNames));
     }
 
     private void Publish(string type, int device, string identity)
