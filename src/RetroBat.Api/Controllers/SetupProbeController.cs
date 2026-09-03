@@ -45,23 +45,51 @@ public sealed class SetupProbeController : ControllerBase
         return u.GetLeftPart(UriPartial.Path);
     }
 
+    // Sonde de PRÉSENCE pour le funnel (technique popup) : le site ouvre cette URL loopback
+    // dans une popup (window.open = navigation, autorisée contrairement à fetch/LNA). Si
+    // APIExpose répond, on REDIRIGE la popup vers <to>/apiexpose-ok (même origine que le site)
+    // qui signale « présent » au parent puis se ferme. Si APIExpose est éteint, la popup tombe
+    // sur ERR_CONNECTION_REFUSED (contenu dans la popup) et le site conclut « absent » au timeout.
+    [HttpGet("/nelfeplay/detect")]
+    [ApiExplorerSettings(IgnoreApi = true)]
+    public async Task<IActionResult> Detect([FromQuery(Name = "to")] string? to, CancellationToken ct)
+    {
+        // On porte le MÊME statut que /setup-probe (rb/api/paired/pseudo/device_id) : le
+        // signal de présence sert aussi à /account (⚡ machine courante) sans autre aller-retour.
+        var origin = SafeOrigin(to);
+        return Redirect(origin + "/apiexpose-ok" + await BuildStatusQueryAsync(ct).ConfigureAwait(false));
+    }
+
+    // Statut de la borne, en query : rb (RetroBat/ES joignable), api=1 (nous), paired, pseudo,
+    // device_id. Partagé par /setup-probe et /nelfeplay/detect.
+    private async Task<string> BuildStatusQueryAsync(CancellationToken ct)
+    {
+        var es = await EmulationStationReachableAsync(ct).ConfigureAwait(false);
+        var paired = _device.IsPaired;
+        var pseudo = paired ? _agent.Status.Pseudo : null;
+        var deviceId = paired ? _device.DeviceId : null;
+
+        var q = "?rb=" + (es ? "1" : "0") + "&api=1&paired=" + (paired ? "1" : "0");
+        if (!string.IsNullOrWhiteSpace(pseudo)) { q += "&pseudo=" + Uri.EscapeDataString(pseudo); }
+        if (!string.IsNullOrWhiteSpace(deviceId)) { q += "&device_id=" + Uri.EscapeDataString(deviceId); }
+        return q;
+    }
+
+    // N'accepte qu'une ORIGINE https d'un hôte connu (anti open-redirect) ; défaut nelfeplay.com.
+    private static string SafeOrigin(string? url)
+    {
+        const string fallback = "https://nelfeplay.com";
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var u)) return fallback;
+        if (u.Scheme != Uri.UriSchemeHttps || !IsAllowedReturnHost(u.Host)) return fallback;
+        return u.GetLeftPart(UriPartial.Authority);
+    }
+
     [HttpGet("/setup-probe")]
     [ApiExplorerSettings(IgnoreApi = true)]
     public async Task<IActionResult> Probe([FromQuery(Name = "return")] string? returnUrl, CancellationToken ct)
     {
         var ret = SafeReturnBase(returnUrl);
-        var es = await EmulationStationReachableAsync(ct).ConfigureAwait(false);
-        var paired = _device.IsPaired;
-        var pseudo = paired ? _agent.Status.Pseudo : null;
-        var deviceId = paired ? _device.DeviceId : null;   // identifie CETTE machine sur /account
-
-        var q = "?rb=" + (es ? "1" : "0")
-              + "&api=1"                                  // c'est nous : si on répond, APIExpose tourne
-              + "&paired=" + (paired ? "1" : "0");
-        if (!string.IsNullOrWhiteSpace(pseudo)) { q += "&pseudo=" + Uri.EscapeDataString(pseudo); }
-        if (!string.IsNullOrWhiteSpace(deviceId)) { q += "&device_id=" + Uri.EscapeDataString(deviceId); }
-
-        return Redirect(ret + q);
+        return Redirect(ret + await BuildStatusQueryAsync(ct).ConfigureAwait(false));
     }
 
     // EmulationStation expose une API HTTP sur :1234. On ne cherche pas un endpoint
