@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Net.Http;
+using System.Text.Json;
 using RetroBat.Api.Replay.Models;
 using RetroBat.Api.Replay.Runtime;
 using RetroBat.Api.Replay.Storage;
@@ -21,6 +23,8 @@ public sealed class ReplayPlaybackService
     private readonly ReplayStore _store;
     private readonly IEventBus _bus;
     private readonly RetroBat.Api.Infrastructure.NelfePlayAgentService _agent;   // pseudo appairé = joueur de la carte
+    private readonly RetroBat.Api.Infrastructure.NelfePlayDeviceStore _devices;  // credential pour le backfill carte
+    private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<ReplayPlaybackService> _logger;
 
     private readonly object _gate = new();
@@ -36,9 +40,11 @@ public sealed class ReplayPlaybackService
     private CancellationTokenSource? _monitorCts;
 
     public ReplayPlaybackService(RetroArchReplayClient ra, ReplayStore store, IEventBus bus,
-        RetroBat.Api.Infrastructure.NelfePlayAgentService agent, ILogger<ReplayPlaybackService> logger)
+        RetroBat.Api.Infrastructure.NelfePlayAgentService agent,
+        RetroBat.Api.Infrastructure.NelfePlayDeviceStore devices, IHttpClientFactory httpFactory,
+        ILogger<ReplayPlaybackService> logger)
     {
-        _ra = ra; _store = store; _bus = bus; _agent = agent; _logger = logger;
+        _ra = ra; _store = store; _bus = bus; _agent = agent; _devices = devices; _httpFactory = httpFactory; _logger = logger;
     }
 
     /// <summary>Vrai pendant qu'une lecture est en cours (le recorder s'abstient d'enregistrer).</summary>
@@ -84,7 +90,11 @@ public sealed class ReplayPlaybackService
         var manifest = _store.GetManifest(replayId);
         if (manifest is null) return Fail(ReplayErrorCode.ReplayNotFound);
         var meta = _store.GetMeta(replayId);
-        lock (_gate) _card = BuildCard(manifest, meta, _agent.Status.Pseudo);
+        ReplayCard? builtCard;
+        lock (_gate) { _card = BuildCard(manifest, meta, _agent.Status.Pseudo); builtCard = _card; }
+        // Backfill : replay estampillé AVANT la corrélation score → pas de score en méta.
+        // On le récupère du serveur en tâche de fond ; la carte se rafraîchit via /state.
+        if (builtCard is { Score: null }) { _ = BackfillCardAsync(replayId, ct); }
         var hint = meta?.Launch;
         var objectPath = _store.ObjectPath(manifest.Object.Sha256);
         if (!File.Exists(objectPath)) return Fail(ReplayErrorCode.ReplayObjectUnavailable);
@@ -305,6 +315,58 @@ public sealed class ReplayPlaybackService
     private static readonly HashSet<string> RegionTokens = new(StringComparer.OrdinalIgnoreCase)
     { "usa", "europe", "japan", "world", "eu", "us", "jp", "en", "fr", "de", "es", "it",
       "rev", "proto", "beta", "demo", "sample", "unl", "pd" };
+
+    // Récupère score+rang+joueur du serveur pour un replay dont la méta ne les a pas
+    // (estampillé AVANT la corrélation score↔replay), met à jour la carte affichée (via
+    // /state) et estampille la méta locale (permanent : plus de fetch la fois suivante).
+    // Best-effort : silencieux si non appairé / hors-ligne / replay inconnu du serveur.
+    private async Task BackfillCardAsync(string replayId, CancellationToken ct)
+    {
+        try
+        {
+            var credential = _devices.GetCredential();
+            if (string.IsNullOrEmpty(credential)) return;
+
+            var client = _httpFactory.CreateClient();
+            client.BaseAddress = new Uri(RetroBat.Api.Infrastructure.NelfePlayAgentService.BaseUrl.TrimEnd('/'));
+            client.Timeout = TimeSpan.FromSeconds(8);
+            client.DefaultRequestHeaders.Add("X-NELFEPLAY-DEVICE", credential);
+
+            using var resp = await client.GetAsync(
+                $"/api/v1/agent/scores/replay-card?replay_id={Uri.EscapeDataString(replayId)}", ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode) return;
+
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True) return;
+
+            long? score = root.TryGetProperty("score", out var sv) && sv.TryGetInt64(out var s) ? s : (long?)null;
+            int? rank = root.TryGetProperty("rank", out var rv) && rv.TryGetInt32(out var r) ? r : (int?)null;
+            var player = root.TryGetProperty("player", out var pv) && pv.ValueKind == JsonValueKind.String ? pv.GetString() : null;
+            if (score is null && rank is null) return;
+
+            lock (_gate)
+            {
+                if (_card is not null && string.Equals(_replayId, replayId, StringComparison.Ordinal))
+                    _card = _card with { Score = score ?? _card.Score, Rank = rank ?? _card.Rank };
+            }
+            var meta = _store.GetMeta(replayId);
+            if (meta is not null)
+            {
+                _store.SaveMeta(meta with
+                {
+                    ScoreValue = score,
+                    Rank = rank,
+                    Player = string.IsNullOrWhiteSpace(player) ? meta.Player : player,
+                });
+            }
+            _logger.LogInformation("Replay carte backfill {Id} : score={Score} rang={Rank}", replayId, score, rank);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Replay carte backfill impossible.");
+        }
+    }
 
     private static ReplayCard BuildCard(ReplayManifest m, ReplayLocalMetadata? meta, string? pseudo)
     {
