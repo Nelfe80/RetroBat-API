@@ -3,6 +3,8 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using Microsoft.Extensions.Options;
+using RetroBat.Api.Infrastructure;
 using RetroBat.Api.Replay.Input;
 using RetroBat.Api.Replay.Models;
 using RetroBat.Api.Replay.Playback;
@@ -29,6 +31,8 @@ public sealed class ReplayReactionHudService : BackgroundService
     private readonly ReplayPlaybackService _playback;
     private readonly ReplayStore _store;
     private readonly ILogger<ReplayReactionHudService> _logger;
+    private readonly IOptionsMonitor<ApiExposeOptions> _options;
+    private readonly NelfePlayScoringSessionService? _session;
 
     private readonly object _sync = new();
     private Thread? _uiThread;
@@ -39,10 +43,22 @@ public sealed class ReplayReactionHudService : BackgroundService
     private IDisposable? _sub;
 
     public ReplayReactionHudService(IEventBus bus, ReplayReactionService reactions,
-        ReplayPlaybackService playback, ReplayStore store, ILogger<ReplayReactionHudService> logger)
+        ReplayPlaybackService playback, ReplayStore store, ILogger<ReplayReactionHudService> logger,
+        IOptionsMonitor<ApiExposeOptions> options, NelfePlayScoringSessionService? session = null)
     {
         _bus = bus; _reactions = reactions; _playback = playback; _store = store; _logger = logger;
+        _options = options; _session = session;
     }
+
+    /// <summary>
+    /// La langue des mots de réaction, résolue par le mécanisme EXISTANT de la borne :
+    /// le joueur identifié d'abord, la borne ensuite, l'anglais en dernier recours.
+    /// Relue à chaque affichage — un joueur peut arriver entre deux réactions.
+    /// </summary>
+    private string Locale() => CabinetAnnounceText.Resolve(
+        _session?.Get()?.Locale,
+        RetroBat.Domain.Services.ApiExposeProfileResolver.ResolveLanguageCode(
+            null, _options.CurrentValue.ApiSettings.LanguageProfile));
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -89,7 +105,7 @@ public sealed class ReplayReactionHudService : BackgroundService
             var form = new HudForm(() => _reactions.GetCharge(), sprites,
                 () => _playback.GetState(),
                 () => _reactions.GetAvailability(),
-                id => _store.ReadReactions(id));
+                id => _store.ReadReactions(id), Locale);
             lock (_sync) { _appContext = context; _dispatcher = dispatcher; _form = form; _sprites = sprites; }
             ready.Set();
             Application.Run(context);
@@ -130,6 +146,7 @@ public sealed class ReplayReactionHudService : BackgroundService
         private readonly Func<ReplayPlaybackService.StateSnapshot> _state;
         private readonly Func<ReplayReactionService.Availability> _avail;
         private readonly Func<string, IReadOnlyList<ReplayReaction>> _loadReactions;
+        private readonly Func<string> _locale; // langue résolue (joueur→borne→en), relue à chaque réaction
         private readonly System.Windows.Forms.Timer _timer;
 
         // bulle « réaction des autres » au passage du curseur (debounce, une seule à la fois)
@@ -152,13 +169,14 @@ public sealed class ReplayReactionHudService : BackgroundService
 
         public HudForm(Func<ReplayReactionService.ChargeSnapshot> charge, ReplayReactionSprites? sprites,
             Func<ReplayPlaybackService.StateSnapshot> state, Func<ReplayReactionService.Availability> avail,
-            Func<string, IReadOnlyList<ReplayReaction>> loadReactions)
+            Func<string, IReadOnlyList<ReplayReaction>> loadReactions, Func<string> locale)
         {
             _charge = charge;
             _sprites = sprites;
             _state = state;
             _avail = avail;
             _loadReactions = loadReactions;
+            _locale = locale;
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
@@ -184,7 +202,7 @@ public sealed class ReplayReactionHudService : BackgroundService
 
         public void AddReaction(string family, int level, bool chord)
         {
-            var (emoji, word) = ReplayReactionText.Resolve(family, level);
+            var (emoji, word) = ReplayReactionText.Resolve(family, level, _locale());
             var color = ReplayReactionText.ColorOf(family);
             // Une réaction = l'icône du design choisi au niveau atteint (col = base + niveau).
             var col = DesignBase + Math.Clamp(level - 1, 0, 2);
@@ -295,7 +313,7 @@ public sealed class ReplayReactionHudService : BackgroundService
             var alpha = t < 0.85f ? 1f : 1f - (t - 0.85f) / 0.15f;
             var a = (int)(255 * Math.Clamp(alpha, 0f, 1f));
 
-            var (_, word) = ReplayReactionText.Resolve(m.Family, m.Level);
+            var (_, word) = ReplayReactionText.Resolve(m.Family, m.Level, _locale());
             var color = ReplayReactionText.ColorOf(m.Family);
             using var nameF = new Font("Segoe UI", 15f, FontStyle.Bold, GraphicsUnit.Pixel);
             using var wordF = new Font("Segoe UI Semibold", 14f, FontStyle.Regular, GraphicsUnit.Pixel);
@@ -516,7 +534,7 @@ public sealed class ReplayReactionHudService : BackgroundService
         // ── jauge de charge (bas-centre, au-dessus de la barre) ──
         private void DrawGauge(Graphics g, ReplayReactionService.ChargeSnapshot c)
         {
-            var (emoji, word) = ReplayReactionText.Resolve(c.Family, c.Level);
+            var (emoji, word) = ReplayReactionText.Resolve(c.Family, c.Level, _locale());
             var color = ReplayReactionText.ColorOf(c.Family);
             float cx = _region.Width / 2f;
             float cy = _region.Height - BarHeight - 150f; // au-dessus de la barre d'info (sinon le texte
