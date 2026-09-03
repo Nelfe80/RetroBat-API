@@ -142,14 +142,12 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         var reader = _reader;
         if (reader is null) return;
 
-        // Chemin rapide : au moins un device ouvert ET tous nos handles encore connectés →
-        // rien à faire (aucun churn en marche normale). Un débranchement fait passer le
-        // handle ouvert à "not attached" (fiable, sans hotplug) et bascule sur la ré-énum.
-        if (reader.HasWorkingDevices()) return;
-
-        // Device perdu, ou aucun device : ré-énumération À FROID (quit+init du sous-système
-        // joystick) + réouverture. Se relance toutes les ~5 s tant qu'aucun panel n'est là,
-        // donc rattrape aussi un futur replug. On ne loggue que sur changement (anti-spam).
+        // Ré-énumération À FROID, INCONDITIONNELLE (~5 s). Depuis ce thread, SDL ne voit pas
+        // le hotplug : ni SDL_NumJoysticks ni SDL_JoystickGetAttached ne se rafraîchissent
+        // (le hotplug SDL est lié au thread de SDL_Init). Le SEUL moyen fiable de redécouvrir
+        // un device (re)branché est un quit+init du sous-système joystick, qui ré-énumère par
+        // appel direct au driver — indépendant du thread et du pompage d'événements. Le coût
+        // (fermeture/réouverture) est minime toutes les 5 s ; on ne loggue que sur changement.
         var mapped = reader.ForceReenumerate();
         if (mapped != _lastMapped)
         {
