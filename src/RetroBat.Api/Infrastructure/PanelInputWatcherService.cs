@@ -29,7 +29,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     private long _ticks;
     private bool _pollFailed;
     private bool _firstPressLogged;
-    private int _lastAttachedCount = -1;
+    private string _lastSignature = "";
     private const int RescanEveryTicks = 200; // ~5 s at 25 ms
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -142,13 +142,15 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         var reader = _reader;
         if (reader is null) return;
 
-        var attached = CabinetInputReader.AttachedCount();
-        if (attached == _lastAttachedCount) return;
-        _lastAttachedCount = attached;
+        // Signature (compte + instance-ids), pas juste le compte : un unplug+replug garde
+        // le même compte mais change l'instance-id → détecté, et on rouvre le device.
+        var signature = CabinetInputReader.AttachedSignature();
+        if (signature == _lastSignature) return;
+        _lastSignature = signature;
 
         var mapped = reader.OpenControllers();
-        _logger?.LogInformation("Panel input devices changed: {Attached} attached, {Mapped} mapped [{Names}]",
-            attached, mapped, string.Join(", ", reader.DeviceNames));
+        _logger?.LogInformation("Panel input devices changed (sig {Sig}): {Mapped} mapped [{Names}]",
+            signature, mapped, string.Join(", ", reader.DeviceNames));
     }
 
     private void Publish(string type, int device, string identity)

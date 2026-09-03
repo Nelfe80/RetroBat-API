@@ -70,6 +70,16 @@ public sealed class CabinetInputReader : IDisposable
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern void SDL_JoystickUpdate();
 
+    // Pomper les events SDL est indispensable pour DÉTECTER un branchement/débranchement :
+    // sans ça, SDL_NumJoysticks() reste périmé après un replug (le hotplug n'est jamais vu).
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void SDL_PumpEvents();
+
+    // Instance-id SDL d'un device par index (sans l'ouvrir) : sert à la signature de
+    // branchement — il CHANGE à chaque replug, même si le compte de joysticks est identique.
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int SDL_JoystickGetDeviceInstanceID(int deviceIndex);
+
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern int SDL_JoystickNumButtons(IntPtr joystick);
 
@@ -222,6 +232,31 @@ public sealed class CabinetInputReader : IDisposable
         catch
         {
             return -1;
+        }
+    }
+
+    /// <summary>Signature des joysticks ACTUELLEMENT branchés : compte + instance-ids SDL.
+    /// Elle change à un unplug+replug MÊME à compte égal (nouvel instance-id) — là où le
+    /// simple compte ne bougeait pas, laissant le watcher sur un handle mort. On pompe les
+    /// events SDL d'abord, sinon le hotplug n'est pas détecté.</summary>
+    public static string AttachedSignature()
+    {
+        try
+        {
+            SDL_PumpEvents();
+            SDL_JoystickUpdate();
+            var n = SDL_NumJoysticks();
+            var sb = new System.Text.StringBuilder();
+            sb.Append(n);
+            for (var i = 0; i < n; i++)
+            {
+                sb.Append(':').Append(SDL_JoystickGetDeviceInstanceID(i));
+            }
+            return sb.ToString();
+        }
+        catch
+        {
+            return "err";
         }
     }
 
