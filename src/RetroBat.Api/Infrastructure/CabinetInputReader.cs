@@ -80,6 +80,19 @@ public sealed class CabinetInputReader : IDisposable
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern int SDL_JoystickGetDeviceInstanceID(int deviceIndex);
 
+    // Statut d'un joystick OUVERT : passe à false quand il est débranché — détecté par
+    // SDL_JoystickUpdate SANS énumération/hotplug. C'est notre signal fiable « re-scanner ».
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int SDL_JoystickGetAttached(IntPtr joystick);
+
+    // Ré-init du seul sous-système joystick : force une découverte FRAÎCHE des devices,
+    // indépendante du pompage d'événements et du thread. C'est ce qui rattrape un replug.
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int SDL_InitSubSystem(InitFlags flags);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void SDL_QuitSubSystem(InitFlags flags);
+
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern int SDL_JoystickNumButtons(IntPtr joystick);
 
@@ -258,6 +271,46 @@ public sealed class CabinetInputReader : IDisposable
         {
             return "err";
         }
+    }
+
+    /// <summary>Vrai si on a AU MOINS un device ouvert ET que tous nos handles sont encore
+    /// connectés. Un débranchement fait passer SDL_JoystickGetAttached à false sur le handle
+    /// OUVERT — signal fiable, sans dépendre du hotplug ni du pompage d'événements.</summary>
+    public bool HasWorkingDevices()
+    {
+        if (_devices.Count == 0) return false;
+        try
+        {
+            SDL_JoystickUpdate();
+            foreach (var d in _devices)
+            {
+                if (SDL_JoystickGetAttached(d.Handle) == 0) return false;
+            }
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Ré-énumère les joysticks À FROID : ferme, quitte puis ré-initialise le
+    /// sous-système joystick de SDL (découverte fraîche, indépendante du thread/pompage),
+    /// puis rouvre. C'est ce qui rattrape un replug que SDL_NumJoysticks() seul ne voit pas.</summary>
+    public int ForceReenumerate()
+    {
+        try
+        {
+            CloseDevices();
+            SDL_QuitSubSystem(InitFlags.Joystick);
+            SDL_InitSubSystem(InitFlags.Joystick);
+            SDL_JoystickUpdate();
+        }
+        catch
+        {
+            // best-effort : même si le teardown échoue, on tente une réouverture.
+        }
+        return OpenControllers();
     }
 
     private static readonly string[] VirtualMarkers = { "vjoy", "virtual", "vigem", "dummy", "emulated" };

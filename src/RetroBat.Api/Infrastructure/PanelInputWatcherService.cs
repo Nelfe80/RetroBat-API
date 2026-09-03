@@ -29,7 +29,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     private long _ticks;
     private bool _pollFailed;
     private bool _firstPressLogged;
-    private string _lastSignature = "";
+    private int _lastMapped = -1;
     private const int RescanEveryTicks = 200; // ~5 s at 25 ms
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -142,15 +142,21 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         var reader = _reader;
         if (reader is null) return;
 
-        // Signature (compte + instance-ids), pas juste le compte : un unplug+replug garde
-        // le même compte mais change l'instance-id → détecté, et on rouvre le device.
-        var signature = CabinetInputReader.AttachedSignature();
-        if (signature == _lastSignature) return;
-        _lastSignature = signature;
+        // Chemin rapide : au moins un device ouvert ET tous nos handles encore connectés →
+        // rien à faire (aucun churn en marche normale). Un débranchement fait passer le
+        // handle ouvert à "not attached" (fiable, sans hotplug) et bascule sur la ré-énum.
+        if (reader.HasWorkingDevices()) return;
 
-        var mapped = reader.OpenControllers();
-        _logger?.LogInformation("Panel input devices changed (sig {Sig}): {Mapped} mapped [{Names}]",
-            signature, mapped, string.Join(", ", reader.DeviceNames));
+        // Device perdu, ou aucun device : ré-énumération À FROID (quit+init du sous-système
+        // joystick) + réouverture. Se relance toutes les ~5 s tant qu'aucun panel n'est là,
+        // donc rattrape aussi un futur replug. On ne loggue que sur changement (anti-spam).
+        var mapped = reader.ForceReenumerate();
+        if (mapped != _lastMapped)
+        {
+            _lastMapped = mapped;
+            _logger?.LogInformation("Panel input re-scan: {Mapped} mapped [{Names}]",
+                mapped, string.Join(", ", reader.DeviceNames));
+        }
     }
 
     private void Publish(string type, int device, string identity)
