@@ -125,6 +125,12 @@ public sealed class ReplayPlaybackService
                 "input_exit_emulator_btn = \"nul\"",
                 "input_menu_toggle_gamepad_combo = \"0\"",
                 "input_quit_gamepad_combo = \"0\"",
+                // Un replay n'est PAS une partie : on coupe RetroAchievements (sinon le login
+                // réseau + l'identification + le démarrage de session RETARDENT l'entrée en
+                // lecture au-delà du timeout — l'API tuait alors RetroArch — et on débloquerait
+                // en plus des succès pour un simple visionnage) et le rewind (inutile ici).
+                "cheevos_enable = \"false\"",
+                "rewind_enable = \"false\"",
                 // NB : la vitesse de lecture est NORMALE à l'écran (confirmé visuellement) ; le
                 // compteur active_replay.frame avance ~2x mais c'est une sémantique interne, pas la
                 // cadence réelle. Aucun override de cadence n'est donc nécessaire.
@@ -150,8 +156,9 @@ public sealed class ReplayPlaybackService
         _logger.LogInformation("Replay : lecture lancée {ReplayId} (core={Core}, rom={Rom}).", replayId, Path.GetFileName(coreDll), Path.GetFileName(hint.RomPath));
         await Publish("replay.launching", new { replayId }).ConfigureAwait(false);
 
-        // ── attente du démarrage effectif de la lecture (active_replay flags=4), timeout 15 s ──
-        var deadline = DateTime.UtcNow.AddSeconds(15);
+        // ── attente du démarrage effectif de la lecture (active_replay flags=4), timeout 20 s ──
+        // (marge pour les CPU faibles ; sans cheevos, l'entrée en lecture est de toute façon rapide)
+        var deadline = DateTime.UtcNow.AddSeconds(20);
         while (DateTime.UtcNow < deadline)
         {
             if (proc.HasExited) return Fail(ReplayErrorCode.RetroArchUnavailable);
