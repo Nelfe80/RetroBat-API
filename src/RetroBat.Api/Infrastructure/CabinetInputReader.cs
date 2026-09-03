@@ -273,6 +273,22 @@ public sealed class CabinetInputReader : IDisposable
         }
     }
 
+    /// <summary>Pompe les événements SDL + met à jour les joysticks ouverts. À appeler
+    /// régulièrement sur LE thread qui a fait SDL_Init : c'est ce qui fait détecter à SDL
+    /// les branchements/débranchements (hotplug) et rafraîchit l'état des boutons.</summary>
+    public void Pump()
+    {
+        try
+        {
+            SDL_PumpEvents();
+            SDL_JoystickUpdate();
+        }
+        catch
+        {
+            // best-effort
+        }
+    }
+
     /// <summary>Vrai si on a AU MOINS un device ouvert ET que tous nos handles sont encore
     /// connectés. Un débranchement fait passer SDL_JoystickGetAttached à false sur le handle
     /// OUVERT — signal fiable, sans dépendre du hotplug ni du pompage d'événements.</summary>

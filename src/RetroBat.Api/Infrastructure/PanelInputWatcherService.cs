@@ -29,10 +29,13 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     private long _ticks;
     private bool _pollFailed;
     private bool _firstPressLogged;
-    private int _lastMapped = -1;
+    private string _lastSignature = "";
     private const int RescanEveryTicks = 200; // ~5 s at 25 ms
-    private CancellationTokenSource? _cts;
-    private Task? _loop;
+    // SDL est lié au thread : le hotplug (add/remove) n'est vu QUE sur le thread qui a fait
+    // SDL_Init, et seulement si on y pompe les événements. On possède donc SDL sur UN thread
+    // dédié FIXE (pas un Task.Run + await, dont le thread migre entre les awaits).
+    private Thread? _thread;
+    private volatile bool _stop;
 
     public PanelInputWatcherService(IEventBus eventBus, ILogger<PanelInputWatcherService>? logger = null)
     {
@@ -41,6 +44,17 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
+    {
+        // Tout le travail SDL (init, pompage, ouverture, lecture) doit vivre sur CE thread
+        // et lui seul : c'est la condition pour que SDL voie un panel (dé)branché.
+        _thread = new Thread(RunLoop) { IsBackground = true, Name = "PanelInputWatcher" };
+        _thread.Start();
+        return Task.CompletedTask;
+    }
+
+    // Boucle SYNCHRONE sur le thread dédié : aucun await (qui migrerait le thread et
+    // casserait le hotplug SDL). SDL_Init, pompage, ouverture et lecture y vivent ensemble.
+    private void RunLoop()
     {
         try
         {
@@ -52,83 +66,63 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
                 _logger?.LogInformation("Panel input watcher not started: {Message}", message);
                 _reader.Dispose();
                 _reader = null;
-                return Task.CompletedTask;
+                return;
             }
 
-            // Initialize only loads the mapping database; the joysticks still have to be
-            // OPENED, or Snapshot walks an empty list and no press is ever seen.
             var mapped = _reader.OpenControllers();
             _logger?.LogInformation("Panel input watcher started: {Message}, {Mapped} mapped device(s) [{Names}]",
                 message, mapped, string.Join(", ", _reader.DeviceNames));
-            _cts = new CancellationTokenSource();
-            _loop = Task.Run(() => WatchAsync(_cts.Token), CancellationToken.None);
+            _lastSignature = CabinetInputReader.AttachedSignature();
+
+            // (device, identity) of everything currently down: the diff between two polls is
+            // what becomes a press and a release
+            var held = new HashSet<(int Device, string Identity)>();
+
+            while (!_stop)
+            {
+                try
+                {
+                    // Pomper les événements SDL sur CE thread (celui de SDL_Init) est ce qui
+                    // fait voir un branchement/débranchement — impossible depuis un autre thread.
+                    _reader!.Pump();
+
+                    if (++_ticks % RescanEveryTicks == 0) RescanIfChanged();
+
+                    // Boutons cabinet (canal historique) + directions (canal additif dpad/stick).
+                    var now = _reader!.Snapshot()
+                        .Select(p => (Device: p.DeviceIndex, p.Identity))
+                        .Concat(_reader!.SnapshotDirections().Select(p => (Device: p.DeviceIndex, p.Identity)))
+                        .ToHashSet();
+
+                    foreach (var down in now.Where(x => !held.Contains(x)))
+                    {
+                        Publish("panel.input.pressed", down.Device, down.Identity);
+                    }
+
+                    foreach (var up in held.Where(x => !now.Contains(x)).ToList())
+                    {
+                        Publish("panel.input.released", up.Device, up.Identity);
+                    }
+
+                    held = now;
+                }
+                catch (Exception ex)
+                {
+                    // Loud once, then quiet - a repeating failure must not drown the file.
+                    if (!_pollFailed)
+                    {
+                        _pollFailed = true;
+                        _logger?.LogWarning(ex, "Panel input poll failed; presses are no longer being read.");
+                    }
+                    Thread.Sleep(1000);
+                }
+
+                Thread.Sleep(PollIntervalMs);
+            }
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Panel input watcher could not start.");
-        }
-
-        return Task.CompletedTask;
-    }
-
-    private async Task WatchAsync(CancellationToken token)
-    {
-        // (device, identity) of everything currently down: the diff between two polls is
-        // what becomes a press and a release
-        var held = new HashSet<(int Device, string Identity)>();
-
-        while (!token.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(PollIntervalMs, token).ConfigureAwait(false);
-
-                // A pad plugged in after startup, or an emulator that took the device and
-                // gave it back. The rescan CLOSES and reopens every joystick, so doing it
-                // blindly on a timer meant one unlucky moment - a reopen refused while
-                // something else held the device - left the watcher deaf for good, with
-                // nothing in the log to say so. It now runs only when the number of
-                // joysticks actually changed, and says what it found.
-                if (++_ticks % RescanEveryTicks == 0) RescanIfChanged();
-
-                // Boutons cabinet (canal historique) + directions (canal additif dpad/stick).
-                // Les deux passent par le même diff pressed/released ; les directions sont
-                // taguées System=DPAD par SystemInput et n'ont pas de slot (comme START/SELECT).
-                var now = _reader!.Snapshot()
-                    .Select(p => (Device: p.DeviceIndex, p.Identity))
-                    .Concat(_reader!.SnapshotDirections().Select(p => (Device: p.DeviceIndex, p.Identity)))
-                    .ToHashSet();
-
-                foreach (var down in now.Where(x => !held.Contains(x)))
-                {
-                    Publish("panel.input.pressed", down.Device, down.Identity);
-                }
-
-                foreach (var up in held.Where(x => !now.Contains(x)).ToList())
-                {
-                    Publish("panel.input.released", up.Device, up.Identity);
-                }
-
-                held = now;
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                // Debug-only was a trap: a poll failing every tick is EXACTLY the state
-                // that explains "I press and nothing happens", and it was the one thing
-                // the log did not say. Loud once, then quiet - a repeating failure must
-                // not drown the file.
-                if (!_pollFailed)
-                {
-                    _pollFailed = true;
-                    _logger?.LogWarning(ex, "Panel input poll failed; presses are no longer being read.");
-                }
-
-                await Task.Delay(1000, CancellationToken.None).ConfigureAwait(false);
-            }
+            _logger?.LogWarning(ex, "Panel input watcher thread crashed.");
         }
     }
 
@@ -142,19 +136,16 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         var reader = _reader;
         if (reader is null) return;
 
-        // Ré-énumération À FROID, INCONDITIONNELLE (~5 s). Depuis ce thread, SDL ne voit pas
-        // le hotplug : ni SDL_NumJoysticks ni SDL_JoystickGetAttached ne se rafraîchissent
-        // (le hotplug SDL est lié au thread de SDL_Init). Le SEUL moyen fiable de redécouvrir
-        // un device (re)branché est un quit+init du sous-système joystick, qui ré-énumère par
-        // appel direct au driver — indépendant du thread et du pompage d'événements. Le coût
-        // (fermeture/réouverture) est minime toutes les 5 s ; on ne loggue que sur changement.
-        var mapped = reader.ForceReenumerate();
-        if (mapped != _lastMapped)
-        {
-            _lastMapped = mapped;
-            _logger?.LogInformation("Panel input re-scan: {Mapped} mapped [{Names}]",
-                mapped, string.Join(", ", reader.DeviceNames));
-        }
+        // La signature (compte + instance-ids) reflète le hotplug maintenant que Pump()
+        // tourne sur CE thread (celui de SDL_Init). Un (dé)branchement la change même à
+        // compte net égal → on rouvre les joysticks. Léger, aucun churn en marche normale.
+        var signature = CabinetInputReader.AttachedSignature();
+        if (signature == _lastSignature) return;
+        _lastSignature = signature;
+
+        var mapped = reader.OpenControllers();
+        _logger?.LogInformation("Panel input devices changed (sig {Sig}): {Mapped} mapped [{Names}]",
+            signature, mapped, string.Join(", ", reader.DeviceNames));
     }
 
     private void Publish(string type, int device, string identity)
@@ -271,20 +262,17 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
         return result;
     }
 
-    public async Task StopAsync(CancellationToken cancellationToken)
+    public Task StopAsync(CancellationToken cancellationToken)
     {
-        _cts?.Cancel();
-        if (_loop is not null)
-        {
-            try { await _loop.ConfigureAwait(false); }
-            catch (OperationCanceledException) { }
-        }
+        _stop = true;
+        try { _thread?.Join(2000); } catch { /* arrêt best-effort */ }
+        return Task.CompletedTask;
     }
 
     public void Dispose()
     {
-        _cts?.Cancel();
-        _cts?.Dispose();
+        _stop = true;
+        try { _thread?.Join(2000); } catch { /* arrêt best-effort */ }
         _reader?.Dispose();
     }
 }
