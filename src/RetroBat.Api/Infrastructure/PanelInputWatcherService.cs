@@ -36,9 +36,12 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     // dédié FIXE (pas un Task.Run + await, dont le thread migre entre les awaits).
     private Thread? _thread;
     private volatile bool _stop;
-    // Pendant un replay, personne ne (dé)branche un panel : on suspend la ré-énumération SDL
-    // (SDL_QuitSubSystem+InitSubSystem = synchro forcée coûteuse) — la LECTURE des appuis continue.
-    private volatile bool _suspendRescan;
+    // Pendant une LECTURE replay ou une SESSION DE JEU, personne ne (dé)branche un panel : on
+    // suspend la ré-énumération SDL (SDL_QuitSubSystem+InitSubSystem = synchro forcée coûteuse)
+    // — la LECTURE des appuis, elle, continue. Deux drapeaux distincts : un replay lancé pendant
+    // qu'ES croit encore le jeu ouvert ne doit pas ré-armer le hotplug en se terminant.
+    private volatile bool _replayActive;
+    private volatile bool _gameActive;
     private IDisposable? _busSub;
 
     public PanelInputWatcherService(IEventBus eventBus, ILogger<PanelInputWatcherService>? logger = null)
@@ -60,8 +63,14 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
 
     private void OnBusEvent(EventEnvelope e)
     {
-        if (string.Equals(e.Type, "replay.started", StringComparison.Ordinal)) _suspendRescan = true;
-        else if (string.Equals(e.Type, "replay.finished", StringComparison.Ordinal)) _suspendRescan = false;
+        // Lecture replay (lancée par nous) ET session de jeu (ES : game-start/game-end → ui.game.*).
+        if (string.Equals(e.Type, "replay.started", StringComparison.Ordinal)) _replayActive = true;
+        else if (string.Equals(e.Type, "replay.finished", StringComparison.Ordinal)) _replayActive = false;
+        else if (string.Equals(e.Type, "ui.game.started", StringComparison.Ordinal)) _gameActive = true;
+        else if (string.Equals(e.Type, "ui.game.ended", StringComparison.Ordinal)) _gameActive = false;
+        // Filet : si un game-end se perd (ES tué/crash), naviguer dans le menu prouve qu'aucun jeu
+        // ne tourne → on ré-arme le hotplug (sinon un panel rebranché ne serait plus jamais détecté).
+        else if (string.Equals(e.Type, "ui.game.selected", StringComparison.Ordinal)) _gameActive = false;
     }
 
     // Boucle SYNCHRONE sur le thread dédié : aucun await (qui migrerait le thread et
@@ -147,9 +156,10 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     {
         var reader = _reader;
         if (reader is null) return;
-        // Pendant un replay : pas de ré-énumération SDL (synchro forcée) — le panel reste lu, mais on
-        // n'ira pas re-détecter un (dé)branchement improbable pendant la lecture. Repris à la fin.
-        if (_suspendRescan) return;
+        // Pendant une lecture replay OU une session de jeu : pas de ré-énumération SDL (synchro
+        // forcée) — le panel reste lu, mais on ne re-détecte pas un (dé)branchement improbable
+        // pendant qu'on joue. Repris dès le retour au menu (game-end / fin de lecture).
+        if (_replayActive || _gameActive) return;
 
         // SDL_NumJoysticks ne reflète PAS le hotplug (même pompé sur le thread SDL) : seule
         // une ré-init du sous-système joystick (quit+init) ré-énumère vraiment les devices.
