@@ -376,7 +376,8 @@ builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.IReplayObjectStore>(sp
 builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.IReplayMetadataStore>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Storage.ReplayStore>());
 builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.IReplayIndex>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Storage.ReplayStore>());
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplayRuntimeResolver>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Playback.ReplayRuntimeResolver>());
-builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplaySourceResolver, RetroBat.Api.Replay.Playback.LocalReplaySourceResolver>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayPeerStore>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplaySourceResolver, RetroBat.Api.Replay.Sharing.NelfeNetSourceResolver>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplaySharePolicy>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayPlaybackService>();
 builder.Services.AddHostedService<RetroBat.Api.Replay.Recording.ReplayRecorderService>();

@@ -16,27 +16,13 @@ public interface IReplayRuntimeResolver
 /// ⭐ LA seam NelfeNet. Question posée par le lecteur avant de lancer : « rends-moi l'objet de ce
 /// replay disponible localement ». Le lecteur n'a PAS à savoir d'où il vient.
 ///
-/// Aujourd'hui une seule réponse possible (<see cref="LocalReplaySourceResolver"/> : il est là, ou
-/// il n'est pas là). Demain, une implémentation NelfeNet pourra le télécharger depuis une autre
-/// borne / un relais avant de rendre la main — sans toucher une ligne du lecteur.
+/// Implémentée par <c>NelfeNetSourceResolver</c> : l'objet est cherché ici d'abord, puis auprès
+/// des pairs connus. Sans pair configuré, le comportement est celui d'avant NelfeNet, en local pur.
 /// </summary>
 public interface IReplaySourceResolver
 {
     /// <summary>Vrai si l'objet est (devenu) disponible localement. L'implémentation peut le
-    /// récupérer ; elle NE valide PAS l'intégrité (c'est R6, fait juste après par le lecteur).</summary>
+    /// récupérer d'un pair, en vérifiant taille et hash avant de le ranger. L'intégrité est
+    /// revérifiée juste après par le lecteur (R6), qui ne fait confiance à personne.</summary>
     Task<bool> EnsureObjectAvailableAsync(ReplayManifest manifest, CancellationToken ct);
-}
-
-/// <summary>
-/// Implémentation LOCALE : l'objet est disponible s'il est déjà dans le magasin. Aucun réseau,
-/// aucune récupération — c'est le comportement d'avant NelfeNet, rendu explicite.
-/// </summary>
-public sealed class LocalReplaySourceResolver : IReplaySourceResolver
-{
-    private readonly IReplayObjectStore _objects;
-
-    public LocalReplaySourceResolver(IReplayObjectStore objects) => _objects = objects;
-
-    public Task<bool> EnsureObjectAvailableAsync(ReplayManifest manifest, CancellationToken ct)
-        => Task.FromResult(File.Exists(_objects.ObjectPath(manifest.Object.Sha256)));
 }

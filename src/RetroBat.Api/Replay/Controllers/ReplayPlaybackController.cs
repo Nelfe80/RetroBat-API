@@ -136,6 +136,35 @@ public sealed class ReplayPlaybackController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Diagnostic NelfeNet : les pairs connus de cette borne et leur joignabilité. Ne renvoie
+    /// JAMAIS les clés d'API, seulement le fait qu'une clé soit renseignée.
+    /// </summary>
+    [HttpGet("peers")]
+    public async Task<IActionResult> Peers([FromServices] RetroBat.Api.Replay.Sharing.ReplayPeerStore store,
+        [FromServices] IHttpClientFactory httpFactory, CancellationToken ct)
+    {
+        var results = new List<object>();
+        foreach (var p in store.Peers)
+        {
+            var reachable = false;
+            try
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(TimeSpan.FromSeconds(3));
+                var client = httpFactory.CreateClient();
+                client.Timeout = Timeout.InfiniteTimeSpan;
+                using var req = new HttpRequestMessage(HttpMethod.Get, p.BaseUrl.TrimEnd('/') + "/api/v1/status");
+                if (!string.IsNullOrWhiteSpace(p.ApiKey)) req.Headers.Add("X-Api-Key", p.ApiKey);
+                using var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                reachable = res.IsSuccessStatusCode;
+            }
+            catch { reachable = false; }
+            results.Add(new { name = p.Name, base_url = p.BaseUrl, has_api_key = !string.IsNullOrWhiteSpace(p.ApiKey), reachable });
+        }
+        return Ok(new { peers = results, total = results.Count, source = store.Path });
+    }
+
     /// <summary>Réactions horodatées d'un replay (JSONL rejouable). Sert l'affichage (étape suivante).</summary>
     [HttpGet("reactions")]
     public IActionResult Reactions([FromQuery(Name = "replay_id")] string? replayId)
