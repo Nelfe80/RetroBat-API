@@ -148,6 +148,7 @@ public sealed class ReplayReactionHudService : BackgroundService
         private readonly Func<string, IReadOnlyList<ReplayReaction>> _loadReactions;
         private readonly Func<string> _locale; // langue résolue (joueur→borne→en), relue à chaque réaction
         private readonly System.Windows.Forms.Timer _timer;
+        private long _lastRenderMs;   // throttle du compositing : 1 fps au repos, 25 fps si animation
 
         // bulle « réaction des autres » au passage du curseur (debounce, une seule à la fois)
         private string? _bubbleReplayId;
@@ -251,8 +252,17 @@ public sealed class ReplayReactionHudService : BackgroundService
                 if (!EnsureRegion()) return;
                 if (!Visible) Show();
 
-                RenderFrame(charge, now, playing);
-                PushLayered(_region.Location, _region.Size);
+                // Le coût = compositing DWM d'une fenêtre layered PLEIN ÉCRAN par-dessus RetroArch.
+                // On ne recompose donc à 25 fps QUE quand quelque chose BOUGE (nuée/mot/jauge/bulle) ;
+                // sinon 1 fps suffit (légende/attente quasi statiques) → RetroArch garde le GPU, fin
+                // du son haché. (Diagnostic borne i3-N305 : 2 overlays layered 25 fps = coupable.)
+                var animating = charge.Active || _parts.Count > 0 || _labels.Count > 0 || _activeBubble is not null;
+                if (animating || now - _lastRenderMs >= 1000)
+                {
+                    RenderFrame(charge, now, playing);
+                    PushLayered(_region.Location, _region.Size);
+                    _lastRenderMs = now;
+                }
                 AssertTopmost();
             }
             catch

@@ -172,7 +172,9 @@ public sealed class ReplayOverlayService : BackgroundService
             _surface = new OverlaySurface(() => _snapshot, () => _curve, () => _markers, () => _displayFrame, _sprites) { Dock = DockStyle.Fill };
             Controls.Add(_surface);
 
-            _timer = new System.Windows.Forms.Timer { Interval = 40 }; // 25 fps : curseur fluide (interpolé)
+            _timer = new System.Windows.Forms.Timer { Interval = 250 }; // ~4 fps : la barre est layered
+            // (compositing DWM par-dessus RetroArch) → on limite les repeints pour ne pas hacher l'audio
+            // sur borne faible (curseur moins fluide, mais la lecture prime). Cf. diagnostic i3-N305.
             _timer.Tick += (_, _) => OnTick();
             // Démarre TOUT DE SUITE : la fenêtre naît cachée et s'auto-affiche via le poll.
             // (Ne PAS attacher au 'Shown' : il ne se déclenche jamais tant qu'on ne montre rien.)
