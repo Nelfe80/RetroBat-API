@@ -21,6 +21,7 @@ public sealed class ReplayPlaybackService
 {
     private readonly RetroArchReplayClient _ra;
     private readonly ReplayStore _store;
+    private readonly ReplayRuntimeResolver _resolver;
     private readonly IEventBus _bus;
     private readonly RetroBat.Api.Infrastructure.NelfePlayAgentService _agent;   // pseudo appairé = joueur de la carte
     private readonly RetroBat.Api.Infrastructure.NelfePlayDeviceStore _devices;  // credential pour le backfill carte
@@ -39,12 +40,12 @@ public sealed class ReplayPlaybackService
     private Process? _process;
     private CancellationTokenSource? _monitorCts;
 
-    public ReplayPlaybackService(RetroArchReplayClient ra, ReplayStore store, IEventBus bus,
-        RetroBat.Api.Infrastructure.NelfePlayAgentService agent,
+    public ReplayPlaybackService(RetroArchReplayClient ra, ReplayStore store, ReplayRuntimeResolver resolver,
+        IEventBus bus, RetroBat.Api.Infrastructure.NelfePlayAgentService agent,
         RetroBat.Api.Infrastructure.NelfePlayDeviceStore devices, IHttpClientFactory httpFactory,
         ILogger<ReplayPlaybackService> logger)
     {
-        _ra = ra; _store = store; _bus = bus; _agent = agent; _devices = devices; _httpFactory = httpFactory; _logger = logger;
+        _ra = ra; _store = store; _resolver = resolver; _bus = bus; _agent = agent; _devices = devices; _httpFactory = httpFactory; _logger = logger;
     }
 
     /// <summary>Vrai pendant qu'une lecture est en cours (le recorder s'abstient d'enregistrer).</summary>
@@ -102,10 +103,12 @@ public sealed class ReplayPlaybackService
         // ── vérification runtime (R2 MVP : présence ; empreintes strictes quand le manifeste les portera) ──
         lock (_gate) { _state = ReplayPlaybackState.Verifying; _replayEnd = manifest.Frames.ReplayEnd;
             _runStart = manifest.Frames.RunStart; _runEnd = manifest.Frames.RunEnd; _nominalFps = manifest.Frames.NominalFps; }
-        if (hint is null) return Fail(ReplayErrorCode.RuntimeIncompatible);
-        var coreDll = ResolveRealCore(hint.Core) ?? hint.CoreDll;
-        if (!File.Exists(coreDll)) return Fail(ReplayErrorCode.CoreNotFound);
-        if (string.IsNullOrEmpty(hint.RomPath) || !File.Exists(hint.RomPath)) return Fail(ReplayErrorCode.RomNotFound);
+        // R5 : le hint local n'est qu'un ACCÉLÉRATEUR — le résolveur retrouve core+ROM depuis le
+        // MANIFESTE (core par empreinte core_sha256, ROM par crc32 de contenu), pour qu'un replay
+        // SANS hint (reçu d'un peer) reste jouable. Politique souple : jamais bloqué sur la version.
+        var resolved = _resolver.Resolve(manifest, hint);
+        if (resolved is null) return Fail(ReplayErrorCode.RuntimeIncompatible);
+        var coreDll = resolved.CoreDll;
 
         // ── pas de jeu déjà en cours (on lance notre propre RetroArch) ──
         var status = await _ra.GetStatusAsync(ct).ConfigureAwait(false);
@@ -143,7 +146,7 @@ public sealed class ReplayPlaybackService
         var exe = Path.Combine(RetroBatPaths.RetroBatRoot, "emulators", "retroarch", "retroarch.exe");
         var psi = new ProcessStartInfo { FileName = exe, WorkingDirectory = Path.GetDirectoryName(exe)!, UseShellExecute = false };
         psi.ArgumentList.Add("-L"); psi.ArgumentList.Add(coreDll);
-        psi.ArgumentList.Add(hint.RomPath);
+        psi.ArgumentList.Add(resolved.RomPath);
         psi.ArgumentList.Add("-P"); psi.ArgumentList.Add(objectPath);
         psi.ArgumentList.Add("--config"); psi.ArgumentList.Add(RetroBatPaths.RetroArchConfigPath);
         psi.ArgumentList.Add("--appendconfig"); psi.ArgumentList.Add(sessionCfg);
@@ -153,7 +156,7 @@ public sealed class ReplayPlaybackService
         try { proc = Process.Start(psi)!; }
         catch (Exception ex) { _logger.LogWarning(ex, "Replay : lancement RetroArch échoué"); return Fail(ReplayErrorCode.RetroArchUnavailable); }
         lock (_gate) _process = proc;
-        _logger.LogInformation("Replay : lecture lancée {ReplayId} (core={Core}, rom={Rom}).", replayId, Path.GetFileName(coreDll), Path.GetFileName(hint.RomPath));
+        _logger.LogInformation("Replay : lecture lancée {ReplayId} (core={Core}, rom={Rom}).", replayId, Path.GetFileName(coreDll), Path.GetFileName(resolved.RomPath));
         await Publish("replay.launching", new { replayId }).ConfigureAwait(false);
 
         // ── attente du démarrage effectif de la lecture (active_replay flags=4), timeout 20 s ──
@@ -302,13 +305,6 @@ public sealed class ReplayPlaybackService
         lock (_gate) { _state = ReplayPlaybackState.Error; _error = code; }
         _logger.LogWarning("Replay : lecture refusée/échouée : {Code}", code);
         return new PlayResult(false, "error", code);
-    }
-
-    /// <summary>Le vrai core (cores_real/&lt;core&gt;_libretro.dll) pour éviter le wrapper de scoring. null si absent.</summary>
-    private static string? ResolveRealCore(string core)
-    {
-        var real = Path.Combine(RetroBatPaths.RetroBatRoot, "emulators", "retroarch", "cores_real", core + "_libretro.dll");
-        return File.Exists(real) ? real : null;
     }
 
     private async Task Publish(string type, object payload)

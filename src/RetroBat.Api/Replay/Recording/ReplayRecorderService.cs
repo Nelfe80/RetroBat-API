@@ -177,7 +177,7 @@ public sealed class ReplayRecorderService : BackgroundService
         }
     }
 
-    private ReplayManifest BuildManifest(Recording rec, ReplayObjectRef obj, ReplayLaunchHint hint)
+    private ReplayManifest BuildManifest(Recording rec, ReplayObjectRef obj, ReplayLaunchHint? hint)
     {
         var game = new ReplayGame(
             GameId: $"{Slug(rec.System)}/{Slug(rec.Game)}",
@@ -193,8 +193,8 @@ public sealed class ReplayRecorderService : BackgroundService
             // bloque rien ici. Le futur vérificateur de compat (R5/R6) les emploie SOUPLEMENT :
             // seul le CONTENU ROM (crc32/hash) est un gate dur, le runtime reste best-effort +
             // vérifié par les checkpoints à la lecture (un vieux RA/core n'est jamais bloqué a priori).
-            RomSha256: HashFileQuiet(hint.RomPath),  // identifiant exact du fichier ROM (le crc32 du contenu = repère PORTABLE)
-            CoreSha256: HashFileQuiet(hint.CoreDll), // = version du core → format de savestate .bsv
+            RomSha256: HashFileQuiet(hint?.RomPath),  // identifiant exact du fichier ROM (le crc32 du contenu = repère PORTABLE)
+            CoreSha256: HashFileQuiet(hint?.CoreDll), // = version du core → format de savestate .bsv
             BiosSha256: null,                        // TODO : par-système, seulement quand un BIOS est requis
             CoreOptionsDigest: null,                 // TODO : sous-ensemble DÉTERMINISTE des core options (pas les options cosmétiques)
             ReplayFormat: "bsv");

@@ -367,6 +367,7 @@ builder.Services.AddHostedService<RetroArchLogMonitorService>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Runtime.RetroArchReplayClient>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.ReplayStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayLaunchTokenStore>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayRuntimeResolver>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayPlaybackService>();
 builder.Services.AddHostedService<RetroBat.Api.Replay.Recording.ReplayRecorderService>();
 builder.Services.AddHostedService<RetroBat.Api.Replay.Input.ReplayInputRouterService>();
