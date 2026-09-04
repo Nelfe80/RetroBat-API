@@ -465,6 +465,9 @@ if (cabinetApiKey.Length == 0)
 // qu'il faut au hub de flotte, ce n'est pas ce qu'on donne a une borne voisine qui veut recuperer
 // un replay public. La cle de partage n'ouvre QUE la surface ci-dessous, et le controleur y
 // restreint encore le CONTENU aux replays effectivement partageables.
+// Garde EPROUVEE depuis une adresse non-loopback (2026-09-04) : sans cle 401 ; cle de partage =
+// objet public 200, objet prive 404, liste reduite aux publics, manifeste public 200 / prive 404 ;
+// hors surface (visibilite, play, etat, pairs, share-key) 401 ; cle de borne toujours pleine.
 var replayShareKey = RetroBat.Api.Replay.Sharing.ReplayShareKeyStore.GetOrCreate();
 static bool IsShareSurface(HttpRequest request)
 {
