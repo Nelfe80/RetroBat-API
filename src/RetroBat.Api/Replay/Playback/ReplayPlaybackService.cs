@@ -159,25 +159,22 @@ public sealed class ReplayPlaybackService
         _logger.LogInformation("Replay : lecture lancée {ReplayId} (core={Core}, rom={Rom}).", replayId, Path.GetFileName(coreDll), Path.GetFileName(resolved.RomPath));
         await Publish("replay.launching", new { replayId }).ConfigureAwait(false);
 
-        // ── attente du démarrage effectif de la lecture (active_replay flags=4), timeout 20 s ──
-        // (marge pour les CPU faibles ; sans cheevos, l'entrée en lecture est de toute façon rapide)
-        var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (DateTime.UtcNow < deadline)
-        {
-            if (proc.HasExited) return Fail(ReplayErrorCode.RetroArchUnavailable);
-            var active = await _ra.GetActiveReplayAsync(ct).ConfigureAwait(false);
-            if (active is { Playing: true }) { lock (_gate) { _state = ReplayPlaybackState.Playing; _frame = active.Frame; } break; }
-            try { await Task.Delay(500, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
-        }
-        if (GetState().State != "playing")
-        {
-            try { if (!proc.HasExited) proc.Kill(entireProcessTree: true); } catch { }
-            return Fail(ReplayErrorCode.ReplayLaunchTimeout);
-        }
+        // ── COURTE confirmation (~3 s) puis on rend la main. Sur borne faible, le handshake réseau
+        //    active_replay (55355) est lent/flaky — on n'ATTEND donc PAS la lecture ici et on ne TUE
+        //    JAMAIS un RetroArch vivant (c'était le bug : ReplayLaunchTimeout tuait une lecture qui
+        //    démarrait). Dès que RetroArch tient, on renvoie « accepté » (état launching) et le
+        //    MONITOR confirme la lecture (Launching → Playing) puis suit la frame ; il ne coupera que
+        //    si le process meurt ou si la lecture n'est jamais confirmée (garde de démarrage). ──
+        // Bref instant pour laisser RetroArch échouer au démarrage (args invalides, core KO…). On ne
+        // SONDE PAS active_replay ici : le handshake réseau (55355) est lent/flaky sur borne faible et
+        // bloquerait la réponse HTTP. Le MONITOR fait la détection et promeut Launching → Playing.
+        try { await Task.Delay(1500, ct).ConfigureAwait(false); } catch (OperationCanceledException) { }
+        if (proc.HasExited) return Fail(ReplayErrorCode.RetroArchUnavailable);
+        lock (_gate) { _state = ReplayPlaybackState.Launching; }
 
         StartMonitor();
         await Publish("replay.started", new { replayId }).ConfigureAwait(false);
-        return new PlayResult(true, "playing", ReplayErrorCode.None);
+        return new PlayResult(true, GetState().State, ReplayErrorCode.None);
     }
 
     public async Task StopAsync(CancellationToken ct)
@@ -245,6 +242,7 @@ public sealed class ReplayPlaybackService
     private async Task MonitorLoopAsync(CancellationToken ct)
     {
         var idle = 0; var endHold = 0; long lastHoldFrame = -1; var endPauseSent = false;
+        var started = false; var startWait = 0;   // lecture pas encore confirmée (garde de démarrage, borne lente)
         while (!ct.IsCancellationRequested)
         {
             Process? proc; lock (_gate) proc = _process;
@@ -254,13 +252,19 @@ public sealed class ReplayPlaybackService
             var active = await _ra.GetActiveReplayAsync(ct).ConfigureAwait(false);
             var status = await _ra.GetStatusAsync(ct).ConfigureAwait(false);
             var paused = status is { State: "PAUSED" };
+            var nowActive = active is { Active: true };
             long frame, end;
             lock (_gate)
             {
-                if (active is { Active: true }) _frame = active.Frame;
+                if (nowActive)
+                {
+                    _frame = active!.Frame;
+                    if (_state == ReplayPlaybackState.Launching) _state = ReplayPlaybackState.Playing; // confirmation tardive
+                }
                 _paused = paused;
                 frame = _frame; end = _replayEnd ?? 0;
             }
+            if (nowActive && !started) { started = true; _logger.LogInformation("Replay {ReplayId} : lecture confirmée.", _replayId); }
 
             // Réarme le figeage si on a rembobiné bien avant la fin (→ re-fige si on rejoue jusqu'au bout).
             if (endPauseSent && end > 0 && frame < end - EndPauseMargin - 90) endPauseSent = false;
@@ -273,8 +277,15 @@ public sealed class ReplayPlaybackService
                 lock (_gate) _paused = true;
             }
 
-            // Secours : inactif hors pause (et pas au point de fin) = terminé/bloqué anormalement.
-            if (active is not { Active: true } && !paused && !endPauseSent) { if (++idle >= 8) { Finish("fin (inactif)"); return; } }
+            // Avant le PREMIER « actif », la lecture DÉMARRE (handshake réseau lent sur borne faible) :
+            // on n'interprète PAS « inactif » comme une fin — on attend, tant que RetroArch vit
+            // (proc.HasExited couvre sa mort). Garde : si jamais confirmée (~60 s), on abandonne proprement.
+            if (!started)
+            {
+                if (++startWait >= 120) { _logger.LogWarning("Replay {ReplayId} : lecture jamais confirmée (~60 s) — abandon.", _replayId); Finish("démarrage non confirmé"); return; }
+            }
+            // Secours (APRÈS démarrage) : inactif hors pause et pas au point de fin = fin/blocage → terminé.
+            else if (active is not { Active: true } && !paused && !endPauseSent) { if (++idle >= 8) { Finish("fin (inactif)"); return; } }
             else idle = 0;
 
             // Sécurité : figé à la fin, frame inchangée trop longtemps (~100 s) → fermeture auto.
