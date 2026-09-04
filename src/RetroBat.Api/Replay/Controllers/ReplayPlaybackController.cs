@@ -63,10 +63,18 @@ public sealed class ReplayPlaybackController : ControllerBase
         switch (req.Action.ToLowerInvariant())
         {
             case "pause_toggle": await _playback.PauseToggleAsync(ct); break;
-            case "seek_relative": await _playback.SeekRelativeAsync(req.Seconds ?? 0, ct); break;
             case "next_checkpoint": await _playback.NextCheckpointAsync(ct); break;
+            case "prev_checkpoint": await _playback.PreviousCheckpointAsync(ct); break;
             case "restart_run": await _playback.RestartRunAsync(ct); break;
             case "stop": await _playback.StopAsync(ct); break;
+            // Seeks NOMMÉS (R3.11) : l'appelant exprime une INTENTION, le serveur décide la durée
+            // (court/long) — l'UX peut évoluer sans casser le SDK.
+            case "seek_back_short": await _playback.SeekShortBackwardAsync(ct); break;
+            case "seek_forward_short": await _playback.SeekShortForwardAsync(ct); break;
+            case "seek_back_long": await _playback.SeekLongBackwardAsync(ct); break;
+            case "seek_forward_long": await _playback.SeekLongForwardAsync(ct); break;
+            // Primitive bas niveau, gardée pour les outils techniques / le debug.
+            case "seek_relative": await _playback.SeekRelativeAsync(req.Seconds ?? 0, ct); break;
             default: return BadRequest(new { ok = false, error = new { code = "REPLAY_COMMAND_UNSUPPORTED" } });
         }
         var s = _playback.GetState();

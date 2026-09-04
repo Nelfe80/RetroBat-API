@@ -13,7 +13,9 @@ namespace RetroBat.Api.Replay.Input;
 ///   • appui d'UN bouton = sa famille ; le MAINTIEN monte l'intensité (niveau 1→2→3) ;
 ///   • ≥3 boutons pressés ENSEMBLE = accord « CÉLÉBRATION » (intensité = nb de boutons),
 ///     qui SUPPRIME les réactions individuelles des boutons concernés et ne compte qu'une fois.
-/// Anti-spam par BUDGET (≈10/min proportionnel à la durée, borné [3,40]) recalculé par replay.
+/// Anti-spam par BUDGET : **5 réactions par replay et par viewer** (fixe, décision produit — une
+/// poignée de réactions choisies vaut mieux qu'un flux ; le budget repart à neuf à chaque lecture,
+/// donc « par viewer » se lit naturellement : une borne = un viewer à la fois).
 /// Chaque réaction est horodatée (frame + ms), publiée (event replay.reaction) et STOCKÉE en JSONL
 /// pour être rejouée (affichage = étape suivante). Les MOTS/emojis (6 langues) sont une table à part.
 ///
@@ -21,6 +23,7 @@ namespace RetroBat.Api.Replay.Input;
 /// </summary>
 public sealed class ReplayReactionService : IHostedService
 {
+    private const int ReactionsPerReplay = 5;   // budget FIXE par replay et par viewer
     private const int ChordThreshold = 3;   // ≥3 boutons simultanés = célébration
     private const int HoldLevel2Ms = 400;
     private const int HoldLevel3Ms = 900;
@@ -214,17 +217,15 @@ public sealed class ReplayReactionService : IHostedService
             family, level, chord ? " [accord]" : "", st.Frame, _budget);
     }
 
-    // Budget recalculé quand on change de replay (≈10/min, borné [3,40]).
+    // Budget remis à neuf à chaque changement de replay : 5, quelle que soit la durée.
     private void EnsureBudget(ReplayPlaybackService.StateSnapshot st)
     {
         if (string.Equals(_budgetReplayId, st.ReplayId, StringComparison.Ordinal)) return;
         _budgetReplayId = st.ReplayId;
-        var fps = st.NominalFps <= 0 ? 60 : st.NominalFps;
-        var minutes = (st.ReplayEndFrame ?? 0) / fps / 60.0;
-        _budget = Math.Clamp((int)Math.Round(minutes * 10), 3, 40);
+        _budget = ReactionsPerReplay;
         _budgetMax = _budget;
         _cooldownUntil = DateTime.MinValue;
-        _logger.LogDebug("Replay réactions : budget {B} pour {Id} ({Min:F1} min)", _budget, st.ReplayId, minutes);
+        _logger.LogDebug("Replay réactions : budget {B} pour {Id}", _budget, st.ReplayId);
     }
 
     private static int CelebLevel(int count) => count >= 7 ? 3 : count >= 5 ? 2 : 1;

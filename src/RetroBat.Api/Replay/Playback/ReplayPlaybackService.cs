@@ -227,6 +227,24 @@ public sealed class ReplayPlaybackService
         await _ra.NextCheckpointAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>Checkpoint PRÉCÉDENT (R3.5) — la commande runtime existait déjà côté client UDP,
+    /// elle manquait juste au métier (donc au panel et à l'API).</summary>
+    public async Task PreviousCheckpointAsync(CancellationToken ct)
+    {
+        if (!IsBusy) return;
+        await _ra.PrevCheckpointAsync(ct).ConfigureAwait(false);
+    }
+
+    // ── seeks NOMMÉS (R3.11) : les interfaces publiques (panel, SDK, Replay Room) demandent une
+    //    INTENTION, pas une durée ; c'est le serveur qui décide court=5 s / long=60 s. seek_relative
+    //    reste dispo pour les outils techniques.
+    public const double SeekShortSeconds = 5;
+    public const double SeekLongSeconds = 60;
+    public Task SeekShortBackwardAsync(CancellationToken ct) => SeekRelativeAsync(-SeekShortSeconds, ct);
+    public Task SeekShortForwardAsync(CancellationToken ct) => SeekRelativeAsync(+SeekShortSeconds, ct);
+    public Task SeekLongBackwardAsync(CancellationToken ct) => SeekRelativeAsync(-SeekLongSeconds, ct);
+    public Task SeekLongForwardAsync(CancellationToken ct) => SeekRelativeAsync(+SeekLongSeconds, ct);
+
     public async Task RestartRunAsync(CancellationToken ct)
     {
         if (!IsBusy) return;

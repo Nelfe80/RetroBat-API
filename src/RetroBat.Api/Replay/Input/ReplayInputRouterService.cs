@@ -7,17 +7,17 @@ namespace RetroBat.Api.Replay.Input;
 
 /// <summary>
 /// Contrôles physiques Replay (R3). S'abonne à panel.input.pressed/released et, pendant une
-/// LECTURE (playback.IsBusy), traduit les DIRECTIONS du panel en commandes RetroArch natives.
+/// LECTURE (playback.IsBusy), traduit les DIRECTIONS du panel en commandes de lecture.
 /// N'agit jamais hors lecture (les entrées vont au jeu/ES normalement).
 ///
-/// Mapping (sans SELECT, pour éviter le télescopage avec la couche hotkey RetroArch que SELECT
-/// active) :
+/// Mapping (R3.5, sans SELECT — SELECT est l'input_enable_hotkey de RetroArch, on ne s'en sert
+/// PAS pour éviter tout télescopage avec ses hotkeys) :
 ///   ▲ haut          = lecture / pause
-///   ▼ bas           = checkpoint suivant (pas à pas)
-///   ◀ gauche (tenu) = recul rapide  (seek -5 s répété)
-///   ▶ droite (tenu) = avance rapide (seek +5 s répété)
+///   ▼ bas           = retour au DÉBUT du run
+///   ◀ gauche  tap   = checkpoint PRÉCÉDENT      | tenu = recul rapide  (seek -5 s répété)
+///   ▶ droite  tap   = checkpoint SUIVANT        | tenu = avance rapide (seek +5 s répété)
 ///   START (tenu)    = quitter la lecture
-/// Les boutons de façade (A/B/X/Y) sont laissés LIBRES pour les réactions (étape 2).
+/// Les 8 boutons de façade restent LIBRES pour les réactions.
 ///
 /// Les directions arrivent via le canal additif du watcher (System=DPAD, identités
 /// up/down/left/right) — cf. CabinetInputReader.SnapshotDirections.
@@ -25,6 +25,7 @@ namespace RetroBat.Api.Replay.Input;
 public sealed class ReplayInputRouterService : IHostedService
 {
     private const int QuitHoldMs = 700;
+    private const int TapMaxMs = 300;            // ≤ 300 ms = TAP (checkpoint) ; au-delà = MAINTIEN (seek)
     private const double FastSeekStepSeconds = 5;
     private const int FastSeekRepeatMs = 350;
 
@@ -32,8 +33,16 @@ public sealed class ReplayInputRouterService : IHostedService
     private readonly ReplayPlaybackService _playback;
     private readonly ILogger<ReplayInputRouterService> _logger;
 
-    private readonly object _repeatGate = new();
-    private readonly Dictionary<string, CancellationTokenSource> _repeats = new(); // "left"/"right" tenus
+    /// <summary>Une direction ◀/▶ en cours d'appui : on ne sait qu'au RELÂCHÉ si c'était un tap
+    /// (→ checkpoint) ou un maintien (→ le seek répété a déjà tourné).</summary>
+    private sealed class DirectionHold
+    {
+        public readonly CancellationTokenSource Cts = new();
+        public bool Repeating;
+    }
+
+    private readonly object _gate = new();
+    private readonly Dictionary<string, DirectionHold> _held = new(StringComparer.Ordinal);
     private IDisposable? _sub;
     private DateTime? _startDownAt;
 
@@ -44,7 +53,7 @@ public sealed class ReplayInputRouterService : IHostedService
     }
 
     public Task StartAsync(CancellationToken ct) { _sub = _bus.Subscribe<EventEnvelope>(OnEvent); return Task.CompletedTask; }
-    public Task StopAsync(CancellationToken ct) { _sub?.Dispose(); StopAllRepeats(); return Task.CompletedTask; }
+    public Task StopAsync(CancellationToken ct) { _sub?.Dispose(); StopAllHolds(); return Task.CompletedTask; }
 
     private void OnEvent(EventEnvelope e)
     {
@@ -54,8 +63,8 @@ public sealed class ReplayInputRouterService : IHostedService
 
         var (identity, system) = ReadButton(e.Payload);
 
-        // Hors lecture : on ne pilote rien (et on coupe d'éventuelles répétitions résiduelles).
-        if (!_playback.IsBusy) { _startDownAt = null; StopAllRepeats(); return; }
+        // Hors lecture : on ne pilote rien (et on coupe d'éventuels maintiens résiduels).
+        if (!_playback.IsBusy) { _startDownAt = null; StopAllHolds(); return; }
 
         // START tenu = quitter.
         if (string.Equals(system, "START", StringComparison.Ordinal))
@@ -82,34 +91,37 @@ public sealed class ReplayInputRouterService : IHostedService
         switch (dir)
         {
             case "up": Fire("pause", _playback.PauseToggleAsync); break;
-            case "down": Fire("next-checkpoint", _playback.NextCheckpointAsync); break;
-            case "left": StartRepeat("left", -FastSeekStepSeconds); break;
-            case "right": StartRepeat("right", +FastSeekStepSeconds); break;
+            case "down": Fire("restart-run", _playback.RestartRunAsync); break;
+            case "left": BeginDirection("left", -FastSeekStepSeconds); break;
+            case "right": BeginDirection("right", +FastSeekStepSeconds); break;
         }
     }
 
     private void OnDirectionUp(string dir)
     {
-        if (dir is "left" or "right") StopRepeat(dir);
+        if (dir is "left" or "right") EndDirection(dir);
     }
 
-    // ── recul/avance rapide : re-seek tant que la direction est tenue ──
-    private void StartRepeat(string dir, double stepSeconds)
+    // ◀ / ▶ : on ARME au down. Si la direction est encore tenue après TapMaxMs, c'est un maintien
+    // → seek répété. Sinon le relâché tombe avant, et EndDirection en fait un checkpoint.
+    private void BeginDirection(string dir, double stepSeconds)
     {
-        CancellationTokenSource cts;
-        lock (_repeatGate)
+        DirectionHold hold;
+        lock (_gate)
         {
-            if (_repeats.ContainsKey(dir)) return; // déjà en cours
-            cts = new CancellationTokenSource();
-            _repeats[dir] = cts;
+            if (_held.ContainsKey(dir)) return; // déjà armé
+            hold = new DirectionHold();
+            _held[dir] = hold;
         }
 
-        var ct = cts.Token;
-        _logger.LogDebug("Replay : {Dir} maintenu → seek répété {Step}s", dir, stepSeconds);
+        var ct = hold.Cts.Token;
         _ = Task.Run(async () =>
         {
             try
             {
+                await Task.Delay(TapMaxMs, ct).ConfigureAwait(false); // toujours tenu → maintien
+                lock (_gate) hold.Repeating = true;
+                _logger.LogDebug("Replay : {Dir} maintenu → seek répété {Step}s", dir, stepSeconds);
                 while (!ct.IsCancellationRequested && _playback.IsBusy)
                 {
                     await _playback.SeekRelativeAsync(stepSeconds, ct).ConfigureAwait(false);
@@ -117,31 +129,38 @@ public sealed class ReplayInputRouterService : IHostedService
                 }
             }
             catch (OperationCanceledException) { }
-            catch (Exception ex) { _logger.LogDebug(ex, "Replay : répétition seek {Dir} interrompue", dir); }
+            catch (Exception ex) { _logger.LogDebug(ex, "Replay : maintien {Dir} interrompu", dir); }
         }, ct);
     }
 
-    private void StopRepeat(string dir)
+    private void EndDirection(string dir)
     {
-        CancellationTokenSource? cts;
-        lock (_repeatGate)
+        DirectionHold? hold; bool repeating;
+        lock (_gate)
         {
-            if (!_repeats.Remove(dir, out cts)) return;
+            if (!_held.Remove(dir, out hold)) return;
+            repeating = hold.Repeating;
         }
-        cts.Cancel();
-        cts.Dispose();
+        hold.Cts.Cancel();
+        hold.Cts.Dispose();
+
+        if (repeating) return; // c'était un maintien : le seek a déjà fait le travail
+        if (string.Equals(dir, "left", StringComparison.Ordinal))
+            Fire("prev-checkpoint", _playback.PreviousCheckpointAsync);
+        else
+            Fire("next-checkpoint", _playback.NextCheckpointAsync);
     }
 
-    private void StopAllRepeats()
+    private void StopAllHolds()
     {
-        List<CancellationTokenSource> all;
-        lock (_repeatGate)
+        List<DirectionHold> all;
+        lock (_gate)
         {
-            if (_repeats.Count == 0) return;
-            all = _repeats.Values.ToList();
-            _repeats.Clear();
+            if (_held.Count == 0) return;
+            all = _held.Values.ToList();
+            _held.Clear();
         }
-        foreach (var cts in all) { cts.Cancel(); cts.Dispose(); }
+        foreach (var h in all) { h.Cts.Cancel(); h.Cts.Dispose(); }
     }
 
     private void Fire(string label, Func<CancellationToken, Task> action)
