@@ -37,6 +37,15 @@ public sealed class ReplaySharePolicy
     /// <summary>Cette borne accepte-t-elle de servir ses objets publics ? Défaut : non.</summary>
     public bool SharingEnabled => _config.GetValue("Replay:Share:Enabled", false);
 
+    /// <summary>
+    /// Le réseau local est-il considéré comme de confiance pour la SEULE surface de partage ?
+    /// Même doctrine que la clé d'API historique de la borne (« vide = LAN de confiance ») :
+    /// chez un particulier avec deux bornes, il n'y a personne pour recopier une clé d'une machine
+    /// à l'autre, et la découverte LAN ne servirait à rien. Ça n'ouvre jamais l'administration,
+    /// jamais les replays privés, et jamais au-delà d'une adresse privée. Défaut : non.
+    /// </summary>
+    public bool TrustLocalNetwork => _config.GetValue("Replay:Share:TrustLocalNetwork", false);
+
     public ShareDecision Evaluate(string sha256)
     {
         if (!SharingEnabled) return new ShareDecision(false, null, "sharing_disabled");

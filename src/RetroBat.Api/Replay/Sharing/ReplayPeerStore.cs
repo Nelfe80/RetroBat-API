@@ -6,7 +6,12 @@ namespace RetroBat.Api.Replay.Sharing;
 
 /// <summary>Une borne à qui demander un objet. <paramref name="ApiKey"/> est la clé de CETTE
 /// borne-là, obtenue à l'appairage : sans elle, elle répond 401 hors loopback.</summary>
-public sealed record ReplayPeer(string Name, string BaseUrl, string? ApiKey);
+public sealed record ReplayPeer(string Name, string BaseUrl, string? ApiKey,
+    /// <summary>Par quelle porte cette borne a été apprise : manuel, lan, ancre, plateforme.</summary>
+    string Source = "manuel",
+    /// <summary>Identité plateforme annoncée, quand elle est connue. Informative ; elle
+    /// n'autorise rien tant que les jetons signés n'existent pas.</summary>
+    string? DeviceId = null);
 
 public sealed record ReplayPeersDoc(string Schema, IReadOnlyList<ReplayPeer> Peers);
 

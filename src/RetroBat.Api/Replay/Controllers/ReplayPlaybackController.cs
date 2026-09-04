@@ -162,12 +162,13 @@ public sealed class ReplayPlaybackController : ControllerBase
     /// JAMAIS les clés d'API, seulement le fait qu'une clé soit renseignée.
     /// </summary>
     [HttpGet("peers")]
-    public async Task<IActionResult> Peers([FromServices] RetroBat.Api.Replay.Sharing.ReplayPeerStore store,
-        [FromServices] IHttpClientFactory httpFactory, CancellationToken ct)
+    public async Task<IActionResult> Peers([FromServices] RetroBat.Api.Replay.Sharing.ReplayPeerDirectory directory,
+        [FromServices] IHttpClientFactory httpFactory, CancellationToken ct,
+        [FromQuery] bool refresh = true)
     {
         if (!IsLocalCaller()) return NotFound();
         var results = new List<object>();
-        foreach (var p in store.Peers)
+        foreach (var p in await directory.PeersAsync(ct, refresh))
         {
             var reachable = false;
             try
@@ -182,9 +183,17 @@ public sealed class ReplayPlaybackController : ControllerBase
                 reachable = res.IsSuccessStatusCode;
             }
             catch { reachable = false; }
-            results.Add(new { name = p.Name, base_url = p.BaseUrl, has_api_key = !string.IsNullOrWhiteSpace(p.ApiKey), reachable });
+            results.Add(new
+            {
+                name = p.Name,
+                base_url = p.BaseUrl,
+                source = p.Source,               // par quelle porte on l'a apprise
+                device_id = p.DeviceId,
+                has_api_key = !string.IsNullOrWhiteSpace(p.ApiKey),
+                reachable,                       // CONSTATÉ, jamais supposé
+            });
         }
-        return Ok(new { peers = results, total = results.Count, source = store.Path });
+        return Ok(new { peers = results, total = results.Count });
     }
 
     /// <summary>Réactions horodatées d'un replay (JSONL rejouable). Sert l'affichage (étape suivante).</summary>

@@ -378,6 +378,18 @@ builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.IReplayIndex>(sp => sp
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplayRuntimeResolver>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Playback.ReplayRuntimeResolver>());
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayPeerStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayNetworkStateService>();
+// Les portes d'entrée NelfeNet (CDC §53). Toutes actives en même temps : une borne chez un
+// particulier n'a ni hub ni administrateur, l'absence d'une porte ne doit pas fermer les autres.
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ManualPeerSource>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.LanPeerSource>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.AnchorPeerSource>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.PlatformPeerSource>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.ManualPeerSource>());
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.LanPeerSource>());
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.AnchorPeerSource>());
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.PlatformPeerSource>());
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayPeerDirectory>();
+builder.Services.AddHostedService<RetroBat.Api.Replay.Sharing.LanPeerResponderService>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplaySourceResolver, RetroBat.Api.Replay.Sharing.NelfeNetSourceResolver>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplaySharePolicy>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayPlaybackService>();
@@ -469,6 +481,23 @@ if (cabinetApiKey.Length == 0)
 // objet public 200, objet prive 404, liste reduite aux publics, manifeste public 200 / prive 404 ;
 // hors surface (visibilite, play, etat, pairs, share-key) 401 ; cle de borne toujours pleine.
 var replayShareKey = RetroBat.Api.Replay.Sharing.ReplayShareKeyStore.GetOrCreate();
+// Adresse d'un reseau prive (RFC 1918, lien-local, ULA IPv6). Une adresse publique n'est JAMAIS
+// « le reseau local » : la confiance LAN ne doit pas s'etendre a un client venu d'Internet.
+static bool IsPrivateAddress(System.Net.IPAddress? address)
+{
+    if (address is null) return false;
+    if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+    if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        return address.IsIPv6LinkLocal || address.IsIPv6SiteLocal
+               || (address.GetAddressBytes()[0] & 0xFE) == 0xFC; // fc00::/7
+    var b = address.GetAddressBytes();
+    if (b.Length != 4) return false;
+    return b[0] == 10
+           || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+           || (b[0] == 192 && b[1] == 168)
+           || (b[0] == 169 && b[1] == 254);
+}
+
 static bool IsShareSurface(HttpRequest request)
 {
     if (!HttpMethods.IsGet(request.Method) && !HttpMethods.IsHead(request.Method)) return false;
@@ -504,7 +533,19 @@ if (cabinetApiKey.Length > 0)
                              && string.Equals(provided, replayShareKey, StringComparison.Ordinal)
                              && IsShareSurface(context.Request);
 
-            if (!isCabinetKey && !isShareKey)
+            // Une machine qui nous administre depuis le reseau est une ANCRE (en pratique, un hub
+            // de flotte). La borne ne connait pas l'adresse de son hub : il se presente en nous
+            // parlant, et devient une porte d'entree vers les autres bornes.
+            if (isCabinetKey) RetroBat.Api.Replay.Sharing.AnchorPeerSource.Remember(remote);
+
+            // LAN de confiance, meme doctrine que la cle d'API historique : chez un particulier
+            // avec deux bornes, personne ne recopie une cle d'une machine a l'autre. N'ouvre QUE
+            // la surface de partage, et seulement depuis une adresse privee. Defaut : ferme.
+            var lanTrusted = app.Configuration.GetValue("Replay:Share:TrustLocalNetwork", false)
+                             && IsPrivateAddress(remote)
+                             && IsShareSurface(context.Request);
+
+            if (!isCabinetKey && !isShareKey && !lanTrusted)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsJsonAsync(new { error = "Cle API requise (en-tete X-Api-Key)." });

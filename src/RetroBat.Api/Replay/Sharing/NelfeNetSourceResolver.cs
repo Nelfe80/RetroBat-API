@@ -23,12 +23,12 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
     private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(120);
 
     private readonly IReplayObjectStore _objects;
-    private readonly ReplayPeerStore _peers;
+    private readonly ReplayPeerDirectory _peers;
     private readonly ReplayNetworkStateService _network;
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<NelfeNetSourceResolver> _logger;
 
-    public NelfeNetSourceResolver(IReplayObjectStore objects, ReplayPeerStore peers,
+    public NelfeNetSourceResolver(IReplayObjectStore objects, ReplayPeerDirectory peers,
         ReplayNetworkStateService network, IHttpClientFactory httpFactory, ILogger<NelfeNetSourceResolver> logger)
     {
         _objects = objects; _peers = peers; _network = network; _httpFactory = httpFactory; _logger = logger;
@@ -39,7 +39,7 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
         var sha = manifest.Object.Sha256;
         if (File.Exists(_objects.ObjectPath(sha))) return true;
 
-        var peers = _peers.Peers;
+        var peers = await _peers.PeersAsync(ct).ConfigureAwait(false);
         if (peers.Count == 0)
         {
             _logger.LogInformation("Replay : objet {Sha} absent et aucun pair configuré.", Short(sha));
@@ -52,7 +52,11 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
             foreach (var peer in peers)
             {
                 if (ct.IsCancellationRequested) return false;
-                if (await TryFetchAsync(peer, manifest, ct).ConfigureAwait(false)) return true;
+                if (await TryFetchAsync(peer, manifest, ct).ConfigureAwait(false))
+                {
+                    _peers.RememberWorking(peer); // pair récent : retrouvable même annuaire coupé
+                    return true;
+                }
             }
         }
 
