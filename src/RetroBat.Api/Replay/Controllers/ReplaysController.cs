@@ -6,8 +6,15 @@ using RetroBat.Api.Replay.Storage;
 namespace RetroBat.Api.Replay.Controllers;
 
 /// <summary>
-/// API locale Replay (R1) : lecture seule. Renvoie des identités logiques, jamais un
-/// chemin local. L'index est une vue dérivée reconstructible depuis les manifests.
+/// API Replay : lecture seule. Renvoie des identités logiques, jamais un chemin local.
+/// L'index est une vue dérivée reconstructible depuis les manifests.
+///
+/// ⚠️ DEUX PUBLICS, DEUX SURFACES. En boucle locale (l'UI de la borne, le panel, le site
+/// appairé) tout est visible : c'est la machine du propriétaire. Depuis le RÉSEAU, un appelant
+/// ne voit QUE ce qu'il aurait le droit de récupérer, c'est-à-dire les replays que la politique
+/// de partage laisserait servir. Sans cette règle, confier la clé d'API à une borne pour qu'elle
+/// récupère un objet public lui donnerait aussi la liste et les manifestes de tous les replays
+/// PRIVÉS, ce qui viderait la visibilité de son sens (CDC §48).
 /// </summary>
 [ApiController]
 [Tags("Replay")]
@@ -16,11 +23,22 @@ public sealed class ReplaysController : ControllerBase
 {
     private readonly ReplayStore _store;
     private readonly ReplayNetworkStateService _network;
+    private readonly ReplaySharePolicy _policy;
 
-    public ReplaysController(ReplayStore store, ReplayNetworkStateService network)
+    public ReplaysController(ReplayStore store, ReplayNetworkStateService network, ReplaySharePolicy policy)
     {
-        _store = store; _network = network;
+        _store = store; _network = network; _policy = policy;
     }
+
+    /// <summary>Appel depuis la machine elle-même ? Sinon, c'est un pair, et il voit moins.</summary>
+    private bool IsLocalCaller()
+    {
+        var remote = HttpContext.Connection.RemoteIpAddress;
+        return remote is null || System.Net.IPAddress.IsLoopback(remote);
+    }
+
+    /// <summary>Cet appelant a-t-il le droit de connaître ce replay ?</summary>
+    private bool MaySee(string objectSha256) => IsLocalCaller() || _policy.Evaluate(objectSha256).Allowed;
 
     /// <summary>Liste les replays connus (depuis l'index, reconstruit s'il est absent).</summary>
     [HttpGet]
@@ -31,6 +49,7 @@ public sealed class ReplaysController : ControllerBase
 
         var items = index
             .Where(e => game_id is null || string.Equals(e.GameId, game_id, StringComparison.Ordinal))
+            .Where(e => MaySee(e.ObjectSha256))
             .Select(e =>
             {
                 var meta = _store.GetMeta(e.ReplayId);
@@ -58,7 +77,8 @@ public sealed class ReplaysController : ControllerBase
     public IActionResult Get(string id)
     {
         var m = _store.GetManifest(id);
-        if (m is null) return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
+        if (m is null || !MaySee(m.Object.Sha256))
+            return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
         return Ok(new
         {
             manifest = m,
@@ -72,6 +92,12 @@ public sealed class ReplaysController : ControllerBase
     [HttpGet("{id}/manifest")]
     public IActionResult GetManifest(string id)
     {
+        // C'est par ce point qu'un pair apprend comment jouer un replay qu'il n'a jamais vu :
+        // core, ROM par crc32, cadence, repères de frames. Il ne doit donc sortir que pour un
+        // replay que cette borne accepte de partager.
+        var m = _store.GetManifest(id);
+        if (m is null || !MaySee(m.Object.Sha256))
+            return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
         var path = _store.ManifestPath(id);
         if (!System.IO.File.Exists(path))
             return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
@@ -90,6 +116,7 @@ public sealed class ReplaysController : ControllerBase
     [HttpPost("{id}/visibility")]
     public IActionResult SetVisibility(string id, [FromBody] VisibilityRequest? req)
     {
+        if (!IsLocalCaller()) return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
         if (_store.GetManifest(id) is null)
             return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
 
@@ -113,6 +140,7 @@ public sealed class ReplaysController : ControllerBase
     [HttpPost("{id}/pin")]
     public IActionResult SetPinned(string id, [FromBody] PinRequest? req)
     {
+        if (!IsLocalCaller()) return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
         if (_store.GetManifest(id) is null)
             return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
         var meta = _store.GetMeta(id) ?? ReplayLocalMetadata.Fresh(id);
@@ -122,5 +150,9 @@ public sealed class ReplaysController : ControllerBase
 
     /// <summary>Reconstruit l'index depuis les manifests (maintenance).</summary>
     [HttpPost("rebuild-index")]
-    public IActionResult RebuildIndex() => Ok(new { rebuilt = _store.RebuildIndex().Count });
+    public IActionResult RebuildIndex()
+    {
+        if (!IsLocalCaller()) return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
+        return Ok(new { rebuilt = _store.RebuildIndex().Count });
+    }
 }

@@ -460,6 +460,29 @@ if (cabinetApiKey.Length == 0)
 {
     cabinetApiKey = RetroBat.Api.Infrastructure.CabinetApiKeyStore.GetOrCreate();
 }
+// NelfeNet : clé de PARTAGE, volontairement distincte de celle ci-dessus. La clé de borne
+// administre la machine (lancer une lecture, deployer une configuration, tout lire) ; c'est ce
+// qu'il faut au hub de flotte, ce n'est pas ce qu'on donne a une borne voisine qui veut recuperer
+// un replay public. La cle de partage n'ouvre QUE la surface ci-dessous, et le controleur y
+// restreint encore le CONTENU aux replays effectivement partageables.
+var replayShareKey = RetroBat.Api.Replay.Sharing.ReplayShareKeyStore.GetOrCreate();
+static bool IsShareSurface(HttpRequest request)
+{
+    if (!HttpMethods.IsGet(request.Method) && !HttpMethods.IsHead(request.Method)) return false;
+    var path = request.Path;
+    if (path.StartsWithSegments("/api/v1/object")) return true;
+    if (!path.StartsWithSegments("/api/v1/replays", out var rest)) return false;
+    // /replays, /replays/{id}, /replays/{id}/manifest : rien d'autre.
+    var segments = rest.Value?.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
+    return segments.Length switch
+    {
+        0 => true,
+        1 => true,
+        2 => string.Equals(segments[1], "manifest", StringComparison.Ordinal),
+        _ => false,
+    };
+}
+
 if (cabinetApiKey.Length > 0)
 {
     app.Use(async (context, next) =>
@@ -472,7 +495,13 @@ if (cabinetApiKey.Length > 0)
         {
             var provided = context.Request.Headers["X-Api-Key"].FirstOrDefault()
                 ?? context.Request.Query["apiKey"].FirstOrDefault();
-            if (!string.Equals(provided, cabinetApiKey, StringComparison.Ordinal))
+
+            var isCabinetKey = string.Equals(provided, cabinetApiKey, StringComparison.Ordinal);
+            var isShareKey = replayShareKey.Length > 0
+                             && string.Equals(provided, replayShareKey, StringComparison.Ordinal)
+                             && IsShareSurface(context.Request);
+
+            if (!isCabinetKey && !isShareKey)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsJsonAsync(new { error = "Cle API requise (en-tete X-Api-Key)." });

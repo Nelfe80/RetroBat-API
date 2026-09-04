@@ -22,6 +22,26 @@ public sealed class ReplayPlaybackController : ControllerBase
         _store = store;
     }
 
+    /// <summary>Appel depuis la machine elle-même ? Le diagnostic et les secrets n'en sortent pas.</summary>
+    private bool IsLocalCaller()
+    {
+        var remote = HttpContext.Connection.RemoteIpAddress;
+        return remote is null || System.Net.IPAddress.IsLoopback(remote);
+    }
+
+    /// <summary>
+    /// La clé de partage de CETTE borne, à confier à un pair pour qu'il puisse récupérer ses
+    /// replays publics. Elle n'ouvre que la surface de partage, jamais l'administration de la
+    /// machine. Ne sort qu'en boucle locale : un pair n'a aucune raison de la lire par l'API.
+    /// </summary>
+    [HttpGet("share-key")]
+    public IActionResult ShareKey()
+    {
+        if (!IsLocalCaller()) return NotFound();
+        var key = RetroBat.Api.Replay.Sharing.ReplayShareKeyStore.GetOrCreate();
+        return Ok(new { ok = key.Length > 0, share_key = key });
+    }
+
     // Clé canonique CDC / front : replay_id.
     public sealed record PlayRequest([property: JsonPropertyName("replay_id")] string ReplayId);
 
@@ -119,6 +139,7 @@ public sealed class ReplayPlaybackController : ControllerBase
     [HttpGet("core-timing")]
     public IActionResult CoreTiming([FromServices] RetroBat.Api.Replay.Runtime.ReplayCoreTimingProbe probe)
     {
+        if (!IsLocalCaller()) return NotFound();
         var age = probe.LogAge();
         var t = probe.ReadLatest(ignoreAge: true); // diagnostic : on montre la valeur ET son âge
         if (t is null) return Ok(new { ok = false, reason = "no_av_info_in_log", log_age_seconds = age?.TotalSeconds });
@@ -144,6 +165,7 @@ public sealed class ReplayPlaybackController : ControllerBase
     public async Task<IActionResult> Peers([FromServices] RetroBat.Api.Replay.Sharing.ReplayPeerStore store,
         [FromServices] IHttpClientFactory httpFactory, CancellationToken ct)
     {
+        if (!IsLocalCaller()) return NotFound();
         var results = new List<object>();
         foreach (var p in store.Peers)
         {
