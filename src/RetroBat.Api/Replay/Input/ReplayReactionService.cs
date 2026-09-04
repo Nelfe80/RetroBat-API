@@ -17,7 +17,11 @@ namespace RetroBat.Api.Replay.Input;
 /// Chaque réaction est horodatée (frame + ms), publiée (event replay.reaction) et STOCKÉE en JSONL
 /// pour être rejouée (affichage = étape suivante). Les MOTS/emojis (6 langues) sont une table à part.
 ///
-/// NB swap RetroBat A↔B : bouton A physique = identité "b", B = "a" (X/Y non swappés).
+/// GÉNÉRIQUE (R3.3) : les réactions sont mappées par SLOT physique du panel (position résolue par
+/// la cartographie de la borne, cf. <see cref="RetroBat.Api.Infrastructure.PanelInputWatcherService"/>),
+/// JAMAIS par identité RetroPad. Aucune hypothèse de câblage n'entre donc ici (swap sdl2 a↔b,
+/// DragonRise, I-PAC, manette…) : le MÊME bouton physique déclenche la MÊME famille sur n'importe
+/// quel encodeur — c'est la cartographie (mesurée par le wizard LedManager) qui absorbe le câblage.
 /// </summary>
 public sealed class ReplayReactionService : IHostedService
 {
@@ -26,17 +30,17 @@ public sealed class ReplayReactionService : IHostedService
     private const int HoldLevel3Ms = 900;
     private const int CooldownMs = 600;     // délai anti-spam entre deux réactions
 
-    // Identité RetroPad (swap pris en compte) → famille de réaction.
-    private static readonly IReadOnlyDictionary<string, string> Family = new Dictionary<string, string>(StringComparer.Ordinal)
+    // SLOT physique du panel (1..8, cartographie borne-indépendante) → famille de réaction.
+    private static readonly IReadOnlyDictionary<int, string> SlotFamily = new Dictionary<int, string>
     {
-        ["b"] = "hype",     // bouton A physique
-        ["a"] = "wow",      // bouton B physique
-        ["x"] = "respect",
-        ["y"] = "laugh",
-        ["l"] = "tension",
-        ["r"] = "ouch",
-        ["l2"] = "love",
-        ["r2"] = "rage",
+        [1] = "hype",
+        [2] = "wow",
+        [3] = "laugh",
+        [4] = "respect",
+        [5] = "love",
+        [6] = "rage",
+        [7] = "tension",
+        [8] = "ouch",
     };
 
     private readonly IEventBus _bus;
@@ -46,8 +50,8 @@ public sealed class ReplayReactionService : IHostedService
     private readonly ILogger<ReplayReactionService> _logger;
 
     private readonly object _gate = new();
-    private readonly Dictionary<string, DateTime> _down = new();  // boutons de réaction tenus
-    private readonly HashSet<string> _gesture = new();            // boutons consommés par une célébration
+    private readonly Dictionary<int, DateTime> _down = new();  // SLOTS de réaction tenus
+    private readonly HashSet<int> _gesture = new();            // slots consommés par une célébration
     private bool _celebrating;
     private int _celebMaxCount;
     private string? _budgetReplayId;
@@ -96,11 +100,11 @@ public sealed class ReplayReactionService : IHostedService
             }
             if (_down.Count == 0) return new ChargeSnapshot(false, "", 0, 0, false, 0);
             var earliest = _down.Values.Min();
-            var id = _down.First(kv => kv.Value == earliest).Key;
+            var slot = _down.First(kv => kv.Value == earliest).Key;
             var elapsed = (DateTime.UtcNow - earliest).TotalMilliseconds;
             var level = elapsed < HoldLevel2Ms ? 1 : elapsed < HoldLevel3Ms ? 2 : 3;
             var progress = Math.Clamp(elapsed / (double)HoldLevel3Ms, 0, 1);
-            return new ChargeSnapshot(true, Family[id], level, progress, false, 0);
+            return new ChargeSnapshot(true, SlotFamily[slot], level, progress, false, 0);
         }
     }
 
@@ -122,11 +126,10 @@ public sealed class ReplayReactionService : IHostedService
         var released = string.Equals(e.Type, "panel.input.released", StringComparison.Ordinal);
         if (!pressed && !released) return;
 
-        var (identity, system) = ReadButton(e.Payload);
-        // Les entrées « système » (START/SELECT/DPAD/L3/R3) portent un System non nul → pas des réactions.
-        if (identity is null || system is not null) return;
-        var id = identity.ToLowerInvariant();
-        if (!Family.ContainsKey(id)) return; // uniquement les 8 boutons de réaction
+        var (slot, system) = ReadButton(e.Payload);
+        // Système (START/SELECT/DPAD/L3/R3) = pas de slot ; seuls les boutons de façade réagissent.
+        if (slot is null || system is not null) return;
+        if (!SlotFamily.ContainsKey(slot.Value)) return; // uniquement les slots de réaction
 
         var st = _playback.GetState();
         if (!string.Equals(st.Mode, "replay", StringComparison.Ordinal))
@@ -135,19 +138,19 @@ public sealed class ReplayReactionService : IHostedService
             return;
         }
 
-        if (pressed) OnPress(id, st); else OnRelease(id, st);
+        if (pressed) OnPress(slot.Value, st); else OnRelease(slot.Value, st);
     }
 
-    private void OnPress(string id, ReplayPlaybackService.StateSnapshot st)
+    private void OnPress(int slot, ReplayPlaybackService.StateSnapshot st)
     {
         lock (_gate)
         {
             EnsureBudget(st);
-            _down[id] = DateTime.UtcNow;
+            _down[slot] = DateTime.UtcNow;
 
             if (_celebrating)
             {
-                _gesture.Add(id);
+                _gesture.Add(slot);
                 _celebMaxCount = Math.Max(_celebMaxCount, _down.Count);
             }
             else if (_down.Count >= ChordThreshold)
@@ -162,17 +165,17 @@ public sealed class ReplayReactionService : IHostedService
         }
     }
 
-    private void OnRelease(string id, ReplayPlaybackService.StateSnapshot st)
+    private void OnRelease(int slot, ReplayPlaybackService.StateSnapshot st)
     {
         string? family = null; var level = 0; var chord = false;
         lock (_gate)
         {
-            if (!_down.TryGetValue(id, out var pressedAt)) return;
-            _down.Remove(id);
+            if (!_down.TryGetValue(slot, out var pressedAt)) return;
+            _down.Remove(slot);
 
-            if (_celebrating || _gesture.Contains(id))
+            if (_celebrating || _gesture.Contains(slot))
             {
-                _gesture.Add(id);
+                _gesture.Add(slot);
                 if (_celebrating && _down.Count == 0)
                 {
                     family = "celebrate";
@@ -185,7 +188,7 @@ public sealed class ReplayReactionService : IHostedService
             else
             {
                 var heldMs = (DateTime.UtcNow - pressedAt).TotalMilliseconds;
-                family = Family[id];
+                family = SlotFamily[slot];
                 level = heldMs < HoldLevel2Ms ? 1 : heldMs < HoldLevel3Ms ? 2 : 3;
             }
         }
@@ -240,15 +243,15 @@ public sealed class ReplayReactionService : IHostedService
         catch (Exception ex) { _logger.LogDebug(ex, "Replay : publication réaction échouée"); }
     }
 
-    private static (string? identity, string? system) ReadButton(object? payload)
+    private static (int? slot, string? system) ReadButton(object? payload)
     {
         if (payload is null) return (null, null);
         try
         {
             var el = JsonSerializer.SerializeToElement(payload);
-            var id = el.TryGetProperty("Identity", out var i) ? i.GetString() : null;
+            int? slot = el.TryGetProperty("Slot", out var sl) && sl.ValueKind == JsonValueKind.Number ? sl.GetInt32() : null;
             var sys = el.TryGetProperty("System", out var s) ? s.GetString() : null;
-            return (id, sys);
+            return (slot, sys);
         }
         catch { return (null, null); }
     }
