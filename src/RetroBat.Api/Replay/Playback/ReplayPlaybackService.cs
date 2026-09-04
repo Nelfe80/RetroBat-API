@@ -99,6 +99,12 @@ public sealed class ReplayPlaybackService
         var hint = meta?.Launch;
         var objectPath = _store.ObjectPath(manifest.Object.Sha256);
         if (!File.Exists(objectPath)) return Fail(ReplayErrorCode.ReplayObjectUnavailable);
+        // R6 : intégrité (taille + SHA-256 == manifeste) AVANT lecture — un hash au LANCEMENT (une
+        // fois), négligeable devant le démarrage RetroArch ; détecte corruption/altération.
+        // Indispensable dès qu'un objet vient d'un peer (NelfeNet) ; localement (store adressé-par-
+        // contenu) ça passe toujours, sauf bit rot.
+        if (!await _store.VerifyObjectAsync(manifest.Object, ct).ConfigureAwait(false))
+            return Fail(ReplayErrorCode.ReplayObjectCorrupt);
 
         // ── vérification runtime (R2 MVP : présence ; empreintes strictes quand le manifeste les portera) ──
         lock (_gate) { _state = ReplayPlaybackState.Verifying; _replayEnd = manifest.Frames.ReplayEnd;

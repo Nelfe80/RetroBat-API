@@ -98,6 +98,22 @@ public sealed class ReplayStore
         return (Convert.ToHexString(hash).ToLowerInvariant(), fs.Length);
     }
 
+    /// <summary>R6 : intégrité de l'objet .replay avant lecture — TAILLE + SHA-256 doivent
+    /// correspondre au manifeste. Indispensable dès qu'un objet peut venir d'un peer (NelfeNet) :
+    /// détecte une corruption (bit rot) ou une altération. False si absent / taille≠ / hash≠.</summary>
+    public async Task<bool> VerifyObjectAsync(ReplayObjectRef obj, CancellationToken ct)
+    {
+        try
+        {
+            var path = ObjectPath(obj.Sha256);
+            var fi = new FileInfo(path);
+            if (!fi.Exists || fi.Length != obj.Size) return false;
+            var (sha, _) = await HashFileAsync(path, ct).ConfigureAwait(false);
+            return string.Equals(sha, obj.Sha256, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
     // ── manifests (immuables) ───────────────────────────────────────────────
     public string ManifestPath(string replayId) => Path.Combine(_manifests, replayId + ".json");
 

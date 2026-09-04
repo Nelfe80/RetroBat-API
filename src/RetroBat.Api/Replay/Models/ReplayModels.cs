@@ -98,6 +98,7 @@ public enum ReplayErrorCode
     None,
     ReplayNotFound,
     ReplayObjectUnavailable,
+    ReplayObjectCorrupt,   // R6 : taille/SHA-256 de l'objet ≠ manifeste (corruption ou altération peer)
     ReplayAlreadyRunning,
     GameAlreadyRunning,
     ReplayRecordStartFailed,
