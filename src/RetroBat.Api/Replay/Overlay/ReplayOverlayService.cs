@@ -137,7 +137,7 @@ public sealed class ReplayOverlayService : BackgroundService
         private readonly OverlaySurface _surface;
 
         private ReplayPlaybackService.StateSnapshot _snapshot =
-            new("none", "idle", null, 0, null, null, null, false, null, 60, null);
+            new("none", "idle", null, 0, null, null, null, false, null, 60, null, null);
         private DateTime? _inactiveSince;
         private int _ticks;
         private bool _shownLogged;

@@ -365,6 +365,7 @@ builder.Services.AddHostedService<RetroArchLogMonitorService>();
 
 // ── Replay (R1 recorder + R2 player) : local RetroArch (CDC_DEV_NELFE_REPLAY) ──
 builder.Services.AddSingleton<RetroBat.Api.Replay.Runtime.RetroArchReplayClient>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Runtime.ReplayCoreTimingProbe>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.ReplayStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayLaunchTokenStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayRuntimeResolver>();

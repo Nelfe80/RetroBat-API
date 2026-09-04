@@ -39,6 +39,7 @@ public sealed class ReplayPlaybackService
     private long _frame;
     private long? _runStart, _runEnd, _replayEnd;
     private double _nominalFps = 60;
+    private string? _fpsSource;
     private bool _paused;
     private ReplayErrorCode _error = ReplayErrorCode.None;
     private ReplayCard? _card;
@@ -66,7 +67,7 @@ public sealed class ReplayPlaybackService
     public sealed record PlayResult(bool Accepted, string State, ReplayErrorCode Error);
     public sealed record StateSnapshot(string Mode, string State, string? ReplayId, long Frame,
         long? RunStartFrame, long? RunEndFrame, long? ReplayEndFrame, bool Paused, string? Error,
-        double NominalFps, ReplayCard? Card);
+        double NominalFps, string? FpsSource, ReplayCard? Card);
 
     /// <summary>Fiche « performance NelfePlay » de l'overlay (record sportif/esport). En R1
     /// seuls Game/System/Date sont réels ; Player/Score/Rank/Certified sont des emplacements
@@ -82,7 +83,7 @@ public sealed class ReplayPlaybackService
             return new StateSnapshot(mode, _state.ToString().ToLowerInvariant(), _replayId, _frame,
                 _runStart, _runEnd, _replayEnd, _paused,
                 _error == ReplayErrorCode.None ? null : _error.ToString(),
-                _nominalFps <= 0 ? 60 : _nominalFps, _card);
+                _nominalFps <= 0 ? 60 : _nominalFps, _fpsSource, _card);
         }
     }
 
@@ -118,7 +119,9 @@ public sealed class ReplayPlaybackService
 
         // ── vérification runtime (R2 MVP : présence ; empreintes strictes quand le manifeste les portera) ──
         lock (_gate) { _state = ReplayPlaybackState.Verifying; _replayEnd = manifest.Frames.ReplayEnd;
-            _runStart = manifest.Frames.RunStart; _runEnd = manifest.Frames.RunEnd; _nominalFps = manifest.Frames.NominalFps; }
+            _runStart = manifest.Frames.RunStart; _runEnd = manifest.Frames.RunEnd; _nominalFps = manifest.Frames.NominalFps;
+            // Manifeste d'avant R3.2 : pas de provenance => la cadence n'a pas été vérifiée.
+            _fpsSource = manifest.Frames.FpsSource ?? "default"; }
         // R5 : le hint local n'est qu'un ACCÉLÉRATEUR — le résolveur retrouve core+ROM depuis le
         // MANIFESTE (core par empreinte core_sha256, ROM par crc32 de contenu), pour qu'un replay
         // SANS hint (reçu d'un peer) reste jouable. Politique souple : jamais bloqué sur la version.
@@ -150,9 +153,9 @@ public sealed class ReplayPlaybackService
                 // en plus des succès pour un simple visionnage) et le rewind (inutile ici).
                 "cheevos_enable = \"false\"",
                 "rewind_enable = \"false\"",
-                // NB : la vitesse de lecture est NORMALE à l'écran (confirmé visuellement) ; le
-                // compteur active_replay.frame avance ~2x mais c'est une sémantique interne, pas la
-                // cadence réelle. Aucun override de cadence n'est donc nécessaire.
+                // R3.2, mesuré : active_replay.frame avance d'UNE unité par frame vidéo du core
+                // (~59,9/s mesuré sur Genesis, qui annonce 59,92) — l'ancienne note « ~2x » était
+                // fausse. La lecture se fait donc à vitesse normale, sans override de cadence.
             }) + "\n");
         }
         catch (Exception ex) { _logger.LogWarning(ex, "Replay : écriture du profil de session échouée (hotkeys non neutralisées)"); }

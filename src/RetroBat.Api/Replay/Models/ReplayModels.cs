@@ -30,7 +30,17 @@ public sealed record ReplayRuntime(
 
 public sealed record ReplayObjectRef(string Sha256, long Size);
 
-public sealed record ReplayFrames(long Start, long? RunStart, long? RunEnd, long ReplayEnd, double NominalFps);
+/// <summary>
+/// Repères de frames du replay. <paramref name="NominalFps"/> est la cadence DU CORE (base de
+/// temps émulée), pas celle de l'écran : c'est elle qui convertit frames ↔ secondes (seek,
+/// timeline, placement des réactions). Elle vaut 50 en PAL et prend des valeurs propres à chaque
+/// carte en arcade (Neo-Geo 59,19 ; CPS 59,63 ; Pac-Man 60,10) — d'où R3.2, qui a remplacé la
+/// constante 60 codée en dur. <paramref name="FpsSource"/> dit d'où elle vient : "core" (annoncée
+/// par le core lui-même, exacte), "measured" (déduite de la cadence observée), "default" (repli
+/// 60, valeur non vérifiée) ; absent = manifeste d'avant R3.2, à traiter comme "default".
+/// </summary>
+public sealed record ReplayFrames(long Start, long? RunStart, long? RunEnd, long ReplayEnd, double NominalFps,
+    string? FpsSource = null);
 
 public sealed record ReplayScoreLink(string? SubmissionHash, long? ScoreValueSnapshot);
 

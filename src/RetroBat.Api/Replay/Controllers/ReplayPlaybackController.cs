@@ -97,6 +97,7 @@ public sealed class ReplayPlaybackController : ControllerBase
             paused = s.Paused,
             error = s.Error,
             nominal_fps = s.NominalFps,
+            fps_source = s.FpsSource,   // core | measured | default — d'où vient la base de temps
             card = s.Card is null ? null : new
             {
                 game = s.Card.Game,
@@ -107,6 +108,31 @@ public sealed class ReplayPlaybackController : ControllerBase
                 rank = s.Card.Rank,
                 certified = s.Card.Certified,
             },
+        });
+    }
+
+    /// <summary>
+    /// R3.2 — diagnostic : cadence que le core a annoncée pour le contenu chargé le plus récemment.
+    /// Sert à vérifier la détection core par core (console PAL, arcade…) : on lance le jeu, on
+    /// interroge ce point, on compare à la cadence attendue de la machine émulée.
+    /// </summary>
+    [HttpGet("core-timing")]
+    public IActionResult CoreTiming([FromServices] RetroBat.Api.Replay.Runtime.ReplayCoreTimingProbe probe)
+    {
+        var age = probe.LogAge();
+        var t = probe.ReadLatest(ignoreAge: true); // diagnostic : on montre la valeur ET son âge
+        if (t is null) return Ok(new { ok = false, reason = "no_av_info_in_log", log_age_seconds = age?.TotalSeconds });
+        return Ok(new
+        {
+            ok = true,
+            fps = t.Fps,
+            width = t.Width,
+            height = t.Height,
+            sample_rate = t.SampleRate,
+            crc32 = t.Crc32,
+            log_age_seconds = age?.TotalSeconds,
+            // Faux = le log ne parle plus de la partie en cours : le recorder REFUSERAIT cette valeur.
+            usable_for_recording = age is not null && age < TimeSpan.FromMinutes(10),
         });
     }
 

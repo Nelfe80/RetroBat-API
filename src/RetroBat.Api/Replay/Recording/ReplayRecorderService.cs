@@ -23,10 +23,21 @@ public sealed record ActiveRecordingState(
 public sealed class ReplayRecorderService : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(1500);
-    private const double NominalFps = 60.0; // R1 : approx (genesis ~59.92) ; affiné en R2 via av_info
+
+    // R3.2 — dernier recours SEULEMENT (log muet et mesure inexploitable). 60 est faux pour tout
+    // jeu PAL (50) et pour la plupart des cartes d'arcade ; le manifeste dit alors "default" pour
+    // qu'on sache que la valeur n'a pas été vérifiée.
+    private const double FallbackFps = 60.0;
+
+    // Bornes de plausibilité d'une cadence mesurée : en dessous/au-dessus, l'échantillon vient
+    // d'une pause, d'une avance rapide ou d'un décrochage — pas de la cadence du jeu.
+    private const double MinPlausibleFps = 40.0;
+    private const double MaxPlausibleFps = 75.0;
+    private const int MinRateSamples = 8; // ~12 s de partie : en dessous, la médiane ne vaut rien
 
     private readonly RetroArchReplayClient _ra;
     private readonly ReplayStore _store;
+    private readonly ReplayCoreTimingProbe _timing;
     private readonly IEventBus _bus;
     private readonly RetroBat.Api.Replay.Playback.ReplayPlaybackService _playback;
     private readonly ILogger<ReplayRecorderService> _logger;
@@ -41,14 +52,22 @@ public sealed class ReplayRecorderService : BackgroundService
         public DateTime StartedAtUtc;
         public long LastFrame;
         public required string RetroArchVersion;
+
+        // R3.2 — cadence du core. Annoncée par le core au chargement (exacte) si le log la donne…
+        public double? CoreFps;
+        // …sinon on la DÉDUIT de la cadence observée : une mesure par tick (Δframes / Δtemps).
+        // On garde tous les échantillons pour en prendre la MÉDIANE : une pause tire vers le bas,
+        // une avance rapide vers le haut, la médiane ignore les deux tant qu'ils restent minoritaires.
+        public readonly List<double> RateSamples = new();
+        public DateTime LastSampleUtc;
     }
 
     private Recording? _current;
 
-    public ReplayRecorderService(RetroArchReplayClient ra, ReplayStore store, IEventBus bus,
-        RetroBat.Api.Replay.Playback.ReplayPlaybackService playback, ILogger<ReplayRecorderService> logger)
+    public ReplayRecorderService(RetroArchReplayClient ra, ReplayStore store, ReplayCoreTimingProbe timing,
+        IEventBus bus, RetroBat.Api.Replay.Playback.ReplayPlaybackService playback, ILogger<ReplayRecorderService> logger)
     {
-        _ra = ra; _store = store; _bus = bus; _playback = playback; _logger = logger;
+        _ra = ra; _store = store; _timing = timing; _bus = bus; _playback = playback; _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -85,7 +104,11 @@ public sealed class ReplayRecorderService : BackgroundService
         }
 
         // En cours d'enregistrement : suivre la dernière frame connue.
-        if (active is { Recording: true }) _current.LastFrame = active.Frame;
+        if (active is { Recording: true })
+        {
+            SampleRate(_current, active.Frame);
+            _current.LastFrame = active.Frame;
+        }
 
         // Fin : RetroArch fermé, jeu changé, ou l'enregistrement s'est arrêté.
         var ended = status is null
@@ -122,6 +145,8 @@ public sealed class ReplayRecorderService : BackgroundService
             LastFrame = check.Frame,
             RetroArchVersion = version.Trim(),
         };
+        rec.CoreFps = ProbeCoreFps(rec.Crc32, rec.Game);
+        rec.LastSampleUtc = DateTime.UtcNow;
         _current = rec;
 
         _store.WriteJsonAtomic(_store.ActiveRecordingPath, new ActiveRecordingState(
@@ -202,12 +227,14 @@ public sealed class ReplayRecorderService : BackgroundService
             CoreOptionsDigest: null,                 // TODO : sous-ensemble DÉTERMINISTE des core options (pas les options cosmétiques)
             ReplayFormat: "bsv");
 
+        var (fps, fpsSource) = ResolveFps(rec);
         var frames = new ReplayFrames(
             Start: 0,
             RunStart: null,           // corrélation scoring = étape ultérieure (run.finalized)
             RunEnd: null,
             ReplayEnd: rec.LastFrame,
-            NominalFps: NominalFps);
+            NominalFps: fps,
+            FpsSource: fpsSource);
 
         return new ReplayManifest(
             Schema: ReplayManifest.SchemaId,
@@ -221,6 +248,79 @@ public sealed class ReplayRecorderService : BackgroundService
             Frames: frames,
             ScoreLink: null,
             Recovery: new ReplayRecovery(false));
+    }
+
+    /// <summary>
+    /// Cadence annoncée par le core pour CE contenu, ou null. Le log ne dit pas « le jeu en cours
+    /// tourne à tant » mais « le dernier contenu chargé tournait à tant » : on n'accepte donc la
+    /// valeur que si le CRC journalisé est celui de la partie. Sans CRC des deux côtés, on accepte
+    /// au bénéfice du doute (le log est réécrit à chaque lancement et borné en ancienneté).
+    /// </summary>
+    private double? ProbeCoreFps(string? crc32, string game)
+    {
+        var timing = _timing.ReadLatest();
+        if (timing is null) return null;
+
+        var expected = NormalizeCrc(crc32);
+        var found = NormalizeCrc(timing.Crc32);
+        if (expected is not null && found is not null && !string.Equals(expected, found, StringComparison.Ordinal))
+        {
+            _logger.LogInformation("Replay : cadence du log ignorée pour {Game} (CRC log {Found} ≠ partie {Expected}).", game, found, expected);
+            return null;
+        }
+
+        _logger.LogInformation("Replay : cadence du core = {Fps} img/s ({W}x{H}) pour {Game}.",
+            timing.Fps, timing.Width, timing.Height, game);
+        return timing.Fps;
+    }
+
+    /// <summary>CRC comparable : sans préfixe 0x, minuscule, sur 8 chiffres. Null si vide/invalide.</summary>
+    private static string? NormalizeCrc(string? crc)
+    {
+        var s = crc?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(s)) return null;
+        if (s.StartsWith("0x", StringComparison.Ordinal)) s = s[2..];
+        s = s.TrimEnd('.');
+        return s.Length is > 0 and <= 8 && s.All(Uri.IsHexDigit) ? s.PadLeft(8, '0') : null;
+    }
+
+    /// <summary>Un échantillon de cadence par tick : combien de frames émulées par seconde réelle.</summary>
+    private static void SampleRate(Recording rec, long frame)
+    {
+        var now = DateTime.UtcNow;
+        var dt = (now - rec.LastSampleUtc).TotalSeconds;
+        var df = frame - rec.LastFrame;
+        rec.LastSampleUtc = now;
+        if (dt <= 0.5 || dt > 10 || df <= 0) return; // tick anormal, jeu en pause, ou compteur remis à zéro
+        var rate = df / dt;
+        if (rate is > MinPlausibleFps and < MaxPlausibleFps) rec.RateSamples.Add(rate);
+    }
+
+    /// <summary>
+    /// R3.2 — la cadence retenue pour le manifeste, par ordre de confiance : ce que le core a
+    /// ANNONCÉ (exact), sinon ce qu'on a MESURÉ (médiane des échantillons, ±1 % environ), sinon 60
+    /// en dernier recours. On n'arrondit JAMAIS vers une cadence « standard » : ce serait juste en
+    /// console et faux en arcade, où chaque carte a la sienne.
+    /// </summary>
+    private (double Fps, string Source) ResolveFps(Recording rec)
+    {
+        if (rec.CoreFps is > 0) return (rec.CoreFps.Value, "core");
+
+        if (rec.RateSamples.Count >= MinRateSamples)
+        {
+            var sorted = rec.RateSamples.OrderBy(x => x).ToList();
+            var median = sorted.Count % 2 == 1
+                ? sorted[sorted.Count / 2]
+                : (sorted[sorted.Count / 2 - 1] + sorted[sorted.Count / 2]) / 2;
+            var fps = Math.Round(median, 2);
+            _logger.LogInformation("Replay : cadence MESURÉE {Fps} img/s pour {Game} ({N} échantillons) — le log n'a pas donné l'av_info.",
+                fps, rec.Game, sorted.Count);
+            return (fps, "measured");
+        }
+
+        _logger.LogWarning("Replay : cadence inconnue pour {Game} (log muet, {N} échantillons) — repli sur {Fps}, seek approximatif si le jeu n'est pas en 60 Hz.",
+            rec.Game, rec.RateSamples.Count, FallbackFps);
+        return (FallbackFps, "default");
     }
 
     // Hash SHA-256 d'un fichier (best-effort, null si illisible) : empreinte runtime pour R4.
@@ -322,6 +422,9 @@ public sealed class ReplayRecorderService : BackgroundService
             ReplayId = state.ReplayId, SessionId = state.SessionId, System = state.System, Game = state.Game,
             Crc32 = state.Crc32, StartedAtUtc = state.StartedAt, RetroArchVersion = state.RetroarchVersion, LastFrame = 0,
         };
+        // La session interrompue n'a laissé aucun échantillon de cadence : le log reste la seule
+        // chance d'avoir la vraie valeur, et le contrôle de CRC empêche de prendre celle d'un autre jeu.
+        rec.CoreFps = ProbeCoreFps(rec.Crc32, rec.Game);
         var hint = BuildLaunchHint(file);
         var manifest = BuildManifest(rec, obj, hint) with { Recovery = new ReplayRecovery(true) };
         _store.SaveManifest(manifest);

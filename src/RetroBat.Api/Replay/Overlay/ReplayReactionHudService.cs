@@ -290,7 +290,7 @@ public sealed class ReplayReactionHudService : BackgroundService
 
         private ReplayPlaybackService.StateSnapshot SafeState()
         {
-            try { return _state(); } catch { return new ReplayPlaybackService.StateSnapshot("none", "idle", null, 0, null, null, null, false, null, 60, null); }
+            try { return _state(); } catch { return new ReplayPlaybackService.StateSnapshot("none", "idle", null, 0, null, null, null, false, null, 60, null, null); }
         }
 
         // Bulle « réaction des autres » : au passage du curseur sur un cluster majoritaire, une seule
