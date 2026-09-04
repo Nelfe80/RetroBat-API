@@ -133,6 +133,8 @@ public sealed class ReplayReactionHudService : BackgroundService
         private const int DesignBase = 0;
 
         private const int BarHeight = 118;    // la barre d'info occupe le bas ; on pose la jauge au-dessus
+        private const int ActiveTickMs = 40;  // 25 fps : uniquement pendant une animation (nuée/jauge/bulle)
+        private const int IdleTickMs = 500;   // 2 fps : repos et lecture-sans-réaction (rien à animer)
         private const int PartLifeMs = 620;   // vie COURTE d'un sprite du tunnel (vagues répétées = dynamique)
         private const int LabelLifeMs = 1250; // durée du mot central
         private const int MaxParticles = 320;
@@ -183,7 +185,7 @@ public sealed class ReplayReactionHudService : BackgroundService
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = false;
             TopMost = true;
-            _timer = new System.Windows.Forms.Timer { Interval = 40 }; // 25 fps (léger pour petites configs)
+            _timer = new System.Windows.Forms.Timer { Interval = IdleTickMs }; // démarre lent ; monte à 25 fps si animation
             _timer.Tick += (_, _) => OnTick();
             _timer.Start();
         }
@@ -204,6 +206,7 @@ public sealed class ReplayReactionHudService : BackgroundService
 
         public void AddReaction(string family, int level, bool chord)
         {
+            _timer.Interval = ActiveTickMs; // une réaction arrive → repasse à 25 fps tout de suite (nuée fluide)
             var (emoji, word) = ReplayReactionText.Resolve(family, level, _locale());
             var color = ReplayReactionText.ColorOf(family);
             // Une réaction = l'icône du design choisi au niveau atteint (col = base + niveau).
@@ -247,7 +250,12 @@ public sealed class ReplayReactionHudService : BackgroundService
                 PumpBubble(st, playing);
 
                 var active = playing || charge.Active || _parts.Count > 0 || _labels.Count > 0;
-                if (!active) { if (Visible) Hide(); return; }
+                if (!active)
+                {
+                    if (Visible) Hide();
+                    if (_timer.Interval != IdleTickMs) _timer.Interval = IdleTickMs; // repos : le timer ralentit (pas 25 fps pour rien)
+                    return;
+                }
 
                 if (!EnsureRegion()) return;
                 if (!Visible) Show();
@@ -263,6 +271,10 @@ public sealed class ReplayReactionHudService : BackgroundService
                     PushLayered(_region.Location, _region.Size);
                     _lastRenderMs = now;
                 }
+                // Cadence dynamique : 25 fps SEULEMENT pendant une animation (nuée fluide) ; sinon
+                // 2 fps même en pleine lecture (rien ne bouge, seul le rendu 1 fps de la légende compte).
+                var wantMs = animating ? ActiveTickMs : IdleTickMs;
+                if (_timer.Interval != wantMs) _timer.Interval = wantMs;
                 AssertTopmost();
             }
             catch
