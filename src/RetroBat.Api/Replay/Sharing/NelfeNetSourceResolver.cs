@@ -73,7 +73,11 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(FetchTimeout);
 
-            var url = peer.BaseUrl.TrimEnd('/') + "/api/v1/object/" + sha;
+            // Une borne expose une route d'API ; une amorce statique expose une URL de fichier.
+            // Le gabarit permet aux deux de passer par le MEME client de transfert.
+            var url = string.IsNullOrWhiteSpace(peer.UrlTemplate)
+                ? peer.BaseUrl.TrimEnd('/') + "/api/v1/object/" + sha
+                : peer.UrlTemplate.Replace("{sha}", sha, StringComparison.Ordinal);
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             if (!string.IsNullOrWhiteSpace(peer.ApiKey)) request.Headers.Add("X-Api-Key", peer.ApiKey);
 

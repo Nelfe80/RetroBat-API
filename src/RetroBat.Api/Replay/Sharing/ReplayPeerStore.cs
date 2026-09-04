@@ -11,7 +11,12 @@ public sealed record ReplayPeer(string Name, string BaseUrl, string? ApiKey,
     string Source = "manuel",
     /// <summary>Identité plateforme annoncée, quand elle est connue. Informative ; elle
     /// n'autorise rien tant que les jetons signés n'existent pas.</summary>
-    string? DeviceId = null);
+    string? DeviceId = null,
+    /// <summary>Gabarit d'URL avec le marqueur <c>{sha}</c>, quand la source n'expose pas la
+    /// route d'API d'une borne. Une amorce GitHub sert par exemple
+    /// <c>releases/download/objects/{sha}.replay</c> : la connaître ici évite de coder en dur
+    /// la forme d'un hébergeur dans le client de transfert.</summary>
+    string? UrlTemplate = null);
 
 public sealed record ReplayPeersDoc(string Schema, IReadOnlyList<ReplayPeer> Peers);
 
