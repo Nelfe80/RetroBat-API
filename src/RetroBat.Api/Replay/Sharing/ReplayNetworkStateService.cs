@@ -74,6 +74,11 @@ public sealed class ReplayNetworkStateService
         var meta = _meta.GetMeta(replayId);
         if (meta?.Pinned == true) return ReplayNetworkState.Pinned;
 
+        // Publié au miroir : l'objet est offert au monde, que CETTE borne le serve ou non.
+        // C'est un fait constaté (on l'y a mis), pas une supposition sur le réseau.
+        if (string.Equals(meta?.PublicationState, "mirrored", StringComparison.OrdinalIgnoreCase))
+            return ReplayNetworkState.Announced;
+
         var visibility = meta?.Visibility ?? "private";
         if (_policy.SharingEnabled && string.Equals(visibility, "public", StringComparison.OrdinalIgnoreCase))
             return ReplayNetworkState.Announced;

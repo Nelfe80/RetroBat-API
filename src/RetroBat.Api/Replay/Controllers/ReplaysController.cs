@@ -148,6 +148,49 @@ public sealed class ReplaysController : ControllerBase
         return Ok(new { ok = true, replay_id = id, pinned = req?.Pinned ?? false });
     }
 
+    /// <summary>
+    /// Publie ce replay sur le miroir de la plateforme : il devient public ET récupérable par
+    /// n'importe quelle borne, y compris derrière un routeur domestique qui interdit toute
+    /// connexion entrante. C'est un geste EXPLICITE, jamais déclenché par un enregistrement ou
+    /// par le scellement d'un score.
+    ///
+    /// L'objet part avec son manifeste : sans lui, une borne qui n'a jamais vu ce replay ne
+    /// saurait pas quel core ni quelle ROM employer.
+    /// </summary>
+    [HttpPost("{id}/publish")]
+    public async Task<IActionResult> Publish(string id,
+        [FromServices] ReplayMirrorPublisher publisher, CancellationToken ct)
+    {
+        if (!IsLocalCaller()) return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
+
+        var result = await publisher.PublishAsync(id, ct);
+        if (!result.Ok)
+        {
+            var status = result.Error == "REPLAY_NOT_FOUND" ? 404 : 422;
+            return StatusCode(status, new { ok = false, error = new { code = result.Error } });
+        }
+
+        // La visibilité locale suit la décision : ce replay est désormais offert.
+        var meta = _store.GetMeta(id) ?? ReplayLocalMetadata.Fresh(id);
+        _store.SaveMeta(meta with { Visibility = "public", PublicationState = "mirrored" });
+        return Ok(new { ok = true, replay_id = id, visibility = "public", published = true });
+    }
+
+    /// <summary>Retire ce replay du miroir et le repasse en privé.</summary>
+    [HttpPost("{id}/unpublish")]
+    public async Task<IActionResult> Unpublish(string id,
+        [FromServices] ReplayMirrorPublisher publisher, CancellationToken ct)
+    {
+        if (!IsLocalCaller()) return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
+
+        var result = await publisher.UnpublishAsync(id, ct);
+        var meta = _store.GetMeta(id);
+        if (meta is not null) _store.SaveMeta(meta with { Visibility = "private", PublicationState = "local" });
+        // Le retrait local vaut même si le miroir n'a pas répondu : on ne laisse pas la borne
+        // croire qu'elle partage encore alors qu'elle a décidé le contraire.
+        return Ok(new { ok = true, replay_id = id, visibility = "private", mirror_cleared = result.Ok });
+    }
+
     /// <summary>Reconstruit l'index depuis les manifests (maintenance).</summary>
     [HttpPost("rebuild-index")]
     public IActionResult RebuildIndex()
