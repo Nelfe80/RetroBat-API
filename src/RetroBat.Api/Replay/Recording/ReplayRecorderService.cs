@@ -184,7 +184,10 @@ public sealed class ReplayRecorderService : BackgroundService
             SystemId: rec.System,
             RomGroup: null,
             Ruleset: null,
-            Crc32: rec.Crc32);
+            Crc32: rec.Crc32,
+            // Dossier système frontend (« megadrive ») : identifiant PORTABLE (pas un chemin local),
+            // pour qu'un peer sans hint sache où chercher la ROM par crc32.
+            SystemFolder: hint?.SystemFolder);
 
         var runtime = new ReplayRuntime(
             RuntimeId: $"nelfe-{Slug(rec.System)}-r1",

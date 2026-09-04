@@ -75,14 +75,15 @@ public sealed class ReplayRuntimeResolver
     }
 
     // ROM : hint local (rapide) → scan roms/<système> par crc32 de CONTENU (== celui de RetroArch,
-    // décompressé pour un .zip). Sans dossier système connu (peer), on ne scanne pas globalement :
-    // le mapping systemId→dossier reste à brancher (es_systems) avant le transfert d'objet NelfeNet.
+    // décompressé pour un .zip). Le DOSSIER système vient du hint local, sinon du MANIFESTE
+    // (`game.system_folder`, identifiant portable posé à l'enregistrement) → un replay reçu d'un
+    // peer, sans hint, reste résolvable. On ne scanne jamais globalement (coûteux).
     private string? ResolveRom(ReplayManifest manifest, ReplayLaunchHint? hint)
     {
         if (hint is not null && !string.IsNullOrEmpty(hint.RomPath) && File.Exists(hint.RomPath)) return hint.RomPath;
 
         var crc = manifest.Game.Crc32;
-        var systemFolder = hint?.SystemFolder;
+        var systemFolder = hint?.SystemFolder ?? manifest.Game.SystemFolder;
         if (string.IsNullOrWhiteSpace(crc) || string.IsNullOrWhiteSpace(systemFolder)) return null;
 
         var romDir = Path.Combine(RetroBatPaths.RomsRoot, systemFolder);

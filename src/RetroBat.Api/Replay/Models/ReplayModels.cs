@@ -9,7 +9,15 @@ namespace RetroBat.Api.Replay.Models;
 // R1 : les empreintes runtime (rom/core/options) sont partielles (playback = R2).
 // ─────────────────────────────────────────────────────────────────────────────
 
-public sealed record ReplayGame(string GameId, string SystemId, string? RomGroup, string? Ruleset, string? Crc32);
+/// <summary>
+/// Identité du jeu. <paramref name="SystemFolder"/> = le dossier système FRONTEND (ex. « megadrive »),
+/// ajouté pour la PORTABILITÉ : ce n'est pas un chemin local (règle CDC) mais un identifiant
+/// standardisé, identique sur toute install RetroBat — il permet à un peer de retrouver la ROM
+/// dans `roms/&lt;dossier&gt;` sans hint. Optionnel : les manifestes antérieurs valent null.
+/// (Le SystemId vient de RetroArch — « mega_drive » — et ne se déduit PAS du dossier.)
+/// </summary>
+public sealed record ReplayGame(string GameId, string SystemId, string? RomGroup, string? Ruleset, string? Crc32,
+    string? SystemFolder = null);
 
 public sealed record ReplayRuntime(
     string RuntimeId,
