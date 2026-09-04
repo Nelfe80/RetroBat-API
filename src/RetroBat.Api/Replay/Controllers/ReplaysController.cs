@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using RetroBat.Api.Replay.Models;
+using RetroBat.Api.Replay.Sharing;
 using RetroBat.Api.Replay.Storage;
 
 namespace RetroBat.Api.Replay.Controllers;
@@ -14,8 +15,12 @@ namespace RetroBat.Api.Replay.Controllers;
 public sealed class ReplaysController : ControllerBase
 {
     private readonly ReplayStore _store;
+    private readonly ReplayNetworkStateService _network;
 
-    public ReplaysController(ReplayStore store) => _store = store;
+    public ReplaysController(ReplayStore store, ReplayNetworkStateService network)
+    {
+        _store = store; _network = network;
+    }
 
     /// <summary>Liste les replays connus (depuis l'index, reconstruit s'il est absent).</summary>
     [HttpGet]
@@ -36,7 +41,10 @@ public sealed class ReplaysController : ControllerBase
                     created_at = e.CreatedAt,
                     object_sha256 = e.ObjectSha256,
                     visibility = meta?.Visibility ?? "private",
+                    // « manifeste connu » et « objet réellement là » sont DEUX choses (CDC §86).
                     local_available = System.IO.File.Exists(_store.ObjectPath(e.ObjectSha256)),
+                    network_state = ReplayNetworkStateService.Wire(_network.Evaluate(e.ReplayId, e.ObjectSha256)),
+                    pinned = meta?.Pinned ?? false,
                     score_ref = meta?.ScoreRef,
                 };
             })
@@ -56,6 +64,7 @@ public sealed class ReplaysController : ControllerBase
             manifest = m,
             metadata = _store.GetMeta(id),
             local_available = System.IO.File.Exists(_store.ObjectPath(m.Object.Sha256)),
+            network_state = ReplayNetworkStateService.Wire(_network.Evaluate(id, m.Object.Sha256)),
         });
     }
 
@@ -91,6 +100,24 @@ public sealed class ReplaysController : ControllerBase
         var meta = _store.GetMeta(id) ?? ReplayLocalMetadata.Fresh(id);
         _store.SaveMeta(meta with { Visibility = v });
         return Ok(new { ok = true, replay_id = id, visibility = v });
+    }
+
+    public sealed record PinRequest(
+        [property: System.Text.Json.Serialization.JsonPropertyName("pinned")] bool Pinned);
+
+    /// <summary>
+    /// Épingle un replay : sa copie locale est conservée quoi qu'il arrive, aucun ménage ne peut
+    /// l'effacer. C'est la politique de durabilité du CDC §46 appliquée à cette borne (un ancien
+    /// #1, une finale) ; elle ne dit rien de ce que font les autres bornes.
+    /// </summary>
+    [HttpPost("{id}/pin")]
+    public IActionResult SetPinned(string id, [FromBody] PinRequest? req)
+    {
+        if (_store.GetManifest(id) is null)
+            return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
+        var meta = _store.GetMeta(id) ?? ReplayLocalMetadata.Fresh(id);
+        _store.SaveMeta(meta with { Pinned = req?.Pinned ?? false });
+        return Ok(new { ok = true, replay_id = id, pinned = req?.Pinned ?? false });
     }
 
     /// <summary>Reconstruit l'index depuis les manifests (maintenance).</summary>

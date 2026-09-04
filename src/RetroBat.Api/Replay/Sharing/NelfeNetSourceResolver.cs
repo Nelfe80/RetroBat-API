@@ -24,13 +24,14 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
 
     private readonly IReplayObjectStore _objects;
     private readonly ReplayPeerStore _peers;
+    private readonly ReplayNetworkStateService _network;
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<NelfeNetSourceResolver> _logger;
 
     public NelfeNetSourceResolver(IReplayObjectStore objects, ReplayPeerStore peers,
-        IHttpClientFactory httpFactory, ILogger<NelfeNetSourceResolver> logger)
+        ReplayNetworkStateService network, IHttpClientFactory httpFactory, ILogger<NelfeNetSourceResolver> logger)
     {
-        _objects = objects; _peers = peers; _httpFactory = httpFactory; _logger = logger;
+        _objects = objects; _peers = peers; _network = network; _httpFactory = httpFactory; _logger = logger;
     }
 
     public async Task<bool> EnsureObjectAvailableAsync(ReplayManifest manifest, CancellationToken ct)
@@ -45,10 +46,14 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
             return false;
         }
 
-        foreach (var peer in peers)
+        // Le temps de la récupération, l'objet est « replicating » pour qui interroge l'API.
+        using (_network.BeginFetch(sha))
         {
-            if (ct.IsCancellationRequested) return false;
-            if (await TryFetchAsync(peer, manifest, ct).ConfigureAwait(false)) return true;
+            foreach (var peer in peers)
+            {
+                if (ct.IsCancellationRequested) return false;
+                if (await TryFetchAsync(peer, manifest, ct).ConfigureAwait(false)) return true;
+            }
         }
 
         _logger.LogWarning("Replay : objet {Sha} introuvable auprès des {Count} pair(s) connus.", Short(sha), peers.Count);
