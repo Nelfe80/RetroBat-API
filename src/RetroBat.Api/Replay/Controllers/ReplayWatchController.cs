@@ -21,6 +21,9 @@ namespace RetroBat.Api.Replay.Controllers;
 [Tags("Replay")]
 public sealed class ReplayWatchController : ControllerBase
 {
+    private readonly RetroBat.Api.Replay.Playback.ReplayLaunchTokenStore _tokens;
+    public ReplayWatchController(RetroBat.Api.Replay.Playback.ReplayLaunchTokenStore tokens) => _tokens = tokens;
+
     // Hôtes autorisés pour le retour (anti open-redirect) : les mêmes que la CORS.
     private static bool IsAllowedReturnHost(string host) =>
         host.Equals("nelfeplay.com", StringComparison.OrdinalIgnoreCase)
@@ -32,9 +35,13 @@ public sealed class ReplayWatchController : ControllerBase
     [ApiExplorerSettings(IgnoreApi = true)]
     public ContentResult Watch(
         [FromQuery(Name = "replay_id")] string? replayId,
-        [FromQuery(Name = "return")] string? returnUrl)
+        [FromQuery(Name = "return")] string? returnUrl,
+        [FromQuery(Name = "token")] string? token)
     {
-        return Content(Html(SanitizeReplayId(replayId), SafeReturn(returnUrl)), "text/html", Encoding.UTF8);
+        // Jeton valide (émis au handshake de détection, récupérable seulement par une page
+        // nelfeplay.com) → AUTO-lancement. Sinon (navigation directe / expiré) → clic requis.
+        var authorized = _tokens.Consume(token);
+        return Content(Html(SanitizeReplayId(replayId), SafeReturn(returnUrl), authorized), "text/html", Encoding.UTF8);
     }
 
     // Un id de replay est « rp_ » + base32 : on n'accepte que ça (defense en
@@ -61,11 +68,12 @@ public sealed class ReplayWatchController : ControllerBase
         return IsAllowedReturnHost(u.Host) ? u.GetLeftPart(UriPartial.Query) : fallback;
     }
 
-    private static string Html(string replayId, string returnUrl)
+    private static string Html(string replayId, string returnUrl, bool authorized)
     {
         // Valeurs injectées en littéraux JS sûrs (JsonSerializer échappe tout).
         var idJs = JsonSerializer.Serialize(replayId);
         var retJs = JsonSerializer.Serialize(returnUrl);
+        var authJs = authorized ? "true" : "false";
 
         return $$"""
 <!DOCTYPE html>
@@ -90,11 +98,12 @@ public sealed class ReplayWatchController : ControllerBase
           border:3px solid #2a3350; border-top-color:#A98BFF; animation:s .8s linear infinite; }
   @keyframes s { to { transform:rotate(360deg); } }
   @media (prefers-reduced-motion:reduce){ .spin{ animation:none; } }
-  .ok .spin, .err .spin { display:none; }
+  .ok .spin, .err .spin, .confirm .spin { display:none; }
   .badge { font-size:2.2rem; margin:6px 0; }
-  a.btn { display:inline-block; margin-top:18px; padding:11px 20px; border-radius:12px;
-          text-decoration:none; font-weight:600; color:#fff; background:#5B34D6; }
-  a.btn:hover { background:#6b45e6; }
+  .btn { display:inline-block; margin-top:18px; padding:11px 20px; border-radius:12px;
+         text-decoration:none; font-weight:600; color:#fff; background:#5B34D6;
+         border:0; cursor:pointer; font-size:1rem; font-family:inherit; }
+  .btn:hover { background:#6b45e6; }
   .muted { font-size:.85rem; color:#8a93a8; }
 </style>
 </head>
@@ -109,7 +118,7 @@ public sealed class ReplayWatchController : ControllerBase
   </main>
 <script>
 (function(){
-  var ID = {{idJs}}, RET = {{retJs}};
+  var ID = {{idJs}}, RET = {{retJs}}, AUTH = {{authJs}};
   var card = document.getElementById('card'), title = document.getElementById('title'),
       msg = document.getElementById('msg'), back = document.getElementById('back'),
       hint = document.getElementById('hint');
@@ -124,20 +133,35 @@ public sealed class ReplayWatchController : ControllerBase
     if (auto){ hint.hidden = false; setTimeout(function(){ location.href = RET; }, 3200); }
   }
 
+  function play(){
+    show('', '', 'Lancement du replay…', 'Un instant, la borne prépare la lecture.', false);
+    card.className = 'card';
+    // POST same-origin : jamais soumis au blocage Local Network Access.
+    fetch('/api/v1/replay/play', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ replay_id: ID }), cache:'no-store'
+    }).then(function(r){
+      if (r.status === 200) { show('ok','▶','Lecture sur la borne','Le replay se joue sur l’écran de la borne.', true); }
+      else if (r.status === 404) { show('err','🔎','Pas disponible ici','Ce replay n’est pas présent sur cette borne.', false); }
+      else if (r.status === 409) { show('err','⏳','Déjà en cours','Une lecture est déjà en cours sur la borne.', false); }
+      else { show('err','⚠️','Impossible de lancer','La borne a refusé la lecture (code ' + r.status + ').', false); }
+    }).catch(function(){
+      show('err','⚠️','Borne injoignable','Impossible de contacter APIExpose sur cette machine.', false);
+    });
+  }
+
   if (!ID){ show('err','⚠️','Replay introuvable','Aucun identifiant de replay fourni.', false); return; }
 
-  // POST same-origin : jamais soumis au blocage Local Network Access.
-  fetch('/api/v1/replay/play', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ replay_id: ID }), cache:'no-store'
-  }).then(function(r){
-    if (r.status === 200) { show('ok','▶','Lecture sur la borne','Le replay se joue sur l’écran de la borne.', true); }
-    else if (r.status === 404) { show('err','🔎','Pas disponible ici','Ce replay n’est pas présent sur cette borne.', false); }
-    else if (r.status === 409) { show('err','⏳','Déjà en cours','Une lecture est déjà en cours sur la borne.', false); }
-    else { show('err','⚠️','Impossible de lancer','La borne a refusé la lecture (code ' + r.status + ').', false); }
-  }).catch(function(){
-    show('err','⚠️','Borne injoignable','Impossible de contacter APIExpose sur cette machine.', false);
-  });
+  if (AUTH){ play(); }
+  else {
+    // Sans jeton valide (lien ouvert hors NelfePlay, ou expiré) : on NE lance PAS tout seul.
+    // Un clic est requis → une navigation drive-by d'un site tiers ne peut rien déclencher.
+    show('confirm','▶','Lancer la lecture ?','Ce lien n’a pas été ouvert depuis NelfePlay. Clique pour jouer ce replay sur la borne.', false);
+    var go = document.createElement('button');
+    go.className = 'btn'; go.type = 'button'; go.textContent = '▶ Lancer la lecture';
+    go.addEventListener('click', function(){ go.hidden = true; play(); });
+    back.parentNode.insertBefore(go, back);
+  }
 })();
 </script>
 </body>

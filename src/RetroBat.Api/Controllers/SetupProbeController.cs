@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using Microsoft.AspNetCore.Mvc;
 using RetroBat.Api.Infrastructure;
+using RetroBat.Api.Replay.Playback;
 
 namespace RetroBat.Api.Controllers;
 
@@ -21,12 +22,15 @@ public sealed class SetupProbeController : ControllerBase
     private readonly IHttpClientFactory _httpFactory;
     private readonly NelfePlayDeviceStore _device;
     private readonly NelfePlayAgentService _agent;
+    private readonly ReplayLaunchTokenStore _tokens;
 
-    public SetupProbeController(IHttpClientFactory httpFactory, NelfePlayDeviceStore device, NelfePlayAgentService agent)
+    public SetupProbeController(IHttpClientFactory httpFactory, NelfePlayDeviceStore device,
+        NelfePlayAgentService agent, ReplayLaunchTokenStore tokens)
     {
         _httpFactory = httpFactory;
         _device = device;
         _agent = agent;
+        _tokens = tokens;
     }
 
     private static bool IsAllowedReturnHost(string host) =>
@@ -56,8 +60,11 @@ public sealed class SetupProbeController : ControllerBase
     {
         // On porte le MÊME statut que /setup-probe (rb/api/paired/pseudo/device_id) : le
         // signal de présence sert aussi à /account (⚡ machine courante) sans autre aller-retour.
+        // On JOINT un launch_token à usage unique : seule cette page nelfeplay.com le récupère
+        // (signal scellé à son origine) et /replay/watch l'exige pour AUTO-lancer une lecture.
         var origin = SafeOrigin(to);
-        return Redirect(origin + "/apiexpose-ok" + await BuildStatusQueryAsync(ct).ConfigureAwait(false));
+        var status = await BuildStatusQueryAsync(ct).ConfigureAwait(false);
+        return Redirect(origin + "/apiexpose-ok" + status + "&token=" + _tokens.Issue());
     }
 
     // Statut de la borne, en query : rb (RetroBat/ES joignable), api=1 (nous), paired, pseudo,
