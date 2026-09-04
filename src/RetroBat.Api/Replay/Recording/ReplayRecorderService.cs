@@ -160,9 +160,10 @@ public sealed class ReplayRecorderService : BackgroundService
             }
 
             var obj = await _store.ImportObjectAsync(file, ct).ConfigureAwait(false);
-            var manifest = BuildManifest(rec, obj);
+            var hint = BuildLaunchHint(file);
+            var manifest = BuildManifest(rec, obj, hint);
             _store.SaveManifest(manifest);
-            _store.SaveMeta(ReplayLocalMetadata.Fresh(rec.ReplayId, BuildLaunchHint(file)));
+            _store.SaveMeta(ReplayLocalMetadata.Fresh(rec.ReplayId, hint));
             _store.RebuildIndex();
             _store.DeleteQuiet(_store.ActiveRecordingPath);
 
@@ -176,7 +177,7 @@ public sealed class ReplayRecorderService : BackgroundService
         }
     }
 
-    private ReplayManifest BuildManifest(Recording rec, ReplayObjectRef obj)
+    private ReplayManifest BuildManifest(Recording rec, ReplayObjectRef obj, ReplayLaunchHint hint)
     {
         var game = new ReplayGame(
             GameId: $"{Slug(rec.System)}/{Slug(rec.Game)}",
@@ -188,10 +189,14 @@ public sealed class ReplayRecorderService : BackgroundService
         var runtime = new ReplayRuntime(
             RuntimeId: $"nelfe-{Slug(rec.System)}-r1",
             RetroarchVersion: rec.RetroArchVersion,
-            RomSha256: null,          // R1 : empreintes runtime complétées en R2 (compat playback)
-            CoreSha256: null,
-            BiosSha256: null,
-            CoreOptionsDigest: null,
+            // R4 : empreintes runtime pour la PORTABILITÉ (NelfeNet). C'est de la DONNÉE — ça ne
+            // bloque rien ici. Le futur vérificateur de compat (R5/R6) les emploie SOUPLEMENT :
+            // seul le CONTENU ROM (crc32/hash) est un gate dur, le runtime reste best-effort +
+            // vérifié par les checkpoints à la lecture (un vieux RA/core n'est jamais bloqué a priori).
+            RomSha256: HashFileQuiet(hint.RomPath),  // identifiant exact du fichier ROM (le crc32 du contenu = repère PORTABLE)
+            CoreSha256: HashFileQuiet(hint.CoreDll), // = version du core → format de savestate .bsv
+            BiosSha256: null,                        // TODO : par-système, seulement quand un BIOS est requis
+            CoreOptionsDigest: null,                 // TODO : sous-ensemble DÉTERMINISTE des core options (pas les options cosmétiques)
             ReplayFormat: "bsv");
 
         var frames = new ReplayFrames(
@@ -213,6 +218,18 @@ public sealed class ReplayRecorderService : BackgroundService
             Frames: frames,
             ScoreLink: null,
             Recovery: new ReplayRecovery(false));
+    }
+
+    // Hash SHA-256 d'un fichier (best-effort, null si illisible) : empreinte runtime pour R4.
+    private string? HashFileQuiet(string? path)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
+            using var stream = File.OpenRead(path);
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
+        }
+        catch (Exception ex) { _logger.LogDebug(ex, "Replay : hash empreinte {Path} échoué", path); return null; }
     }
 
     /// <summary>Le fichier .replay le plus récent écrit depuis le début de l'enregistrement.</summary>
@@ -302,9 +319,10 @@ public sealed class ReplayRecorderService : BackgroundService
             ReplayId = state.ReplayId, SessionId = state.SessionId, System = state.System, Game = state.Game,
             Crc32 = state.Crc32, StartedAtUtc = state.StartedAt, RetroArchVersion = state.RetroarchVersion, LastFrame = 0,
         };
-        var manifest = BuildManifest(rec, obj) with { Recovery = new ReplayRecovery(true) };
+        var hint = BuildLaunchHint(file);
+        var manifest = BuildManifest(rec, obj, hint) with { Recovery = new ReplayRecovery(true) };
         _store.SaveManifest(manifest);
-        _store.SaveMeta(ReplayLocalMetadata.Fresh(rec.ReplayId, BuildLaunchHint(file)));
+        _store.SaveMeta(ReplayLocalMetadata.Fresh(rec.ReplayId, hint));
         _store.RebuildIndex();
         _store.DeleteQuiet(_store.ActiveRecordingPath);
         _logger.LogInformation("Replay recovery OK {ReplayId} (sha256={Sha}).", rec.ReplayId, obj.Sha256);
