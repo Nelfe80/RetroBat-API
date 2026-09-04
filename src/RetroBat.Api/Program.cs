@@ -368,6 +368,14 @@ builder.Services.AddSingleton<RetroBat.Api.Replay.Runtime.RetroArchReplayClient>
 builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.ReplayStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayLaunchTokenStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayRuntimeResolver>();
+// R7 : les rôles (seams NelfeNet) pointent tous vers l'UNIQUE instance locale. Le jour où un
+// replay pourra venir d'une autre borne, seule cette ligne-là change — pas le lecteur.
+builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.IReplayManifestStore>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Storage.ReplayStore>());
+builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.IReplayObjectStore>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Storage.ReplayStore>());
+builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.IReplayMetadataStore>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Storage.ReplayStore>());
+builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.IReplayIndex>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Storage.ReplayStore>());
+builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplayRuntimeResolver>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Playback.ReplayRuntimeResolver>());
+builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplaySourceResolver, RetroBat.Api.Replay.Playback.LocalReplaySourceResolver>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayPlaybackService>();
 builder.Services.AddHostedService<RetroBat.Api.Replay.Recording.ReplayRecorderService>();
 builder.Services.AddHostedService<RetroBat.Api.Replay.Input.ReplayInputRouterService>();

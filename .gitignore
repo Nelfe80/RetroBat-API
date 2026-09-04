@@ -82,6 +82,7 @@ logs/
 /RetroBat.Api.runtimeconfig.json
 /RetroBat.Api.xml
 /web.config
+/*.pdb
 
 # APIExpose Data Pack (protected by DATA-LICENSE.md, shipped via GitHub Releases)
 /resources/

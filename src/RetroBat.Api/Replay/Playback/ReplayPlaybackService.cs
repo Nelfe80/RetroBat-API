@@ -20,8 +20,13 @@ namespace RetroBat.Api.Replay.Playback;
 public sealed class ReplayPlaybackService
 {
     private readonly RetroArchReplayClient _ra;
-    private readonly ReplayStore _store;
-    private readonly ReplayRuntimeResolver _resolver;
+    // R7 : le lecteur ne connaît QUE des rôles. Il ignore si le replay est né ici ou est arrivé
+    // d'une autre borne — c'est la condition pour que NelfeNet se branche sans le rouvrir.
+    private readonly IReplayManifestStore _manifests;
+    private readonly IReplayObjectStore _objects;
+    private readonly IReplayMetadataStore _meta;
+    private readonly IReplaySourceResolver _source;
+    private readonly IReplayRuntimeResolver _resolver;
     private readonly IEventBus _bus;
     private readonly RetroBat.Api.Infrastructure.NelfePlayAgentService _agent;   // pseudo appairé = joueur de la carte
     private readonly RetroBat.Api.Infrastructure.NelfePlayDeviceStore _devices;  // credential pour le backfill carte
@@ -40,12 +45,14 @@ public sealed class ReplayPlaybackService
     private Process? _process;
     private CancellationTokenSource? _monitorCts;
 
-    public ReplayPlaybackService(RetroArchReplayClient ra, ReplayStore store, ReplayRuntimeResolver resolver,
+    public ReplayPlaybackService(RetroArchReplayClient ra, IReplayManifestStore manifests, IReplayObjectStore objects,
+        IReplayMetadataStore meta, IReplaySourceResolver source, IReplayRuntimeResolver resolver,
         IEventBus bus, RetroBat.Api.Infrastructure.NelfePlayAgentService agent,
         RetroBat.Api.Infrastructure.NelfePlayDeviceStore devices, IHttpClientFactory httpFactory,
         ILogger<ReplayPlaybackService> logger)
     {
-        _ra = ra; _store = store; _resolver = resolver; _bus = bus; _agent = agent; _devices = devices; _httpFactory = httpFactory; _logger = logger;
+        _ra = ra; _manifests = manifests; _objects = objects; _meta = meta; _source = source; _resolver = resolver;
+        _bus = bus; _agent = agent; _devices = devices; _httpFactory = httpFactory; _logger = logger;
     }
 
     /// <summary>Vrai pendant qu'une lecture est en cours (le recorder s'abstient d'enregistrer).</summary>
@@ -88,22 +95,25 @@ public sealed class ReplayPlaybackService
             _frame = 0; _paused = false; _card = null;
         }
 
-        var manifest = _store.GetManifest(replayId);
+        var manifest = _manifests.GetManifest(replayId);
         if (manifest is null) return Fail(ReplayErrorCode.ReplayNotFound);
-        var meta = _store.GetMeta(replayId);
+        var meta = _meta.GetMeta(replayId);
         ReplayCard? builtCard;
         lock (_gate) { _card = BuildCard(manifest, meta, _agent.Status.Pseudo); builtCard = _card; }
         // Backfill : replay estampillé AVANT la corrélation score → pas de score en méta.
         // On le récupère du serveur en tâche de fond ; la carte se rafraîchit via /state.
         if (builtCard is { Score: null }) { _ = BackfillCardAsync(replayId, ct); }
         var hint = meta?.Launch;
-        var objectPath = _store.ObjectPath(manifest.Object.Sha256);
-        if (!File.Exists(objectPath)) return Fail(ReplayErrorCode.ReplayObjectUnavailable);
+        var objectPath = _objects.ObjectPath(manifest.Object.Sha256);
+        // R7 : « rends-moi cet objet disponible ». Localement = il est là ou il ne l'est pas ;
+        // demain (NelfeNet) la même ligne pourra le rapatrier d'une autre borne.
+        if (!await _source.EnsureObjectAvailableAsync(manifest, ct).ConfigureAwait(false))
+            return Fail(ReplayErrorCode.ReplayObjectUnavailable);
         // R6 : intégrité (taille + SHA-256 == manifeste) AVANT lecture — un hash au LANCEMENT (une
         // fois), négligeable devant le démarrage RetroArch ; détecte corruption/altération.
         // Indispensable dès qu'un objet vient d'un peer (NelfeNet) ; localement (store adressé-par-
         // contenu) ça passe toujours, sauf bit rot.
-        if (!await _store.VerifyObjectAsync(manifest.Object, ct).ConfigureAwait(false))
+        if (!await _objects.VerifyObjectAsync(manifest.Object, ct).ConfigureAwait(false))
             return Fail(ReplayErrorCode.ReplayObjectCorrupt);
 
         // ── vérification runtime (R2 MVP : présence ; empreintes strictes quand le manifeste les portera) ──
@@ -124,7 +134,7 @@ public sealed class ReplayPlaybackService
         //    lecture (sinon SELECT = input_enable_hotkey, et SELECT+bouton ouvre le menu RA au
         //    lieu d'aller à notre routeur). config_save_on_exit=false => AUCUNE persistance :
         //    la config normale de l'utilisateur reste intacte. Appliqué via --appendconfig. ──
-        var sessionCfg = Path.Combine(_store.TempRoot, "replay-session.cfg");
+        var sessionCfg = Path.Combine(_objects.TempRoot, "replay-session.cfg");
         try
         {
             File.WriteAllText(sessionCfg, string.Join('\n', new[]
@@ -388,10 +398,10 @@ public sealed class ReplayPlaybackService
                 if (_card is not null && string.Equals(_replayId, replayId, StringComparison.Ordinal))
                     _card = _card with { Score = score ?? _card.Score, Rank = rank ?? _card.Rank };
             }
-            var meta = _store.GetMeta(replayId);
+            var meta = _meta.GetMeta(replayId);
             if (meta is not null)
             {
-                _store.SaveMeta(meta with
+                _meta.SaveMeta(meta with
                 {
                     ScoreValue = score,
                     Rank = rank,

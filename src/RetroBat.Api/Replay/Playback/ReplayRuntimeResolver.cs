@@ -20,7 +20,7 @@ public sealed record ResolvedRuntime(string CoreDll, string RomPath, bool ExactC
 /// (les checkpoints du .bsv signalent un désync). Renvoie null seulement si on ne trouve
 /// physiquement ni core ni ROM utilisables ici.
 /// </summary>
-public sealed class ReplayRuntimeResolver
+public sealed class ReplayRuntimeResolver : IReplayRuntimeResolver
 {
     private static readonly uint[] Crc32Table = BuildCrc32Table();
     private readonly ILogger<ReplayRuntimeResolver> _logger;

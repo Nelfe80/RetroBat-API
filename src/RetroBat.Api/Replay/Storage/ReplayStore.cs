@@ -14,7 +14,7 @@ public sealed record ReplayIndexDoc(string Schema, DateTime GeneratedAt, IReadOn
 /// reconstructibles. Toutes les écritures mutables sont atomiques (tmp -> rename).
 /// R1 = implémentation locale ; l'IReplayObjectStore/NelfeShare (R7) se branchera derrière.
 /// </summary>
-public sealed class ReplayStore
+public sealed class ReplayStore : IReplayManifestStore, IReplayObjectStore, IReplayMetadataStore, IReplayIndex
 {
     private static readonly JsonSerializerOptions Json = new()
     {
