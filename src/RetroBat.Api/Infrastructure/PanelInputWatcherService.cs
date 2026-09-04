@@ -36,6 +36,10 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     // dédié FIXE (pas un Task.Run + await, dont le thread migre entre les awaits).
     private Thread? _thread;
     private volatile bool _stop;
+    // Pendant un replay, personne ne (dé)branche un panel : on suspend la ré-énumération SDL
+    // (SDL_QuitSubSystem+InitSubSystem = synchro forcée coûteuse) — la LECTURE des appuis continue.
+    private volatile bool _suspendRescan;
+    private IDisposable? _busSub;
 
     public PanelInputWatcherService(IEventBus eventBus, ILogger<PanelInputWatcherService>? logger = null)
     {
@@ -45,11 +49,19 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        // Suspendre le hotplug pendant une lecture replay (et le reprendre à la fin).
+        _busSub = _eventBus.Subscribe<EventEnvelope>(OnBusEvent);
         // Tout le travail SDL (init, pompage, ouverture, lecture) doit vivre sur CE thread
         // et lui seul : c'est la condition pour que SDL voie un panel (dé)branché.
         _thread = new Thread(RunLoop) { IsBackground = true, Name = "PanelInputWatcher" };
         _thread.Start();
         return Task.CompletedTask;
+    }
+
+    private void OnBusEvent(EventEnvelope e)
+    {
+        if (string.Equals(e.Type, "replay.started", StringComparison.Ordinal)) _suspendRescan = true;
+        else if (string.Equals(e.Type, "replay.finished", StringComparison.Ordinal)) _suspendRescan = false;
     }
 
     // Boucle SYNCHRONE sur le thread dédié : aucun await (qui migrerait le thread et
@@ -135,6 +147,9 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     {
         var reader = _reader;
         if (reader is null) return;
+        // Pendant un replay : pas de ré-énumération SDL (synchro forcée) — le panel reste lu, mais on
+        // n'ira pas re-détecter un (dé)branchement improbable pendant la lecture. Repris à la fin.
+        if (_suspendRescan) return;
 
         // SDL_NumJoysticks ne reflète PAS le hotplug (même pompé sur le thread SDL) : seule
         // une ré-init du sous-système joystick (quit+init) ré-énumère vraiment les devices.
@@ -265,6 +280,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     public Task StopAsync(CancellationToken cancellationToken)
     {
         _stop = true;
+        _busSub?.Dispose();
         try { _thread?.Join(2000); } catch { /* arrêt best-effort */ }
         return Task.CompletedTask;
     }
@@ -272,6 +288,7 @@ public sealed class PanelInputWatcherService : IHostedService, IDisposable
     public void Dispose()
     {
         _stop = true;
+        _busSub?.Dispose();
         try { _thread?.Join(2000); } catch { /* arrêt best-effort */ }
         _reader?.Dispose();
     }

@@ -293,7 +293,7 @@ public sealed class ReplayPlaybackService
             else endHold = 0;
             lastHoldFrame = frame;
 
-            try { await Task.Delay(500, ct).ConfigureAwait(false); } catch (OperationCanceledException) { return; }
+            try { await Task.Delay(750, ct).ConfigureAwait(false); } catch (OperationCanceledException) { return; }
         }
     }
 

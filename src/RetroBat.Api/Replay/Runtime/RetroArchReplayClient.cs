@@ -90,8 +90,9 @@ public sealed class RetroArchReplayClient
         catch (Exception ex) { _logger.LogDebug(ex, "Replay : commande RetroArch {Cmd} échouée", cmd); }
     }
 
-    /// <summary>Envoie une commande et lit la réponse UDP (timeout court). null si pas de réponse.</summary>
-    public async Task<string?> QueryAsync(string cmd, CancellationToken ct, int timeoutMs = 500)
+    /// <summary>Envoie une commande et lit la réponse UDP (timeout court). null si pas de réponse.
+    /// 250 ms : sur borne chargée on rend la main vite au lieu de bloquer le thread appelant.</summary>
+    public async Task<string?> QueryAsync(string cmd, CancellationToken ct, int timeoutMs = 250)
     {
         try
         {

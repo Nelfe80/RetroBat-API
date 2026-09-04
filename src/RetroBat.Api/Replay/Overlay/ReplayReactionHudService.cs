@@ -151,6 +151,7 @@ public sealed class ReplayReactionHudService : BackgroundService
 
         // bulle « réaction des autres » au passage du curseur (debounce, une seule à la fois)
         private string? _bubbleReplayId;
+        private bool _bMarkersLoaded;   // latch : une seule lecture disque des réactions par replay
         private IReadOnlyList<ReactionMarker> _bMarkers = Array.Empty<ReactionMarker>();
         private ReactionMarker? _activeBubble;
         private long _bubbleShownMs;
@@ -278,11 +279,15 @@ public sealed class ReplayReactionHudService : BackgroundService
             {
                 _bubbleReplayId = st.ReplayId;
                 _bMarkers = Array.Empty<ReactionMarker>();
+                _bMarkersLoaded = false;
                 _activeBubble = null;
             }
             var end = st.ReplayEndFrame ?? 0;
-            if (_bMarkers.Count == 0 && st.ReplayId is not null && end > 0)
+            // Latch : UNE seule lecture disque (ReadReactions JSONL) par replay — même si 0 réaction
+            // (sinon _bMarkers.Count==0 relançait la lecture 25×/s).
+            if (!_bMarkersLoaded && st.ReplayId is not null && end > 0)
             {
+                _bMarkersLoaded = true;
                 try { _bMarkers = ReplayReactionText.Clusterize(_loadReactions(st.ReplayId), end, 24); }
                 catch { _bMarkers = Array.Empty<ReactionMarker>(); }
             }
