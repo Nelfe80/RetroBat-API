@@ -153,6 +153,53 @@ public sealed class PlatformPeerSource : IReplayPeerSource
     }
 }
 
+/// <summary>
+/// Le MIROIR : l'étape 6 de l'ordre de résolution du CDC §13, juste avant le relais. La
+/// plateforme héberge les objets des replays publiés, et une borne va les y chercher par une
+/// simple requête SORTANTE.
+///
+/// C'est la réponse la moins chère au cas résidentiel. Deux bornes derrière deux routeurs
+/// domestiques ne peuvent pas se joindre, mais l'une comme l'autre sait sortir en HTTPS : le
+/// problème du NAT disparaît, sans relais, sans état, sans perçage. Un Top 50 pèse quelques
+/// dizaines de méga-octets, là où un relais consomme de la bande passante en continu.
+///
+/// Le miroir n'est PAS une autorité (CDC §56 : accélérateur, jamais prérequis). L'adressage par
+/// contenu le neutralise : il ne peut rien falsifier puisque la borne vérifie taille et SHA-256 à
+/// l'arrivée, et il ne voit passer que des objets publics. Il reste donc remplaçable et non digne
+/// de confiance, par construction.
+///
+/// Techniquement, un miroir est un pair comme un autre, à ceci près qu'il est toujours joignable
+/// et qu'on l'interroge en DERNIER : un voisin sur le LAN sera toujours plus rapide et gratuit.
+/// </summary>
+public sealed class MirrorPeerSource : IReplayPeerSource
+{
+    /// <summary>Marqueur reconnu par l'annuaire pour reléguer ces entrées en fin de liste.</summary>
+    public const string SourceTag = "miroir";
+
+    private readonly IConfiguration _config;
+    public MirrorPeerSource(IConfiguration config) => _config = config;
+
+    public string Name => SourceTag;
+
+    public Task<IReadOnlyList<ReplayPeer>> DiscoverAsync(CancellationToken ct)
+    {
+        // Lecture sortante d'objets publics : rien n'est exposé, donc actif par défaut.
+        if (!_config.GetValue("Replay:Share:MirrorEnabled", true))
+            return Task.FromResult<IReadOnlyList<ReplayPeer>>(Array.Empty<ReplayPeer>());
+
+        var url = _config["Replay:Share:MirrorUrl"];
+        if (string.IsNullOrWhiteSpace(url))
+            url = RetroBat.Api.Infrastructure.NelfePlayAgentService.BaseUrl;
+        if (string.IsNullOrWhiteSpace(url))
+            return Task.FromResult<IReadOnlyList<ReplayPeer>>(Array.Empty<ReplayPeer>());
+
+        return Task.FromResult<IReadOnlyList<ReplayPeer>>(new[]
+        {
+            new ReplayPeer("miroir NelfePlay", url.TrimEnd('/'), ApiKey: null, Source: SourceTag),
+        });
+    }
+}
+
 internal static class PeerJson
 {
     public static readonly JsonSerializerOptions Options = new()

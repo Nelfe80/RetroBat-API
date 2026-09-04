@@ -388,6 +388,8 @@ builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp 
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.LanPeerSource>());
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.AnchorPeerSource>());
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.PlatformPeerSource>());
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.MirrorPeerSource>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.MirrorPeerSource>());
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayPeerDirectory>();
 builder.Services.AddHostedService<RetroBat.Api.Replay.Sharing.LanPeerResponderService>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplaySourceResolver, RetroBat.Api.Replay.Sharing.NelfeNetSourceResolver>();

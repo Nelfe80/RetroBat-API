@@ -170,19 +170,27 @@ public sealed class ReplayPlaybackController : ControllerBase
         var results = new List<object>();
         foreach (var p in await directory.PeersAsync(ct, refresh))
         {
-            var reachable = false;
-            try
+            // La sonde interroge /status, qui n'existe que sur une BORNE. Un miroir n'en est pas
+            // une : le sonder ainsi afficherait « injoignable » alors qu'il livre parfaitement.
+            // On préfère dire « inconnu » plutôt qu'affirmer un faux.
+            var isMirror = p.Source.Contains(RetroBat.Api.Replay.Sharing.MirrorPeerSource.SourceTag, StringComparison.Ordinal);
+            bool? reachable = null;
+            if (!isMirror)
             {
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                cts.CancelAfter(TimeSpan.FromSeconds(3));
-                var client = httpFactory.CreateClient();
-                client.Timeout = Timeout.InfiniteTimeSpan;
-                using var req = new HttpRequestMessage(HttpMethod.Get, p.BaseUrl.TrimEnd('/') + "/api/v1/status");
-                if (!string.IsNullOrWhiteSpace(p.ApiKey)) req.Headers.Add("X-Api-Key", p.ApiKey);
-                using var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-                reachable = res.IsSuccessStatusCode;
+                reachable = false;
+                try
+                {
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    cts.CancelAfter(TimeSpan.FromSeconds(3));
+                    var client = httpFactory.CreateClient();
+                    client.Timeout = Timeout.InfiniteTimeSpan;
+                    using var req = new HttpRequestMessage(HttpMethod.Get, p.BaseUrl.TrimEnd('/') + "/api/v1/status");
+                    if (!string.IsNullOrWhiteSpace(p.ApiKey)) req.Headers.Add("X-Api-Key", p.ApiKey);
+                    using var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                    reachable = res.IsSuccessStatusCode;
+                }
+                catch { reachable = false; }
             }
-            catch { reachable = false; }
             results.Add(new
             {
                 name = p.Name,

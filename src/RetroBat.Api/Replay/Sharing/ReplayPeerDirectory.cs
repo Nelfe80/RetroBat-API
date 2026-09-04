@@ -50,7 +50,12 @@ public sealed class ReplayPeerDirectory
             foreach (var batch in harvest)
                 foreach (var p in batch) Merge(merged, p);
 
-            _cache = merged.Values.ToList();
+            // Ordre de résolution du CDC §13 : un voisin d'abord, le miroir en dernier. Il est
+            // toujours joignable, donc il répondrait toujours en premier si on le laissait faire,
+            // et on paierait un aller-retour central là où un pair du LAN suffisait.
+            _cache = merged.Values
+                .OrderBy(p => p.Source.Contains(MirrorPeerSource.SourceTag, StringComparison.Ordinal) ? 1 : 0)
+                .ToList();
             _cachedAt = DateTime.UtcNow;
             return _cache;
         }
@@ -61,6 +66,10 @@ public sealed class ReplayPeerDirectory
     /// dont on dispose aujourd'hui, et il survit au redémarrage.</summary>
     public void RememberWorking(ReplayPeer peer)
     {
+        // Un MIROIR est une source CONFIGURÉE, pas un voisin découvert. Le mémoriser ferait
+        // survivre une URL périmée à son propre changement de configuration : constaté en test,
+        // où le miroir de recette restait listé après avoir été repointé sur la plateforme.
+        if (peer.Source.Contains(MirrorPeerSource.SourceTag, StringComparison.Ordinal)) return;
         try
         {
             var known = ReadKnown().ToDictionary(p => Normalize(p.BaseUrl), p => p, StringComparer.OrdinalIgnoreCase);
