@@ -279,6 +279,12 @@ public class RetroArchWrapperProvider : IProvider
     /// <summary>Dernier constat de diagnostic annonce, pour ne pas le repeter a chaque seconde.</summary>
     private string? _lastDiagnosticKey;
 
+    /// <summary>Surveillances deja annoncees comme ayant parle (jeu + cle du signal).</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _signauxAnnonces = new(StringComparer.Ordinal);
+
+    /// <summary>Combien de valeurs de score deja annoncees, par jeu et par surveillance.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _scoresAnnonces = new(StringComparer.Ordinal);
+
     /// <summary>Les prefixes que le wrapper reserve a son proces-verbal de demarrage. On ne
     /// remonte QUE ceux-la : le reste du bavardage non-runtime reste en Debug.</summary>
     private static readonly string[] MarqueursDeDiagnostic =
@@ -386,6 +392,35 @@ public class RetroArchWrapperProvider : IProvider
                 definition.Rom,
                 line);
             return;
+        }
+
+        // Premiere fois qu'une surveillance parle : on le dit, avec son adresse et sa valeur.
+        // Les signaux partent sur le bus sans jamais etre journalises, si bien qu'un jeu dont
+        // AUCUNE surveillance ne se declenche et un jeu dont elles se declenchent toutes
+        // produisent le meme journal - vide. Une ligne par surveillance et par jeu, donc borne,
+        // et c'est exactement ce qu'il faut pour calibrer un jeu arcade.
+        // Le SCORE fait exception : une seule valeur ne dit pas s'il est JUSTE. Un score lu au
+        // mauvais octet reste plausible pris isolement (33 au lieu de 3300), et c'est la
+        // progression qui trahit l'erreur. On en annonce donc les premieres valeurs, pas la
+        // premiere seulement, puis on se tait.
+        var clePremiere = definition.SystemId + "/" + definition.Rom + "|" + parsed.Key;
+        if (string.Equals(parsed.Channel, "SCORE", StringComparison.Ordinal))
+        {
+            var n = _scoresAnnonces.AddOrUpdate(clePremiere, 1, (_, v) => v + 1);
+            if (n <= 12)
+            {
+                _logger?.LogInformation(
+                    "Score wrapper [{SystemId}/{Rom}] {Name} #{N} @ {Address} = {Raw} ({Value}) — {Desc}",
+                    definition.SystemId, definition.Rom, parsed.Name, n,
+                    parsed.Address, parsed.RawValueHex, parsed.Value, parsed.SourceDescription);
+            }
+        }
+        else if (_signauxAnnonces.TryAdd(clePremiere, 0))
+        {
+            _logger?.LogInformation(
+                "Signal wrapper [{SystemId}/{Rom}] {Key} : {Name} @ {Address} = {Raw} ({Value}) — {Desc}",
+                definition.SystemId, definition.Rom, parsed.Key, parsed.Name,
+                parsed.Address, parsed.RawValueHex, parsed.Value, parsed.SourceDescription);
         }
 
         var payload = new
