@@ -231,6 +231,10 @@ public class RetroArchWrapperProvider : IProvider
             {
                 await pipe.WaitForConnectionAsync(cancellationToken);
                 SetConnected(true);
+                // Au niveau Information : sans cette trace, un wrapper qui ne se connecte JAMAIS
+                // et un wrapper connecte mais muet produisent exactement le meme journal, et on
+                // cherche la panne du mauvais cote de la conduite.
+                _logger?.LogInformation("Wrapper RetroArch : connecte au pipe {Pipe}.", DefaultPipeName);
                 await PublishConnectionEventAsync("retroarch.wrapper.connected", cancellationToken);
 
                 using var reader = new StreamReader(pipe);
@@ -272,6 +276,28 @@ public class RetroArchWrapperProvider : IProvider
     /// l'avertissement a chaque ligne, mais on le redit des que le jeu change.</summary>
     private string? _lastSuppressionKey;
 
+    /// <summary>Dernier constat de diagnostic annonce, pour ne pas le repeter a chaque seconde.</summary>
+    private string? _lastDiagnosticKey;
+
+    /// <summary>Les prefixes que le wrapper reserve a son proces-verbal de demarrage. On ne
+    /// remonte QUE ceux-la : le reste du bavardage non-runtime reste en Debug.</summary>
+    private static readonly string[] MarqueursDeDiagnostic =
+    {
+        "[DEBUG WRAPPER]",   // core, arcade, system_ram, taille, blocs de carte memoire
+        "WATCH_RESOLVE",     // comment chaque adresse surveillee s'est resolue
+        "[WRAPPER ERROR]",
+        "[WRAPPER WARN]",
+    };
+
+    private static bool EstUnDiagnosticDuWrapper(string line)
+    {
+        foreach (var marqueur in MarqueursDeDiagnostic)
+        {
+            if (line.IndexOf(marqueur, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+        }
+        return false;
+    }
+
     private async Task ProcessLineAsync(string line, CancellationToken cancellationToken)
     {
         // ── Attestation du listener (scoring certifié) ──────────────────────────
@@ -309,6 +335,28 @@ public class RetroArchWrapperProvider : IProvider
 
         if (parsed == null)
         {
+            // Le wrapper emet, une fois par jeu, son propre proces-verbal : quel core, expose-t-il
+            // de la RAM systeme, y a-t-il une carte memoire, et comment chaque adresse surveillee
+            // s'est resolue. C'est LA reponse a « pourquoi ce jeu est-il muet », et la laisser en
+            // Debug revient a la jeter. Elle est rare (une poignee de lignes par lancement), donc
+            // la monter en Information ne bruite pas le journal.
+            if (EstUnDiagnosticDuWrapper(line))
+            {
+                // Le wrapper repete son constat d'echec a chaque seconde tant que la partie dure.
+                // Le dire une fois suffit a diagnostiquer ; le repeter cinquante fois noie le
+                // journal. On ne reparle donc que si le constat CHANGE.
+                var cle = definition.SystemId + "/" + definition.Rom + "|" + line.Trim();
+                if (Interlocked.Exchange(ref _lastDiagnosticKey, cle) != cle)
+                {
+                    _logger?.LogInformation(
+                        "Wrapper RetroArch [{SystemId}/{Rom}] : {RawLine}",
+                        definition.SystemId,
+                        definition.Rom,
+                        line.Trim());
+                }
+                return;
+            }
+
             _logger?.LogDebug(
                 "Ignoring non-runtime wrapper line for {SystemId}/{Rom}: {RawLine}",
                 definition.SystemId,
