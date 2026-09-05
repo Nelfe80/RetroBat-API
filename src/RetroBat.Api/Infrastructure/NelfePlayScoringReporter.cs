@@ -437,6 +437,27 @@ public sealed class NelfePlayScoringReporter : BackgroundService
             trajectory = new List<(long, long)>(_trajectory);
         }
 
+        // ARCADE : l'identite du contenu n'est pas mesurable depuis le fichier.
+        //
+        // Le referentiel decrit un set arcade par un sha1 issu des DAT, pas par une
+        // empreinte du .zip - on l'a verifie : le zip de 19xx donne 24754f53..., le
+        // referentiel dit 813f465f..., et aucun md5 d'arcade n'y figure (0 % de
+        // couverture). Une empreinte MESUREE du fichier ne peut donc jamais resoudre.
+        //
+        // Le pont MAME contourne cela depuis toujours en LISANT le sha1 declare dans la
+        // gamelist ; l'integrite reelle du romset est garantie par l'emulateur, qui le
+        // verifie contre son DAT au chargement. Le chemin RetroArch fait desormais
+        // pareil : sans cela, le meme jeu etait certifiable sous MAME et refuse sous
+        // FBNeo avec un « ROM non reconnue » trompeur, alors que la ROM etait la bonne.
+        //
+        // Le passeport porte donc les DEUX : l'identite declaree (sha1) et ce que le
+        // wrapper a reellement mesure (md5, sha256).
+        if (string.IsNullOrEmpty(contentSha1) && !string.IsNullOrEmpty(romGroup))
+        {
+            contentSha1 = LookupDeclaredSha1(systemId, romGroup);
+            Trace($"identite declaree : sha1={(contentSha1 is null ? "introuvable" : contentSha1)} (sys={systemId} rom={romGroup})");
+        }
+
         // Phase D : le score soumis = le MEILLEUR run. On segmente la trajectoire aux CHUTES
         // de score (un score qui retombe = le joueur a relancé une partie) et on garde le
         // segment monotone au pic le plus haut. Un super score n'est donc jamais perdu par un
@@ -1137,4 +1158,97 @@ public sealed class NelfePlayScoringReporter : BackgroundService
 
     private static string? GetString(JsonElement el, string name)
         => el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    /// <summary>
+    /// Le sha1 DECLARE d'un jeu, lu dans la gamelist, quand aucune empreinte mesuree
+    /// ne peut resoudre - c'est le cas de tout l'arcade.
+    ///
+    /// On cherche d'abord dans la gamelist du systeme annonce, puis dans celles de la
+    /// famille arcade : le meme set y est decrit sous « arcade », « mame » et « fbneo »
+    /// avec le MEME sha1, mais la couverture differe d'un fichier a l'autre.
+    /// </summary>
+    private string? LookupDeclaredSha1(string systemId, string romGroup)
+    {
+        var systemes = new List<string>();
+        if (!string.IsNullOrWhiteSpace(systemId)) systemes.Add(systemId);
+        foreach (var repli in new[] { "arcade", "mame", "fbneo" })
+        {
+            if (!systemes.Contains(repli, StringComparer.OrdinalIgnoreCase)) systemes.Add(repli);
+        }
+
+        var racine = System.IO.Path.Combine(AppContext.BaseDirectory, "resources", "gamelist", "systems");
+        foreach (var systeme in systemes)
+        {
+            var sha1 = LookupSha1InGamelist(System.IO.Path.Combine(racine, systeme + "_lt.json"), romGroup);
+            if (!string.IsNullOrEmpty(sha1)) return sha1;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Parcourt une gamelist JSONL et rend le sha1 du groupe dont le « grp », une fois
+    /// slugifie, egale le rom_group cherche. Un filtre bon marche sur le premier
+    /// segment evite de parser 55 000 lignes de JSON pour rien.
+    /// </summary>
+    private static string? LookupSha1InGamelist(string chemin, string romGroup)
+    {
+        if (!System.IO.File.Exists(chemin)) return null;
+
+        var tete = romGroup.Split('-')[0];
+        if (tete.Length == 0) return null;
+
+        try
+        {
+            foreach (var ligne in System.IO.File.ReadLines(chemin))
+            {
+                if (ligne.Length == 0 || ligne.IndexOf(tete, StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                using var doc = JsonDocument.Parse(ligne);
+                var root = doc.RootElement;
+                if (!root.TryGetProperty("grp", out var grpv)) continue;
+                if (!string.Equals(Slugifier(grpv.GetString()), romGroup, StringComparison.OrdinalIgnoreCase)) continue;
+
+                if (root.TryGetProperty("hsh", out var hsh) && hsh.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var entree in hsh.EnumerateArray())
+                    {
+                        if (entree.TryGetProperty("sha1", out var sha1v))
+                        {
+                            var valeur = sha1v.GetString();
+                            if (!string.IsNullOrWhiteSpace(valeur)) return valeur.ToLowerInvariant();
+                        }
+                    }
+                }
+                return null; // groupe trouve mais sans sha1 : inutile de continuer
+            }
+        }
+        catch
+        {
+            // Une gamelist illisible ne doit jamais faire echouer une soumission.
+        }
+        return null;
+    }
+
+    /// <summary>« 19xx:_the_war_against_destiny » devient « 19xx-the-war-against-destiny ».</summary>
+    private static string Slugifier(string? valeur)
+    {
+        if (string.IsNullOrWhiteSpace(valeur)) return "";
+        var sortie = new System.Text.StringBuilder(valeur.Length);
+        var tiret = false;
+        foreach (var c in valeur.ToLowerInvariant())
+        {
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+            {
+                sortie.Append(c);
+                tiret = false;
+            }
+            else if (!tiret && sortie.Length > 0)
+            {
+                sortie.Append('-');
+                tiret = true;
+            }
+        }
+        return sortie.ToString().Trim('-');
+    }
+
 }
