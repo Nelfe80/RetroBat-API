@@ -268,6 +268,10 @@ public class RetroArchWrapperProvider : IProvider
         }
     }
 
+    /// <summary>Derniere combinaison systeme/jeu annoncee comme ecartee : on ne repete pas
+    /// l'avertissement a chaque ligne, mais on le redit des que le jeu change.</summary>
+    private string? _lastSuppressionKey;
+
     private async Task ProcessLineAsync(string line, CancellationToken cancellationToken)
     {
         // ── Attestation du listener (scoring certifié) ──────────────────────────
@@ -315,6 +319,19 @@ public class RetroArchWrapperProvider : IProvider
 
         if (_arbitration.ShouldSuppressRetroArchWrapper(definition.SystemId, definition.Rom, definition.DefinitionFile))
         {
+            // ÉCARTER DES SIGNAUX EN SILENCE EST LE PIRE DES COMPORTEMENTS : le scoring parait
+            // simplement ne pas marcher, sans erreur ni trace, et on cherche la cause partout
+            // ailleurs. On l'annonce donc UNE FOIS par jeu, au niveau Information, avec la raison.
+            var cle = definition.SystemId + "/" + definition.Rom;
+            if (Interlocked.Exchange(ref _lastSuppressionKey, cle) != cle)
+            {
+                _logger?.LogInformation(
+                    "Signaux du wrapper RetroArch ECARTES pour {SystemId}/{Rom} : une session MAME Lua est consideree active. "
+                    + "Si MAME n'est plus lance, cette session ne s'est pas refermee et le scoring restera muet sous RetroArch.",
+                    definition.SystemId,
+                    definition.Rom);
+            }
+
             _logger?.LogDebug(
                 "Suppressing RetroArch wrapper runtime signal because MAME Lua is active for {SystemId}/{Rom}: {RawLine}",
                 definition.SystemId,

@@ -1251,6 +1251,15 @@ public sealed class MameLuaIngameProvider : IProvider
     {
         _arbitration.MarkMameLuaSessionStopped(definition.SystemId, definition.Rom, definition.DefinitionFile);
 
+        // Symetrique du demarrage, et pas seulement pour la forme : tant qu'une session Lua est
+        // consideree active, l'arbitrage SUPPRIME les signaux du wrapper RetroArch pour tout jeu
+        // arcade. Une session qui ne se fermerait pas rendrait donc muet le scoring sous
+        // RetroArch, sans la moindre trace. C'est exactement ce qu'on ne veut pas avoir a deviner.
+        _logger?.LogInformation(
+            "MAME Lua ingame session stopped: rom={Rom} definition={DefinitionFile}",
+            definition.Rom,
+            definition.DefinitionFile);
+
         await _eventBus.PublishAsync(new EventEnvelope
         {
             Type = "ingame.mame.session.stopped",
