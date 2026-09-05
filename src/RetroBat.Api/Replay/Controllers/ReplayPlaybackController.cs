@@ -158,6 +158,19 @@ public sealed class ReplayPlaybackController : ControllerBase
     }
 
     /// <summary>
+    /// Diagnostic : force un passage de l'agent de réplication et rend son compte rendu, plutôt
+    /// que d'attendre la demi-heure de cadence pour savoir si la configuration tient.
+    /// </summary>
+    [HttpPost("replicate")]
+    public async Task<IActionResult> Replicate(
+        [FromServices] RetroBat.Api.Replay.Sharing.ReplayReplicationService agent, CancellationToken ct)
+    {
+        if (!IsLocalCaller()) return NotFound();
+        var r = await agent.TickAsync(ct);
+        return Ok(new { ran = r.Ran, fetched = r.Fetched, examined = r.Examined, reason = r.Reason });
+    }
+
+    /// <summary>
     /// Diagnostic NelfeNet : les pairs connus de cette borne et leur joignabilité. Ne renvoie
     /// JAMAIS les clés d'API, seulement le fait qu'une clé soit renseignée.
     /// </summary>

@@ -396,6 +396,12 @@ builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayTransitPublisher
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplaySeedQueue>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplaySeedService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.ReplaySeedService>());
+// Agent de replication : c'est lui qui fait l'ESSAIM. Desactive par defaut, et sans classement
+// suivi il ne fait rien : on ne telecharge pas les parties d'inconnus sur le PC de quelqu'un
+// sans qu'il l'ait demande.
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayFollowStore>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayReplicationService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.ReplayReplicationService>());
 builder.Services.AddHostedService<RetroBat.Api.Replay.Sharing.LanPeerResponderService>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplaySourceResolver, RetroBat.Api.Replay.Sharing.NelfeNetSourceResolver>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplaySharePolicy>();
