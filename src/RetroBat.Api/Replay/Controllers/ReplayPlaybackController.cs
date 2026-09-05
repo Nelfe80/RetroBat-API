@@ -157,6 +157,16 @@ public sealed class ReplayPlaybackController : ControllerBase
         });
     }
 
+    /// <summary>Diagnostic : force une déclaration de conservation et rend son compte rendu.</summary>
+    [HttpPost("declare-holdings")]
+    public async Task<IActionResult> DeclareHoldings(
+        [FromServices] RetroBat.Api.Replay.Sharing.ReplayHoldingsReporter reporter, CancellationToken ct)
+    {
+        if (!IsLocalCaller()) return NotFound();
+        var r = await reporter.ReportAsync(ct);
+        return Ok(new { sent = r.Sent, declared = r.Declared, reason = r.Reason });
+    }
+
     /// <summary>
     /// Diagnostic : force un passage de l'agent de réplication et rend son compte rendu, plutôt
     /// que d'attendre la demi-heure de cadence pour savoir si la configuration tient.

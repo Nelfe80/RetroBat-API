@@ -403,6 +403,9 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Repla
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayFollowStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayReplicationService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.ReplayReplicationService>());
+// Recensement des copies : sans lui, durable et degraded restent des mots.
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayHoldingsReporter>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.ReplayHoldingsReporter>());
 builder.Services.AddHostedService<RetroBat.Api.Replay.Sharing.LanPeerResponderService>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplaySourceResolver, RetroBat.Api.Replay.Sharing.NelfeNetSourceResolver>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplaySharePolicy>();
