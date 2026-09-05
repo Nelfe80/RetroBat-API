@@ -113,7 +113,10 @@ public sealed record ReplayReaction(
 
 public enum ReplayRecordingState { Idle, Starting, Recording, Stopping, Finalizing, Ready, Error }
 
-public enum ReplayPlaybackState { Idle, Resolving, Verifying, Preparing, Launching, Playing, Paused, Stopping, Finished, Error }
+/// <summary>États de lecture. <c>Replicating</c> = l'objet n'est pas encore ici et on va le
+/// chercher : c'est un état de PROGRESSION, pas une erreur, et il existe pour que la demande de
+/// lecture n'attende JAMAIS le réseau (CDC §86, qui définit déjà ce mot pour un objet).</summary>
+public enum ReplayPlaybackState { Idle, Resolving, Replicating, Verifying, Preparing, Launching, Playing, Paused, Stopping, Finished, Error }
 
 public enum ReplayErrorCode
 {

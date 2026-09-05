@@ -20,7 +20,19 @@ namespace RetroBat.Api.Replay.Sharing;
 /// </summary>
 public sealed class NelfeNetSourceResolver : IReplaySourceResolver
 {
-    private static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds(120);
+    /// <summary>Délai pour SAVOIR si un pair répond. Court : au-delà, il ne répond pas.</summary>
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(4);
+
+    /// <summary>Délai de TRANSFERT, proportionné à la taille. Confondre les deux reviendrait à
+    /// choisir entre écarter trop vite les liaisons lentes et attendre trop longtemps les mortes.</summary>
+    private static readonly TimeSpan TransferMinimum = TimeSpan.FromSeconds(30);
+    private const long OctetsParSecondePessimiste = 50 * 1024;
+
+    /// <summary>Un pair qui vient d'échouer est écarté un moment. Sans cette mémoire, on repaie le
+    /// coût de la sonde à chaque tentative pour une machine éteinte depuis des semaines.</summary>
+    private static readonly TimeSpan Quarantaine = TimeSpan.FromMinutes(10);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> Echecs =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private readonly IReplayObjectStore _objects;
     private readonly ReplayPeerDirectory _peers;
@@ -52,6 +64,11 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
             foreach (var peer in peers)
             {
                 if (ct.IsCancellationRequested) return false;
+                if (EnQuarantaine(peer))
+                {
+                    _logger.LogDebug("Replay : pair {Peer} écarté, échec récent.", peer.Name);
+                    continue;
+                }
                 if (await TryFetchAsync(peer, manifest, ct).ConfigureAwait(false))
                 {
                     _peers.RememberWorking(peer); // pair récent : retrouvable même annuaire coupé
@@ -70,9 +87,6 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
         var temp = Path.Combine(_objects.TempRoot, $"fetch-{sha}.part");
         try
         {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(FetchTimeout);
-
             // Une borne expose une route d'API ; une amorce statique expose une URL de fichier.
             // Le gabarit permet aux deux de passer par le MEME client de transfert.
             var url = string.IsNullOrWhiteSpace(peer.UrlTemplate)
@@ -84,14 +98,24 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
             var client = _httpFactory.CreateClient();
             client.Timeout = Timeout.InfiniteTimeSpan; // c'est le CTS qui borne, pour couvrir aussi la lecture du corps
 
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
+            // 1) Répond-il ? Délai COURT : quatre secondes suffisent à le savoir.
+            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            connectCts.CancelAfter(ConnectTimeout);
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, connectCts.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogInformation("Replay : pair {Peer} n'a pas l'objet {Sha} (HTTP {Code}).", peer.Name, Short(sha), (int)response.StatusCode);
                 return false;
             }
 
-            var written = await WriteCappedAsync(response, temp, manifest.Object.Size, cts.Token).ConfigureAwait(false);
+            // 2) Transfert : délai PROPORTIONNÉ, pour ne pas couper une liaison lente mais valide.
+            var budget = TimeSpan.FromSeconds(Math.Max(
+                TransferMinimum.TotalSeconds,
+                (double)manifest.Object.Size / OctetsParSecondePessimiste));
+            using var transferCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            transferCts.CancelAfter(budget);
+
+            var written = await WriteCappedAsync(response, temp, manifest.Object.Size, transferCts.Token).ConfigureAwait(false);
             if (written is null)
             {
                 _logger.LogWarning("Replay : pair {Peer} a envoyé plus que la taille annoncée pour {Sha} — abandonné.", peer.Name, Short(sha));
@@ -104,24 +128,26 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
                 return false;
             }
 
-            var actual = await HashAsync(temp, cts.Token).ConfigureAwait(false);
+            var actual = await HashAsync(temp, transferCts.Token).ConfigureAwait(false);
             if (!string.Equals(actual, sha, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("Replay : pair {Peer} a envoyé un contenu qui ne correspond PAS au hash demandé ({Sha}) — rejeté.", peer.Name, Short(sha));
                 return false;
             }
 
-            await _objects.ImportObjectAsync(temp, cts.Token).ConfigureAwait(false);
+            await _objects.ImportObjectAsync(temp, transferCts.Token).ConfigureAwait(false);
             _logger.LogInformation("Replay : objet {Sha} récupéré auprès de {Peer} ({Size} octets) et vérifié.", Short(sha), peer.Name, written);
             return File.Exists(_objects.ObjectPath(sha));
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            NoterEchec(peer);
             _logger.LogWarning("Replay : délai dépassé auprès du pair {Peer} pour {Sha}.", peer.Name, Short(sha));
             return false;
         }
         catch (Exception ex)
         {
+            NoterEchec(peer);
             _logger.LogWarning(ex, "Replay : échec de récupération auprès du pair {Peer}.", peer.Name);
             return false;
         }
@@ -156,6 +182,13 @@ public sealed class NelfeNetSourceResolver : IReplaySourceResolver
         var hash = await sha.ComputeHashAsync(fs, ct).ConfigureAwait(false);
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
+
+    private static bool EnQuarantaine(ReplayPeer peer)
+        => Echecs.TryGetValue(peer.BaseUrl, out var quand) && DateTime.UtcNow - quand < Quarantaine;
+
+    /// <summary>Un échec de TRANSPORT met le pair de côté. Un simple « il ne l'a pas » (404) n'en
+    /// est pas un : le pair fonctionne, il n'a juste pas cet objet.</summary>
+    private static void NoterEchec(ReplayPeer peer) => Echecs[peer.BaseUrl] = DateTime.UtcNow;
 
     private static string Short(string sha) => sha.Length <= 8 ? sha : sha[..8];
 }

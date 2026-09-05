@@ -59,9 +59,9 @@ public sealed class ReplayPlaybackService
     /// <summary>Vrai pendant qu'une lecture est en cours (le recorder s'abstient d'enregistrer).</summary>
     public bool IsBusy
     {
-        get { lock (_gate) return _state is ReplayPlaybackState.Resolving or ReplayPlaybackState.Verifying
-            or ReplayPlaybackState.Preparing or ReplayPlaybackState.Launching or ReplayPlaybackState.Playing
-            or ReplayPlaybackState.Paused or ReplayPlaybackState.Stopping; }
+        get { lock (_gate) return _state is ReplayPlaybackState.Resolving or ReplayPlaybackState.Replicating
+            or ReplayPlaybackState.Verifying or ReplayPlaybackState.Preparing or ReplayPlaybackState.Launching
+            or ReplayPlaybackState.Playing or ReplayPlaybackState.Paused or ReplayPlaybackState.Stopping; }
     }
 
     public sealed record PlayResult(bool Accepted, string State, ReplayErrorCode Error);
@@ -106,10 +106,51 @@ public sealed class ReplayPlaybackService
         if (builtCard is { Score: null }) { _ = BackfillCardAsync(replayId, ct); }
         var hint = meta?.Launch;
         var objectPath = _objects.ObjectPath(manifest.Object.Sha256);
-        // R7 : « rends-moi cet objet disponible ». Localement = il est là ou il ne l'est pas ;
-        // demain (NelfeNet) la même ligne pourra le rapatrier d'une autre borne.
-        if (!await _source.EnsureObjectAvailableAsync(manifest, ct).ConfigureAwait(false))
-            return Fail(ReplayErrorCode.ReplayObjectUnavailable);
+
+        // ── LE RÉSEAU NE DOIT JAMAIS ÊTRE DANS LE CHEMIN DE RÉPONSE ──────────────
+        //
+        // Si l'objet n'est pas là, on va le chercher EN TÂCHE DE FOND et on rend la main tout de
+        // suite, dans l'état « replicating ». La demande de lecture ne peut donc plus être
+        // retardée par un pair lent, ni même par un pair qui ne répond pas du tout : il n'est plus
+        // sur le chemin. C'est structurel, ça ne dépend d'aucun réglage de délai.
+        //
+        // Le client suit la progression par /replay/state, exactement comme il le fait déjà pour
+        // « launching ». Rien ne change pour lui.
+        if (!File.Exists(objectPath))
+        {
+            lock (_gate) _state = ReplayPlaybackState.Replicating;
+            _logger.LogInformation("Replay : objet absent pour {ReplayId}, récupération en tâche de fond.", replayId);
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (await _source.EnsureObjectAvailableAsync(manifest, CancellationToken.None).ConfigureAwait(false))
+                        await ContinueAfterFetchAsync(replayId, manifest, meta, CancellationToken.None).ConfigureAwait(false);
+                    else
+                        Fail(ReplayErrorCode.ReplayObjectUnavailable);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Replay : récupération de fond échouée pour {ReplayId}.", replayId);
+                    Fail(ReplayErrorCode.ReplayObjectUnavailable);
+                }
+            });
+            return new PlayResult(true, ReplayPlaybackState.Replicating.ToString().ToLowerInvariant(), ReplayErrorCode.None);
+        }
+        return await ContinueAfterFetchAsync(replayId, manifest, meta, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// La suite de la séquence, une fois l'objet PRÉSENT : intégrité, résolution runtime, lancement.
+    /// Appelée soit directement (objet déjà là), soit par la tâche de fond qui vient de le
+    /// récupérer. Un seul chemin de vérité, quel que soit le trajet emprunté par l'objet.
+    /// </summary>
+    private async Task<PlayResult> ContinueAfterFetchAsync(string replayId, ReplayManifest manifest,
+        ReplayLocalMetadata? meta, CancellationToken ct)
+    {
+        var hint = meta?.Launch;
+        var objectPath = _objects.ObjectPath(manifest.Object.Sha256);
+
         // R6 : intégrité (taille + SHA-256 == manifeste) AVANT lecture — un hash au LANCEMENT (une
         // fois), négligeable devant le démarrage RetroArch ; détecte corruption/altération.
         // Indispensable dès qu'un objet vient d'un peer (NelfeNet) ; localement (store adressé-par-
