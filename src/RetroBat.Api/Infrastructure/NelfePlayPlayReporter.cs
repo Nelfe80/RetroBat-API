@@ -238,12 +238,24 @@ public sealed class NelfePlayPlayReporter : BackgroundService
         // suite.
         var md5 = HashOf(play.GamePath);
 
+        // Identite DECLAREE, en plus de l'empreinte mesuree.
+        //
+        // Sans elle, aucune partie d'arcade ne resout jamais vers un groupe canonique :
+        // la plateforme n'indexe que ce que disent les DAT, et pour l'arcade ce n'est
+        // pas une empreinte du fichier - sa gamelist ne porte meme aucun md5. Toute la
+        // telemetrie arcade retombait donc sur des cles de repli « systeme:~nom », ce
+        // qui eclate les statistiques d'un meme jeu au lieu de les regrouper.
+        var sha1 = GamelistIdentity.DeclaredSha1(
+            play.SystemId,
+            play.GameName,
+            System.IO.Path.GetFileNameWithoutExtension(play.GamePath));
+
         if (_pending.Count >= MaxPending)
         {
             _pending.Dequeue();
         }
 
-        _pending.Enqueue(new PlayRecord(play.SystemId, play.GameName, md5, seconds));
+        _pending.Enqueue(new PlayRecord(play.SystemId, play.GameName, md5, sha1, seconds));
     }
 
     private async Task FlushAsync(CancellationToken cancellationToken)
@@ -506,6 +518,10 @@ public sealed class NelfePlayPlayReporter : BackgroundService
             if (!string.IsNullOrEmpty(record.Md5))
             {
                 fields.Add(new KeyValuePair<string, string>("md5", record.Md5));
+                if (!string.IsNullOrEmpty(record.Sha1))
+                {
+                    fields.Add(new KeyValuePair<string, string>("sha1", record.Sha1));
+                }
             }
 
             using var form = new FormUrlEncodedContent(fields);
@@ -704,7 +720,7 @@ public sealed class NelfePlayPlayReporter : BackgroundService
         string? Core,
         Stopwatch Clock);
 
-    private sealed record PlayRecord(string? SystemId, string? GameName, string? Md5, int Seconds);
+    private sealed record PlayRecord(string? SystemId, string? GameName, string? Md5, string? Sha1, int Seconds);
 
     /// <summary>Ce qu'une machine a constate d'un titre Nelfe Play : sur quelle
     /// pile logicielle, et si le lancement a abouti.</summary>
