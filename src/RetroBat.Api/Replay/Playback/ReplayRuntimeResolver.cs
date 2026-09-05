@@ -23,9 +23,16 @@ public sealed record ResolvedRuntime(string CoreDll, string RomPath, bool ExactC
 public sealed class ReplayRuntimeResolver : IReplayRuntimeResolver
 {
     private static readonly uint[] Crc32Table = BuildCrc32Table();
+    private readonly EsSystemsRomPaths _romPaths;
+    private readonly Storage.IReplayManifestStore _manifests;
+    private readonly Storage.IReplayMetadataStore _meta;
     private readonly ILogger<ReplayRuntimeResolver> _logger;
 
-    public ReplayRuntimeResolver(ILogger<ReplayRuntimeResolver> logger) => _logger = logger;
+    public ReplayRuntimeResolver(EsSystemsRomPaths romPaths, Storage.IReplayManifestStore manifests,
+        Storage.IReplayMetadataStore meta, ILogger<ReplayRuntimeResolver> logger)
+    {
+        _romPaths = romPaths; _manifests = manifests; _meta = meta; _logger = logger;
+    }
 
     public ResolvedRuntime? Resolve(ReplayManifest manifest, ReplayLaunchHint? hint)
     {
@@ -71,6 +78,35 @@ public sealed class ReplayRuntimeResolver : IReplayRuntimeResolver
                 }
             }
         }
+        // Repli PERMISSIF : un core deja employe sur CETTE machine pour le meme systeme. Un
+        // replay n'est pas une soumission de score : mieux vaut le montrer avec un core proche
+        // que de le refuser. Un desync eventuel se verra a l'ecran, et les checkpoints du .bsv
+        // le signalent.
+        var apprenti = CoreDejaUtilisePour(manifest.Game.SystemId);
+        if (apprenti is not null)
+        {
+            _logger.LogInformation("Replay : core non identifie pour {Id}, repli sur {Core} deja employe ici pour {System}.",
+                manifest.ReplayId, Path.GetFileName(apprenti), manifest.Game.SystemId);
+            return apprenti;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Quel core cette borne a-t-elle deja employe pour ce systeme ? On l'APPREND de nos propres
+    /// enregistrements plutot que de le deviner : chacun porte le chemin du core reellement
+    /// lance. Aucune table a maintenir, et la reponse colle a cette installation.
+    /// </summary>
+    private string? CoreDejaUtilisePour(string? systemId)
+    {
+        if (string.IsNullOrWhiteSpace(systemId)) return null;
+        foreach (var m in _manifests.ListManifests())
+        {
+            if (!string.Equals(m.Game.SystemId, systemId, StringComparison.OrdinalIgnoreCase)) continue;
+            var dll = _meta.GetMeta(m.ReplayId)?.Launch?.CoreDll;
+            if (!string.IsNullOrWhiteSpace(dll) && File.Exists(dll)) return dll;
+        }
         return null;
     }
 
@@ -83,11 +119,20 @@ public sealed class ReplayRuntimeResolver : IReplayRuntimeResolver
         if (hint is not null && !string.IsNullOrEmpty(hint.RomPath) && File.Exists(hint.RomPath)) return hint.RomPath;
 
         var crc = manifest.Game.Crc32;
-        var systemFolder = hint?.SystemFolder ?? manifest.Game.SystemFolder;
-        if (string.IsNullOrWhiteSpace(crc) || string.IsNullOrWhiteSpace(systemFolder)) return null;
+        if (string.IsNullOrWhiteSpace(crc)) return null;
 
-        var romDir = Path.Combine(RetroBatPaths.RomsRoot, systemFolder);
-        if (!Directory.Exists(romDir)) return null;
+        // C'EST ES QUI DECIDE ou vivent les ROMs, pas nous. Chaque machine est differente :
+        // second disque, partage reseau, arborescence heritee. Supposer « roms/<systeme> »
+        // marcherait sur une installation par defaut et echouerait chez tous les autres, en
+        // faisant passer une ROM simplement rangee ailleurs pour un replay incompatible.
+        var romDir = _romPaths.DirectoryFor(hint?.SystemFolder ?? manifest.Game.SystemFolder)
+                     ?? _romPaths.DirectoryFor(manifest.Game.SystemId);
+        if (romDir is null || !Directory.Exists(romDir))
+        {
+            _logger.LogWarning("Replay : aucun dossier de ROMs declare par ES pour {System}.",
+                hint?.SystemFolder ?? manifest.Game.SystemFolder ?? manifest.Game.SystemId);
+            return null;
+        }
 
         foreach (var f in Directory.EnumerateFiles(romDir))
         {

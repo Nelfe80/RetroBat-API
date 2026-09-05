@@ -368,6 +368,7 @@ builder.Services.AddSingleton<RetroBat.Api.Replay.Runtime.RetroArchReplayClient>
 builder.Services.AddSingleton<RetroBat.Api.Replay.Runtime.ReplayCoreTimingProbe>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.ReplayStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayLaunchTokenStore>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.EsSystemsRomPaths>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayRuntimeResolver>();
 // R7 : les rôles (seams NelfeNet) pointent tous vers l'UNIQUE instance locale. Le jour où un
 // replay pourra venir d'une autre borne, seule cette ligne-là change — pas le lecteur.
