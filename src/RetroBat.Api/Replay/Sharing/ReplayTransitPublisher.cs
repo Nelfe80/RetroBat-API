@@ -15,7 +15,7 @@ namespace RetroBat.Api.Replay.Sharing;
 /// manifeste est conçu pour ça : identifiants canoniques et empreintes, aucun chemin local,
 /// aucune donnée de machine (CDC §1.6).
 /// </summary>
-public sealed class ReplayMirrorPublisher
+public sealed class ReplayTransitPublisher
 {
     private const string PublishPath = "/api/v1/agent/nelfenet/publish";
     private const string UnpublishPath = "/api/v1/agent/nelfenet/unpublish";
@@ -25,11 +25,11 @@ public sealed class ReplayMirrorPublisher
     private readonly RetroBat.Api.Infrastructure.NelfePlayDeviceStore _devices;
     private readonly IConfiguration _config;
     private readonly IHttpClientFactory _httpFactory;
-    private readonly ILogger<ReplayMirrorPublisher> _logger;
+    private readonly ILogger<ReplayTransitPublisher> _logger;
 
-    public ReplayMirrorPublisher(IReplayManifestStore manifests, IReplayObjectStore objects,
+    public ReplayTransitPublisher(IReplayManifestStore manifests, IReplayObjectStore objects,
         RetroBat.Api.Infrastructure.NelfePlayDeviceStore devices, IConfiguration config,
-        IHttpClientFactory httpFactory, ILogger<ReplayMirrorPublisher> logger)
+        IHttpClientFactory httpFactory, ILogger<ReplayTransitPublisher> logger)
     {
         _manifests = manifests; _objects = objects; _devices = devices;
         _config = config; _httpFactory = httpFactory; _logger = logger;
@@ -37,11 +37,39 @@ public sealed class ReplayMirrorPublisher
 
     public sealed record PublishResult(bool Ok, string? Error = null);
 
-    private string MirrorBase()
+    /// <summary>Le TRANSIT, c'est-à-dire la plateforme : elle reçoit et relaie vers l'amorce,
+    /// elle ne sert jamais l'objet elle-même (CDC DEV §101.2).</summary>
+    private string TransitBase()
     {
-        var url = _config["Replay:Share:MirrorUrl"];
+        var url = _config["Replay:Share:TransitUrl"];
         if (string.IsNullOrWhiteSpace(url)) url = RetroBat.Api.Infrastructure.NelfePlayAgentService.BaseUrl;
         return (url ?? string.Empty).TrimEnd('/');
+    }
+
+    /// <summary>
+    /// L'amorce détient-elle déjà cet objet ? Une question posée par le HASH, donc sans
+    /// ambiguïté : le nom de l'asset EST le hash. C'est le test d'achèvement du semis, et il ne
+    /// demande de conserver aucun état local.
+    /// </summary>
+    public async Task<bool> IsOnSeedAsync(string sha256, CancellationToken ct)
+    {
+        var template = _config["Replay:Share:MirrorUrlTemplate"];
+        if (string.IsNullOrWhiteSpace(template) || !template.Contains("{sha}", StringComparison.Ordinal)) return false;
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(20));
+            var client = _httpFactory.CreateClient();
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            using var req = new HttpRequestMessage(HttpMethod.Head, template.Replace("{sha}", sha256, StringComparison.Ordinal));
+            using var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
+            return res.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Replay : amorce injoignable pour la verification de {Sha}.", sha256[..8]);
+            return false;
+        }
     }
 
     public async Task<PublishResult> PublishAsync(string replayId, CancellationToken ct)
@@ -80,28 +108,28 @@ public sealed class ReplayMirrorPublisher
 
             var client = _httpFactory.CreateClient();
             client.Timeout = Timeout.InfiniteTimeSpan;
-            using var request = new HttpRequestMessage(HttpMethod.Post, MirrorBase() + PublishPath) { Content = content };
+            using var request = new HttpRequestMessage(HttpMethod.Post, TransitBase() + PublishPath) { Content = content };
             request.Headers.Add("X-NelfePlay-Device", credential);
 
             using var response = await client.SendAsync(request, cts.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
-                _logger.LogWarning("Replay : publication refusée par le miroir ({Code}) : {Body}", (int)response.StatusCode, Trim(body));
-                return new PublishResult(false, "MIRROR_REFUSED");
+                _logger.LogWarning("Replay : publication refusée par le transit ({Code}) : {Body}", (int)response.StatusCode, Trim(body));
+                return new PublishResult(false, "TRANSIT_REFUSED");
             }
 
-            _logger.LogInformation("Replay : {ReplayId} publié sur le miroir ({Size} octets).", replayId, manifest.Object.Size);
+            _logger.LogInformation("Replay : {ReplayId} poussé au transit ({Size} octets).", replayId, manifest.Object.Size);
             return new PublishResult(true);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return new PublishResult(false, "MIRROR_TIMEOUT");
+            return new PublishResult(false, "TRANSIT_TIMEOUT");
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Replay : publication vers le miroir impossible.");
-            return new PublishResult(false, "MIRROR_UNAVAILABLE");
+            _logger.LogWarning(ex, "Replay : poussée vers le transit impossible.");
+            return new PublishResult(false, "TRANSIT_UNAVAILABLE");
         }
     }
 
@@ -119,19 +147,19 @@ public sealed class ReplayMirrorPublisher
             cts.CancelAfter(TimeSpan.FromSeconds(30));
             var client = _httpFactory.CreateClient();
             client.Timeout = Timeout.InfiniteTimeSpan;
-            using var request = new HttpRequestMessage(HttpMethod.Post, MirrorBase() + UnpublishPath)
+            using var request = new HttpRequestMessage(HttpMethod.Post, TransitBase() + UnpublishPath)
             {
                 Content = new StringContent($"{{\"object_sha256\":\"{manifest.Object.Sha256}\"}}",
                     System.Text.Encoding.UTF8, "application/json"),
             };
             request.Headers.Add("X-NelfePlay-Device", credential);
             using var response = await client.SendAsync(request, cts.Token).ConfigureAwait(false);
-            return response.IsSuccessStatusCode ? new PublishResult(true) : new PublishResult(false, "MIRROR_REFUSED");
+            return response.IsSuccessStatusCode ? new PublishResult(true) : new PublishResult(false, "TRANSIT_REFUSED");
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Replay : retrait du miroir impossible.");
-            return new PublishResult(false, "MIRROR_UNAVAILABLE");
+            _logger.LogWarning(ex, "Replay : retrait du transit impossible.");
+            return new PublishResult(false, "TRANSIT_UNAVAILABLE");
         }
     }
 

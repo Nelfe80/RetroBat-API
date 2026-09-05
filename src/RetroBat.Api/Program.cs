@@ -391,7 +391,11 @@ builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp 
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.MirrorPeerSource>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.IReplayPeerSource>(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.MirrorPeerSource>());
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayPeerDirectory>();
-builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayMirrorPublisher>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayTransitPublisher>();
+// File de semis : l'intention de diffuser un record survit a l'extinction de la machine.
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplaySeedQueue>();
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplaySeedService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.ReplaySeedService>());
 builder.Services.AddHostedService<RetroBat.Api.Replay.Sharing.LanPeerResponderService>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.IReplaySourceResolver, RetroBat.Api.Replay.Sharing.NelfeNetSourceResolver>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplaySharePolicy>();

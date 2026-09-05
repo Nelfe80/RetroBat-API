@@ -159,27 +159,40 @@ public sealed class ReplaysController : ControllerBase
     /// </summary>
     [HttpPost("{id}/publish")]
     public async Task<IActionResult> Publish(string id,
-        [FromServices] ReplayMirrorPublisher publisher, CancellationToken ct)
+        [FromServices] ReplaySeedQueue queue, [FromServices] ReplaySeedService seeder, CancellationToken ct)
     {
         if (!IsLocalCaller()) return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
 
-        var result = await publisher.PublishAsync(id, ct);
-        if (!result.Ok)
-        {
-            var status = result.Error == "REPLAY_NOT_FOUND" ? 404 : 422;
-            return StatusCode(status, new { ok = false, error = new { code = result.Error } });
-        }
+        var manifest = _store.GetManifest(id);
+        if (manifest is null) return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
 
-        // La visibilité locale suit la décision : ce replay est désormais offert.
+        // L'INTENTION D'ABORD. Elle est ecrite sur disque avant la moindre tentative reseau :
+        // si la machine s'eteint pendant l'envoi, on perd la progression, jamais la decision.
+        // C'est tout l'interet, sur une borne de particulier qu'on eteint juste apres la partie.
+        queue.Enqueue(id, manifest.Object.Sha256);
+
         var meta = _store.GetMeta(id) ?? ReplayLocalMetadata.Fresh(id);
         _store.SaveMeta(meta with { Visibility = "public", PublicationState = "mirrored" });
-        return Ok(new { ok = true, replay_id = id, visibility = "public", published = true });
+
+        // Puis on tente tout de suite, sans faire dependre la reponse de la reussite : la file
+        // reprendra si le reseau manque, si le transit refuse, ou si la machine s'arrete.
+        try { await seeder.NudgeAsync(ct); } catch { /* la file reessaiera */ }
+
+        var reste = queue.Read().Any(i => string.Equals(i.ReplayId, id, StringComparison.Ordinal));
+        return Ok(new
+        {
+            ok = true,
+            replay_id = id,
+            visibility = "public",
+            // Vrai = l'amorce le detient deja. Faux = c'est en file, et ca se fera tout seul.
+            seeded = !reste,
+        });
     }
 
     /// <summary>Retire ce replay du miroir et le repasse en privé.</summary>
     [HttpPost("{id}/unpublish")]
     public async Task<IActionResult> Unpublish(string id,
-        [FromServices] ReplayMirrorPublisher publisher, CancellationToken ct)
+        [FromServices] ReplayTransitPublisher publisher, CancellationToken ct)
     {
         if (!IsLocalCaller()) return NotFound(new { ok = false, error = new { code = "REPLAY_NOT_FOUND" } });
 
