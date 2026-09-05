@@ -53,7 +53,8 @@ public sealed class ReplayReactionService : IHostedService
     private readonly HashSet<string> _gesture = new();            // boutons consommés par une célébration
     private bool _celebrating;
     private int _celebMaxCount;
-    private string? _budgetReplayId;
+    private string? _budgetKey;
+    private long _sessionSeq;
     private int _budget;
     private int _budgetMax;
     private DateTime _cooldownUntil;
@@ -83,6 +84,11 @@ public sealed class ReplayReactionService : IHostedService
     {
         lock (_gate)
         {
+            // Le budget doit être connu AVANT la première pression, sinon le HUD affiche 0 alors
+            // que le spectateur en a cinq. Le calcul est mis en cache sur la clé replay+spectateur,
+            // donc l'appel répété du HUD ne relit pas le journal à chaque image.
+            EnsureBudget(_playback.GetState());
+
             var cdLeft = (_cooldownUntil - DateTime.UtcNow).TotalMilliseconds;
             var can = _budget > 0 && cdLeft <= 0;
             var prog = cdLeft > 0 ? Math.Clamp(1 - cdLeft / CooldownMs, 0, 1) : 1;
@@ -115,7 +121,7 @@ public sealed class ReplayReactionService : IHostedService
         // Chaque LECTURE repart avec un budget neuf (sinon rejouer le même replay resterait à 0).
         if (string.Equals(e.Type, "replay.started", StringComparison.Ordinal))
         {
-            lock (_gate) { _budgetReplayId = null; _down.Clear(); ResetGesture(); }
+            lock (_gate) { _budgetKey = null; _down.Clear(); ResetGesture(); }
             return;
         }
         if (string.Equals(e.Type, "replay.finished", StringComparison.Ordinal))
@@ -222,7 +228,7 @@ public sealed class ReplayReactionService : IHostedService
         var pseudo = _agent.Status.Pseudo;
         var r = new ReplayReaction(st.ReplayId ?? "", family, level, st.Frame,
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Lang(), chord,
-            string.IsNullOrWhiteSpace(pseudo) ? null : pseudo, viewer);
+            string.IsNullOrWhiteSpace(pseudo) ? null : pseudo, viewer, _sessionSeq);
         try { _store.AppendReaction(r); }
         catch (Exception ex) { _logger.LogDebug(ex, "Replay : append réaction échoué"); }
         _ = Publish(r);
@@ -231,12 +237,38 @@ public sealed class ReplayReactionService : IHostedService
     }
 
     // Budget remis à neuf à chaque changement de replay : 5, quelle que soit la durée.
+    /// <summary>
+    /// Le budget de CE spectateur sur CE replay.
+    ///
+    /// Il ne se réinitialise pas à chaque lecture : ce qui a déjà été dépensé est relu du journal
+    /// append-only, donc relancer le même replay ne redonne pas un lot de cinq. Sans ça, il
+    /// suffisait de relancer pour réagir indéfiniment.
+    ///
+    /// Le journal est la mémoire LOCALE ; la vérité reste au centre, où la plateforme compte par
+    /// COMPTE et non par jeton. Ici on empêche surtout le spectateur de dépenser des réactions qui
+    /// seraient de toute façon refusées à la remontée, ce qui lui donnerait l'illusion d'avoir réagi.
+    /// </summary>
     private void EnsureBudget(ReplayPlaybackService.StateSnapshot st)
     {
-        if (string.Equals(_budgetReplayId, st.ReplayId, StringComparison.Ordinal)) return;
-        _budgetReplayId = st.ReplayId;
+        var viewer = _viewer.Current;
+        var key = (st.ReplayId ?? string.Empty) + "|" + (viewer ?? string.Empty);
+        if (string.Equals(_budgetKey, key, StringComparison.Ordinal)) return;
+        _budgetKey = key;
+        _budgetMax = ReactionsPerReplay;
+
+        // Rien à quoi réagir, ou personne d'identifié : aucun budget, et le HUD le montre.
+        if (string.IsNullOrEmpty(st.ReplayId) || string.IsNullOrEmpty(viewer))
+        {
+            _budget = 0;
+            return;
+        }
+
+        // Nouvelle séance de visionnage : cinq réactions neuves. Elles ne s'AJOUTENT pas aux
+        // précédentes, elles les SUPPLANTENT — c'est l'agrégat qui ne retient que la séance la
+        // plus récente. Le spectateur qui regarde une seconde fois peut donc placer ses réactions
+        // au bon moment, sans que le total compté pour lui depasse jamais cinq.
+        _sessionSeq = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         _budget = ReactionsPerReplay;
-        _budgetMax = _budget;
         _cooldownUntil = DateTime.MinValue;
         _logger.LogDebug("Replay réactions : budget {B} pour {Id}", _budget, st.ReplayId);
     }

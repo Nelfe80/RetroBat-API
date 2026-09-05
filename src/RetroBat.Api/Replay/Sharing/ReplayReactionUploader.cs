@@ -72,9 +72,11 @@ public sealed class ReplayReactionUploader : BackgroundService
 
         // Les réactions d'une même séance partagent le jeton du spectateur. On regroupe par jeton
         // pour le cas, rare mais possible, d'un replay regardé par deux personnes à la suite.
+        // Groupé par spectateur ET par séance : chaque séance est un lot que la plateforme
+        // pourra supplanter, jamais fusionner avec le précédent.
         var parJeton = _store.ReadReactions(replayId)
             .Where(r => !string.IsNullOrWhiteSpace(r.ViewerToken))
-            .GroupBy(r => r.ViewerToken!, StringComparer.Ordinal)
+            .GroupBy(r => (Token: r.ViewerToken!, Seq: r.SessionSeq))
             .ToList();
 
         if (parJeton.Count == 0) return new UploadResult(false, 0, "no_identified_reaction");
@@ -85,7 +87,8 @@ public sealed class ReplayReactionUploader : BackgroundService
             var corps = new
             {
                 replay_id = replayId,
-                viewer_token = groupe.Key,
+                viewer_token = groupe.Key.Token,
+                session_seq = groupe.Key.Seq,
                 reactions = groupe.Select(r => new { reaction = r.Reaction, frame = r.Frame, level = r.Level }).ToList(),
             };
 

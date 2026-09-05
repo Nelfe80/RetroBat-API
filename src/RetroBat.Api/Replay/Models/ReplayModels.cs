@@ -109,7 +109,12 @@ public sealed record ReplayReaction(
     /// <summary>Jeton OPAQUE du spectateur qui a lancé la lecture (CDC DEV §101.6). La borne ne
     /// manipule jamais une identité de compte : elle transporte ce jeton, et c'est la plateforme
     /// qui le résout. Null = personne d'identifié, donc aucune réaction n'est retenue.</summary>
-    string? ViewerToken = null);
+    string? ViewerToken = null,
+    /// <summary>Numéro de la SÉANCE de visionnage (CDC §58 : « compteur signé par acteur+cible
+    /// afin que l'état le plus récent soit déterminable »). Rien n'est jamais effacé : en
+    /// regardant à nouveau, le spectateur refait ses cinq réactions, et seule la séance la plus
+    /// récente est retenue à l'agrégat. L'ancienne reste, elle ne compte plus.</summary>
+    long SessionSeq = 0);
 
 public enum ReplayRecordingState { Idle, Starting, Recording, Stopping, Finalizing, Ready, Error }
 
