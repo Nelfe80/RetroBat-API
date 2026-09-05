@@ -18,6 +18,9 @@ __pycache__/
 tools/**
 !tools/
 !tools/README.txt
+# build.bat est versionne et APPELLE ce script : sans lui, un clone frais ne
+# peut pas construire de release. Il ne contient que des chemins relatifs.
+!tools/release-framework-dependent.ps1
 !tools/**/
 !tools/**/README.txt
 
