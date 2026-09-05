@@ -22,7 +22,13 @@ namespace RetroBat.Api.Replay.Controllers;
 public sealed class ReplayWatchController : ControllerBase
 {
     private readonly RetroBat.Api.Replay.Playback.ReplayLaunchTokenStore _tokens;
-    public ReplayWatchController(RetroBat.Api.Replay.Playback.ReplayLaunchTokenStore tokens) => _tokens = tokens;
+    private readonly RetroBat.Api.Replay.Sharing.ReplayViewerSession _viewer;
+
+    public ReplayWatchController(RetroBat.Api.Replay.Playback.ReplayLaunchTokenStore tokens,
+        RetroBat.Api.Replay.Sharing.ReplayViewerSession viewer)
+    {
+        _tokens = tokens; _viewer = viewer;
+    }
 
     // Hôtes autorisés pour le retour (anti open-redirect) : les mêmes que la CORS.
     private static bool IsAllowedReturnHost(string host) =>
@@ -36,8 +42,13 @@ public sealed class ReplayWatchController : ControllerBase
     public ContentResult Watch(
         [FromQuery(Name = "replay_id")] string? replayId,
         [FromQuery(Name = "return")] string? returnUrl,
-        [FromQuery(Name = "token")] string? token)
+        [FromQuery(Name = "token")] string? token,
+        [FromQuery(Name = "viewer")] string? viewer)
     {
+        // Qui regarde. Le jeton vient de la page nelfeplay.com, qui sait quel COMPTE est connecte ;
+        // la borne ne fait que le transporter. Sans lui, la seance est anonyme et aucune reaction
+        // ne sera retenue (CDC DEV 101.6).
+        _viewer.Open(viewer);
         // Jeton valide (émis au handshake de détection, récupérable seulement par une page
         // nelfeplay.com) → AUTO-lancement. Sinon (navigation directe / expiré) → clic requis.
         var authorized = _tokens.Consume(token);

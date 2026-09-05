@@ -157,6 +157,16 @@ public sealed class ReplayPlaybackController : ControllerBase
         });
     }
 
+    /// <summary>Diagnostic : force la remontée des réactions d'un replay.</summary>
+    [HttpPost("upload-reactions")]
+    public async Task<IActionResult> UploadReactions([FromQuery(Name = "replay_id")] string? replayId,
+        [FromServices] RetroBat.Api.Replay.Sharing.ReplayReactionUploader uploader, CancellationToken ct)
+    {
+        if (!IsLocalCaller()) return NotFound();
+        var r = await uploader.UploadAsync(replayId ?? string.Empty, ct);
+        return Ok(new { sent = r.Sent, count = r.Count, reason = r.Reason });
+    }
+
     /// <summary>Diagnostic : force une déclaration de conservation et rend son compte rendu.</summary>
     [HttpPost("declare-holdings")]
     public async Task<IActionResult> DeclareHoldings(

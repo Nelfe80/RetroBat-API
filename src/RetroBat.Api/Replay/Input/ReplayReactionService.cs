@@ -60,10 +60,13 @@ public sealed class ReplayReactionService : IHostedService
 
     private IDisposable? _sub;
 
+    private readonly RetroBat.Api.Replay.Sharing.ReplayViewerSession _viewer;
+
     public ReplayReactionService(IEventBus bus, ReplayPlaybackService playback, ReplayStore store,
-        RetroBat.Api.Infrastructure.NelfePlayAgentService agent, ILogger<ReplayReactionService> logger)
+        RetroBat.Api.Infrastructure.NelfePlayAgentService agent,
+        RetroBat.Api.Replay.Sharing.ReplayViewerSession viewer, ILogger<ReplayReactionService> logger)
     {
-        _bus = bus; _playback = playback; _store = store; _agent = agent; _logger = logger;
+        _bus = bus; _playback = playback; _store = store; _agent = agent; _viewer = viewer; _logger = logger;
     }
 
     public Task StartAsync(CancellationToken ct) { _sub = _bus.Subscribe<EventEnvelope>(OnEvent); return Task.CompletedTask; }
@@ -206,10 +209,20 @@ public sealed class ReplayReactionService : IHostedService
             _cooldownUntil = DateTime.UtcNow.AddMilliseconds(CooldownMs);
         }
 
+        // PAS DE SPECTATEUR IDENTIFIÉ, PAS DE RÉACTION. Une réaction anonyme ne serait
+        // attribuable à personne, donc ni décomptable d'un budget, ni agrégeable honnêtement.
+        // Le jeton vient de la page nelfeplay.com qui a lancé la lecture ; il est opaque.
+        var viewer = _viewer.Current;
+        if (string.IsNullOrEmpty(viewer))
+        {
+            _logger.LogDebug("Replay : réaction ignorée, aucun spectateur identifié pour cette séance.");
+            return;
+        }
+
         var pseudo = _agent.Status.Pseudo;
         var r = new ReplayReaction(st.ReplayId ?? "", family, level, st.Frame,
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Lang(), chord,
-            string.IsNullOrWhiteSpace(pseudo) ? null : pseudo);
+            string.IsNullOrWhiteSpace(pseudo) ? null : pseudo, viewer);
         try { _store.AppendReaction(r); }
         catch (Exception ex) { _logger.LogDebug(ex, "Replay : append réaction échoué"); }
         _ = Publish(r);

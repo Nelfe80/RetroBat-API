@@ -368,6 +368,8 @@ builder.Services.AddSingleton<RetroBat.Api.Replay.Runtime.RetroArchReplayClient>
 builder.Services.AddSingleton<RetroBat.Api.Replay.Runtime.ReplayCoreTimingProbe>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Storage.ReplayStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayLaunchTokenStore>();
+// Qui regarde : jeton opaque, jamais une identite de compte cote borne.
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayViewerSession>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.EsSystemsRomPaths>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Playback.ReplayRuntimeResolver>();
 // R7 : les rôles (seams NelfeNet) pointent tous vers l'UNIQUE instance locale. Le jour où un
@@ -404,6 +406,8 @@ builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayFollowStore>();
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayReplicationService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.ReplayReplicationService>());
 // Recensement des copies : sans lui, durable et degraded restent des mots.
+builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayReactionUploader>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.ReplayReactionUploader>());
 builder.Services.AddSingleton<RetroBat.Api.Replay.Sharing.ReplayHoldingsReporter>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RetroBat.Api.Replay.Sharing.ReplayHoldingsReporter>());
 builder.Services.AddHostedService<RetroBat.Api.Replay.Sharing.LanPeerResponderService>();

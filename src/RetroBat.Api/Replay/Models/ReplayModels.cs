@@ -105,7 +105,11 @@ public sealed record ReplayIndexEntry(string ReplayId, string GameId, DateTime C
 /// </summary>
 public sealed record ReplayReaction(
     string ReplayId, string Reaction, int Level, long Frame, long TsMs, string Lang, bool Chord,
-    string? Author = null); // Author = nom de l'auteur (non capté pour l'instant ; comptes/NelfeNet)
+    string? Author = null, // Author = nom d'affichage, jamais une identité de compte
+    /// <summary>Jeton OPAQUE du spectateur qui a lancé la lecture (CDC DEV §101.6). La borne ne
+    /// manipule jamais une identité de compte : elle transporte ce jeton, et c'est la plateforme
+    /// qui le résout. Null = personne d'identifié, donc aucune réaction n'est retenue.</summary>
+    string? ViewerToken = null);
 
 public enum ReplayRecordingState { Idle, Starting, Recording, Stopping, Finalizing, Ready, Error }
 
