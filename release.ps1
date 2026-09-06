@@ -44,6 +44,10 @@ $ex = @(
     # dans full.7z sans que rien ne le signale. Un dossier prive s exclut par le
     # dossier, pas par enumeration de ce qu on y a vu un jour.
     "-x!$name\tools\mem-curator",
+    # libretro-probe : outil de developpement (charge un core, lit sa table
+    # d'entrees, enrichit les dynpanels). Il tourne ICI une fois, jamais sur une
+    # borne : ce sont ses RESULTATS qui voyagent, dans le Data Pack.
+    "-x!$name\tools\libretro-probe",
     "-x!$name\state",
     "-x!$name\docs", "-x!$name\src", "-x!$name\tests", "-x!$name\artifacts",
     # dist = installeur Inno compile (des centaines de Mo) ; installer = sources .iss.
@@ -97,7 +101,7 @@ $listing = & $sz l $full
 # tools\*.py, resources\ra et ScreenScraper.html sont passes au travers. Il couvre
 # desormais ce que les exclusions ci-dessus retirent, pour que les deux listes se
 # contredisent bruyamment si l'une d'elles derive.
-$leaks = $listing | Select-String '\.env|\.bak|\.ps1$|\.py$|\\media\\|\\src\\|\\tests\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db|\\resources\\ra\\|\\resources\\ram\\\.user\\|ScreenScraper\.html|\\tools\\(ffmpeg|imagemagick|translateLocally|mem-curator)\\'
+$leaks = $listing | Select-String '\.env|\.bak|\.ps1$|\.py$|\\media\\|\\src\\|\\tests\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db|\\resources\\ra\\|\\resources\\ram\\\.user\\|ScreenScraper\.html|\\tools\\(ffmpeg|imagemagick|translateLocally|mem-curator|libretro-probe)\\'
 if ($leaks) { throw "FUITE DETECTEE dans l'archive : $($leaks[0])" }
 # La cle API de la borne ne doit JAMAIS etre committee/distribuee : le defaut reste vide
 # (chaque borne genere la sienne au 1er run). On bloque si une valeur traine.
@@ -106,6 +110,60 @@ if (Test-Path $appsettingsPath) {
     $apiKeyLeak = Select-String -Path $appsettingsPath -Pattern '"ApiKey"\s*:\s*"[^"]+"'
     if ($apiKeyLeak) { throw "FUITE : une cle API est presente dans appsettings.json (doit rester vide)." }
 }
+# Controle anti-fuite EN LISTE BLANCHE. Le controle ci-dessus enumere ce qu'on
+# INTERDIT : il ne voit donc que ce qu'on a pense a interdire, et c'est ainsi que
+# tools\mem-curator est parti dans la 1.8.1 avec un « OK » affiche. On retourne la
+# question : tout fichier livre doit etre soit VERSIONNE, soit sous un chemin
+# explicitement autorise. Le reste fait echouer la construction, bruyamment.
+#
+# Mesure du 2026-09-06 : 29 745 fichiers livres, 418 versionnes. Les 29 327 autres
+# tiennent dans les treize sous-arbres ci-dessous (Data Pack, themes, panels) plus
+# une poignee de fichiers de runtime. Un nouveau dossier non prevu arrete la
+# release : c'est le comportement voulu, on decide alors en connaissance de cause.
+$autorises = @(
+    'resources/ram/', 'resources/theme/', 'resources/dynpanels/', 'resources/controls/',
+    'resources/gamelist/', 'resources/startup-overlay/', 'resources/config-ESmenus/',
+    'resources/scraping/', 'resources/iccards/', 'resources/colors/', 'resources/history/',
+    'resources/command/', 'resources/locales/', 'tools/mem-explorer/',
+    'RetroBat.Api.exe', 'RetroBat.Api.deps.json', 'RetroBat.Api.runtimeconfig.json',
+    'RetroBat.Api.xml', 'web.config', 'tools/listen_api_ws.README.md'
+)
+$suivis = @{}
+Push-Location $PSScriptRoot
+& git ls-files | ForEach-Object { $suivis[$_] = $true }
+Pop-Location
+if ($suivis.Count -eq 0) { throw "Controle liste blanche impossible : aucun fichier versionne lu." }
+
+# On lit Path PUIS Attributes : 7z decrit chaque entree sur plusieurs lignes, et
+# les DOSSIERS y figurent aussi. Un dossier n'est pas une fuite - se fier a la
+# presence d'un point dans le chemin ne marche pas, « .installer/scripts » en est
+# un contre-exemple immediat.
+$inconnus = @()
+$candidat = $null
+foreach ($ligne in (& $sz l -slt $full)) {
+    if ($ligne -like 'Path = *') {
+        $chemin = $ligne.Substring(7)
+        $candidat = $null
+        if ($chemin.StartsWith("$name\")) {
+            $rel = $chemin.Substring($name.Length + 1).Replace('\', '/')
+            if ($rel -ne '' -and -not $suivis.ContainsKey($rel)) {
+                if (-not ($autorises | Where-Object { $rel -eq $_ -or $rel.StartsWith($_) })) {
+                    $candidat = $rel
+                }
+            }
+        }
+        continue
+    }
+    if ($candidat -and $ligne -like 'Attributes = *') {
+        if ($ligne -notmatch 'D') { $inconnus += $candidat }
+        $candidat = $null
+    }
+}
+if ($inconnus) {
+    throw "FUITE POSSIBLE : $($inconnus.Count) fichier(s) ni versionne(s) ni autorise(s), dont $($inconnus[0])"
+}
+Write-Host "Controle liste blanche : OK ($($suivis.Count) versionnes + chemins autorises)"
+
 Write-Host 'Controle anti-fuite : OK'
 
 # Controle de contrat : le swagger doit se generer (une regression type schemaId
