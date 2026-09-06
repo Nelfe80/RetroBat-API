@@ -759,14 +759,28 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
         return slots.OrderBy(s => s.Slot).ToArray();
     }
 
+    /// <summary>The core's own name for itself (retro_get_system_info().library_name),
+    /// which is both the remap folder RetroArch reads and the key the probe files its
+    /// measurement under. NOT the .info display_name, which reads "Arcade (FinalBurn
+    /// Neo)" and points at a folder RetroArch never opens.</summary>
+    private const string FbneoLibraryName = "FinalBurn Neo";
+
     /// <summary>
-    /// Generates the PER-GAME FBNeo RetroArch remap from the game dynpanel and the
-    /// cabinet cartography: game button n placed on physical slot P becomes
-    /// btn_{carto[P]} = panel.slots[n].retropad_id (the id the core expects for
-    /// that game button under the retrobat_standard convention); unused identities
-    /// are parked on R3. Same guard rules as the system remaps (marker + hash);
-    /// a RetroArch boilerplate file without any btn line carries no user mapping
-    /// and is replaced.
+    /// Generates the PER-GAME FBNeo RetroArch remap by composing three facts, none of
+    /// them guessed:
+    ///
+    ///   dynpanel layout : game button n → physical slot P
+    ///   probe           : game button n → RetroPad id the CORE expects, for THIS game
+    ///   cartography     : physical slot P → the identity that button really emits
+    ///
+    ///   ⇒ input_player{p}_btn_{carto[P]} = {measured id}
+    ///
+    /// The id used to come from panel.slots[n].retropad_id - a table that is identical
+    /// in every game and assumes slot n carries button n. That positional assumption is
+    /// what put Metal Slug's grenade and Chase HQ's turbo on the wrong buttons: FBNeo
+    /// lays Neo-Geo out as A→B, B→A, C→Y, D→X, and no position rule can produce that.
+    /// A game with no measurement gets NO file: leaving FBNeo on its own defaults beats
+    /// writing a mapping we cannot justify. Unused identities are parked on R3.
     /// </summary>
     public string DeployFbneoGameRemap(string rom)
     {
@@ -780,64 +794,97 @@ public sealed class PanelRemapExportService : IHostedService, IDisposable
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(gamePath));
             var root = doc.RootElement;
-            if (!root.TryGetProperty("panel", out var panel) || !panel.TryGetProperty("slots", out var panelSlots)
-                || !root.TryGetProperty("players", out var players) || !players.TryGetProperty("1", out var player1)
-                || !player1.TryGetProperty("buttons", out var buttons) || buttons.ValueKind != JsonValueKind.Object)
+            if (!root.TryGetProperty("players", out var players) || players.ValueKind != JsonValueKind.Object)
             {
                 return "missing";
             }
 
-            var layoutId = $"{Math.Clamp(CabinetButtons.Count, 2, 8)}-Button";
-            JsonElement layoutButtons = default;
-            var hasLayoutButtons = player1.TryGetProperty("layouts", out var layouts)
-                && layouts.TryGetProperty(layoutId, out var layout)
-                && layout.TryGetProperty("buttons", out layoutButtons)
-                && layoutButtons.ValueKind == JsonValueKind.Object;
-
-            var slots = new List<DynpanelSlot>();
-            foreach (var button in buttons.EnumerateObject())
+            // Each player gets its own panel: its own cartography, its own placement.
+            var byPlayer = new Dictionary<int, List<DynpanelSlot>>();
+            foreach (var playerEntry in players.EnumerateObject())
             {
-                int? physical = null;
-                if (button.Value.TryGetProperty("layouts", out var buttonLayouts)
-                    && buttonLayouts.TryGetProperty(layoutId, out var buttonLayout)
-                    && buttonLayout.TryGetProperty("panel_slot", out var direct) && direct.ValueKind == JsonValueKind.Number)
-                {
-                    physical = direct.GetInt32();
-                }
-
-                if (physical is null && hasLayoutButtons && layoutButtons.TryGetProperty(button.Name, out var placed)
-                    && placed.TryGetProperty("panel_slot", out var indirect) && indirect.ValueKind == JsonValueKind.Number)
-                {
-                    physical = indirect.GetInt32();
-                }
-
-                if (physical is not { } slotNumber || !CabinetButtons.TryGetValue(slotNumber, out var identity))
+                if (!int.TryParse(playerEntry.Name, out var playerNumber) || playerNumber < 1
+                    || !playerEntry.Value.TryGetProperty("buttons", out var buttons)
+                    || buttons.ValueKind != JsonValueKind.Object)
                 {
                     continue;
                 }
 
-                // purely data-driven: the id the core expects for game button n
-                // comes from the dynpanel convention (panel.slots[n].retropad_id) -
-                // family quirks belong to the DATA, never hardcoded here;
-                // "2#2" duplicates share their base button's id
-                var baseButton = button.Name.Split('#')[0];
-                if (!panelSlots.TryGetProperty(baseButton, out var template)
-                    || !template.TryGetProperty("retropad_id", out var idElement)
-                    || idElement.ValueKind != JsonValueKind.Number)
+                // A player uses its OWN cartography only if its panel was really
+                // measured. Otherwise it inherits player 1's: asking CabinetButtonsFor
+                // for an unmeasured player would hand it the legacy global
+                // CabinetButtons, a stale table that predates the guided cartography
+                // and disagrees with it on most slots.
+                var cabinet = CabinetCartographyStore.Read(playerNumber).Count > 0
+                    ? CabinetButtonsFor(playerNumber)
+                    : CabinetButtonsFor(1);
+                var layoutId = $"{Math.Clamp(cabinet.Count, 2, 8)}-Button";
+                JsonElement layoutButtons = default;
+                var hasLayoutButtons = playerEntry.Value.TryGetProperty("layouts", out var layouts)
+                    && layouts.TryGetProperty(layoutId, out var layout)
+                    && layout.TryGetProperty("buttons", out layoutButtons)
+                    && layoutButtons.ValueKind == JsonValueKind.Object;
+
+                var slots = new List<DynpanelSlot>();
+                foreach (var button in buttons.EnumerateObject())
                 {
-                    continue;
+                    int? physical = null;
+                    if (button.Value.TryGetProperty("layouts", out var buttonLayouts)
+                        && buttonLayouts.TryGetProperty(layoutId, out var buttonLayout)
+                        && buttonLayout.TryGetProperty("panel_slot", out var direct) && direct.ValueKind == JsonValueKind.Number)
+                    {
+                        physical = direct.GetInt32();
+                    }
+
+                    if (physical is null && hasLayoutButtons && layoutButtons.TryGetProperty(button.Name, out var placed)
+                        && placed.TryGetProperty("panel_slot", out var indirect) && indirect.ValueKind == JsonValueKind.Number)
+                    {
+                        physical = indirect.GetInt32();
+                    }
+
+                    if (physical is not { } slotNumber || !cabinet.TryGetValue(slotNumber, out var identity))
+                    {
+                        continue;
+                    }
+
+                    // MEASURED, not deduced: the id the core itself declared for this
+                    // game button (tools/libretro-probe fills it in). Skipping the
+                    // button when it is absent is deliberate - see the method summary.
+                    if (!button.Value.TryGetProperty("libretro", out var libretro)
+                        || !libretro.TryGetProperty(FbneoLibraryName, out var measured)
+                        || !measured.TryGetProperty("retropad_id", out var idElement)
+                        || idElement.ValueKind != JsonValueKind.Number)
+                    {
+                        continue;
+                    }
+
+                    slots.Add(new DynpanelSlot(slotNumber, identity, idElement.GetInt32()));
                 }
 
-                slots.Add(new DynpanelSlot(slotNumber, identity, idElement.GetInt32()));
+                if (slots.Count > 0)
+                {
+                    ParkUnusedIdentities(slots, cabinet);
+                    byPlayer[playerNumber] = slots;
+                }
             }
 
-            if (slots.Count == 0)
+            if (byPlayer.Count == 0)
             {
                 return "missing";
             }
 
-            ParkUnusedIdentities(slots);
-            var body = BuildRmp(slots, playerCount: 2);
+            // players the dynpanel does not describe fall back to player 1's panel,
+            // which is how a single-panel cabinet behaves anyway
+            var playerCount = Math.Max(2, byPlayer.Keys.Max());
+            var body = BuildRmp(playerCount, player =>
+            {
+                if (byPlayer.TryGetValue(player, out var own))
+                {
+                    return own;
+                }
+
+                return byPlayer.TryGetValue(1, out var first) ? first : (IReadOnlyList<DynpanelSlot>)Array.Empty<DynpanelSlot>();
+            });
             var targetDir = Path.Combine(RetroBatPaths.RetroBatRoot, "emulators", "retroarch", "config", "remaps", "FinalBurn Neo");
             Directory.CreateDirectory(targetDir);
             var targetPath = Path.Combine(targetDir, rom + ".rmp");
