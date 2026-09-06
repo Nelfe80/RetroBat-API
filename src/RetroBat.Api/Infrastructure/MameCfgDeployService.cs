@@ -173,6 +173,55 @@ public sealed class MameCfgDeployService
 
             seq.Value = TranslateJoycodes(seq.Value);
         }
+
+        AddSemanticSystemTokens(input);
+    }
+
+    /// <summary>
+    /// Makes the ONE shared cfg (saves/mame/cfg/{rom}.cfg, read by BOTH mame64
+    /// standalone AND the mame_libretro core) work in both backends for the system
+    /// inputs that structurally diverge - Coin and Start.
+    ///
+    /// mame64 sees the cabinet encoder as a raw DirectInput device: its Coin/Start
+    /// are physical buttons (JOYCODE_n_BUTTON10 / BUTTON9), no semantic token exists.
+    /// mame_libretro presents a RetroPad: Coin/Start are the semantic JOYCODE_n_SELECT
+    /// / JOYCODE_n_START, and the raw BUTTON9/BUTTON10 map onto L3/R3 (stick clicks,
+    /// never wired on an arcade panel). So OR-ing both tokens is collision-free: each
+    /// backend fires on its own valid token, the other stays inert. The pack ships the
+    /// raw form (correct for mame64); this prepends the semantic token for libretro.
+    /// </summary>
+    private static void AddSemanticSystemTokens(XElement input)
+    {
+        foreach (var port in input.Elements("port"))
+        {
+            var type = (string?)port.Attribute("type") ?? "";
+            var match = Regex.Match(type, @"^(COIN|START)(\d+)$");
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var seq = port.Element("newseq");
+            if (seq is null)
+            {
+                continue;
+            }
+
+            var semantic = match.Groups[1].Value == "COIN" ? "SELECT" : "START";
+            // device index: the one the port already binds (JOYCODE_3 for P2 packs),
+            // else the player number from the type - keep P1/P2 on their own device
+            var deviceMatch = Regex.Match(seq.Value, @"JOYCODE_(\d+)_");
+            var device = deviceMatch.Success ? deviceMatch.Groups[1].Value : match.Groups[2].Value;
+            var token = $"JOYCODE_{device}_{semantic}";
+
+            var tokens = SplitSeq(seq.Value);
+            if (tokens.Any(t => t.Equals(token, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue; // already present (idempotent re-runs)
+            }
+
+            seq.Value = string.Join(" OR ", new[] { token }.Concat(tokens));
+        }
     }
 
     /// <summary>
