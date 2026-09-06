@@ -38,9 +38,12 @@ $ex = @(
     "-x!$name\panel_curator*", "-x!$name\profiles_db*",
     # mem-curator : les sorties de generation, rapports et chemins locaux
     # restent hors pack (les outils eux-memes sont publics via le repo).
-    "-x!$name\tools\mem-curator\MEM_*", "-x!$name\tools\mem-curator\_test_MEM*",
-    "-x!$name\tools\mem-curator\.source-base.local", "-x!$name\tools\mem-curator\.gitignore",
-    "-x!$name\tools\mem-curator\baseline_*.json", "-x!$name\tools\mem-curator\staging*",
+    # mem-curator EN ENTIER : outillage prive, retire du depot public et son
+    # historique purge. On excluait fichier par fichier (MEM_*, baseline_*,
+    # .source-base.local...), si bien que README.md et le plugin Lua partaient
+    # dans full.7z sans que rien ne le signale. Un dossier prive s exclut par le
+    # dossier, pas par enumeration de ce qu on y a vu un jour.
+    "-x!$name\tools\mem-curator",
     "-x!$name\state",
     "-x!$name\docs", "-x!$name\src", "-x!$name\tests", "-x!$name\artifacts",
     # dist = installeur Inno compile (des centaines de Mo) ; installer = sources .iss.
@@ -94,7 +97,7 @@ $listing = & $sz l $full
 # tools\*.py, resources\ra et ScreenScraper.html sont passes au travers. Il couvre
 # desormais ce que les exclusions ci-dessus retirent, pour que les deux listes se
 # contredisent bruyamment si l'une d'elles derive.
-$leaks = $listing | Select-String '\.env|\.bak|\.ps1$|\.py$|\\media\\|\\src\\|\\tests\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db|\\resources\\ra\\|\\resources\\ram\\\.user\\|ScreenScraper\.html|\\tools\\(ffmpeg|imagemagick|translateLocally)\\'
+$leaks = $listing | Select-String '\.env|\.bak|\.ps1$|\.py$|\\media\\|\\src\\|\\tests\\|\\docs\\|\\dist\\|package-installer|projects-source|\.git|panel_curator|profiles_db|\\resources\\ra\\|\\resources\\ram\\\.user\\|ScreenScraper\.html|\\tools\\(ffmpeg|imagemagick|translateLocally|mem-curator)\\'
 if ($leaks) { throw "FUITE DETECTEE dans l'archive : $($leaks[0])" }
 # La cle API de la borne ne doit JAMAIS etre committee/distribuee : le defaut reste vide
 # (chaque borne genere la sienne au 1er run). On bloque si une valeur traine.
